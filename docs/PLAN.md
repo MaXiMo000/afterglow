@@ -47,6 +47,9 @@ Browser (static SPA)  --https-->  Caddy (TLS, CSP, static, rate-limit at edge)
 | Queue: Postgres `SELECT ... FOR UPDATE SKIP LOCKED` (not Redis) | One stateful service that also holds result metadata. Decided before A1 (owner-approved) |
 | Building height from the **current** tree only: one capped, batched blob fetch of HEAD's blobs, read as bytes to count lines, never checked out | A blobless clone has no file contents; lazy per-blob fetches during `git log` are slow and uncappable. History metrics use `--name-status` only. Decided before A1 (owner-approved) |
 | Result wire format: strict JSON for meta/insights + a versioned binary block (typed arrays) for per-file columns, both validated (lengths, finite numbers) | Meets the 1.5 MB payload budget without giving up strict schemas. Decided before A1 (owner-approved) |
+| Metric definitions (A1): hotspot = >= 5 changes in the 12 months before HEAD by <= 3 authors, top 20; quiet = no change in the 2 years before HEAD; bus factor = fewest authors covering >= 50% of commits touching a district; coupling = co-change count / min(changes) over the latest 10k commits, ignoring commits touching > 20 files, min 3 co-changes | Needs no file contents. Bus factor is **commit-weighted, not line-weighted** (blame needs every historical blob); the UI must say so |
+| Time reference is HEAD's commit time, not wall-clock | Results are reproducible and cacheable by sha |
+| Districts = top-level directories; if one holds more than half the files it is split one level deeper | Monorepos (`src/`, `packages/`) still get useful districts |
 
 ## 4. API (v1)
 - `POST /api/v1/analyses` body `{"repo":"owner/name"}` -> `202 {"id","status"}` or `200` with cached result. Strict regex

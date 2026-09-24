@@ -55,9 +55,10 @@ jobs:
         run: |
           docker build -t afterglow-api -f backend/Dockerfile.api backend
           docker build -t afterglow-worker -f backend/Dockerfile.worker backend
+          docker build -t afterglow-egress -f backend/Dockerfile.egress backend
       - name: Scan images
         run: |
-          for img in afterglow-api afterglow-worker; do
+          for img in afterglow-api afterglow-worker afterglow-egress; do
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY" \
               image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$img"
           done

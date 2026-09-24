@@ -25,7 +25,7 @@ requires = ["setuptools>=75"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["app*", "worker*"]
+include = ["app*", "core*", "worker*", "egress*"]
 
 [tool.ruff]
 line-length = 110
@@ -35,7 +35,7 @@ target-version = "py312"
 select = ["E", "F", "W", "I", "B", "UP", "S", "N", "SIM", "RUF", "PT"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+"tests/**" = ["S101", "S603", "S607", "PT018", "S104", "E501"]  # tests drive local git fixtures
 
 [tool.mypy]
 strict = true

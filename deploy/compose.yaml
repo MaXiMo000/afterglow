@@ -37,19 +37,37 @@ services:
     networks: [backend]
     mem_limit: 512m
 
+  # One-shot until A2 adds the queue: docker compose -f deploy/compose.yaml run --rm worker owner/name
   worker:
     <<: *hardening
     build: { context: ../backend, dockerfile: Dockerfile.worker }
     profiles: [worker]
     restart: "no"
-    tmpfs: ["/scratch:size=512m,mode=1777"]
-    networks: [worker]
+    environment:
+      AFTERGLOW_GIT_PROXY: http://egress:3128
+    # Scratch is tmpfs, capped; clones never touch a persistent disk. Store holds only schema-valid results.
+    tmpfs: ["/scratch:size=1100m,uid=10002,gid=10002,mode=0700"]
+    volumes: ["worker_store:/store"]
+    networks: [worker]  # internal: no route anywhere except the egress proxy
+    depends_on:
+      egress: { condition: service_started }
     mem_limit: 1g
+    cpus: 1.0
+
+  egress:
+    <<: *hardening
+    build: { context: ../backend, dockerfile: Dockerfile.egress }
+    profiles: [worker]
+    networks: [worker, egress]
+    mem_limit: 128m
+    pids_limit: 32
 
 networks:
   edge: {}
   backend: { internal: true }
-  worker: {}
+  worker: { internal: true }
+  egress: {}
 
 volumes:
   caddy_data: {}
+  worker_store: {}

@@ -1,5 +1,7 @@
 *
 !requirements.lock
 !app/**
+!core/**
 !worker/**
+!egress/**
 **/__pycache__
