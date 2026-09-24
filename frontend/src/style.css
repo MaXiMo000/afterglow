@@ -1,0 +1,52 @@
+/* A0 placeholder styles. Design tokens and self-hosted fonts arrive in A3 (docs/EXPERIENCE.md section 7). */
+:root {
+  color-scheme: dark;
+  --ink: #060a11;
+  --text: #ece6db;
+  --dim: #9db0b3;
+  --dusk: #e58da5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: radial-gradient(120% 80% at 50% 100%, #173a3f 0%, #2b2148 45%, var(--ink) 100%);
+  color: var(--text);
+  font: 16px/1.5 system-ui, sans-serif;
+}
+
+main {
+  max-width: 40rem;
+}
+
+h1 {
+  margin: 0.2em 0;
+  font: 400 clamp(2.5rem, 8vw, 5.5rem) / 0.95 Georgia, 'Times New Roman', serif;
+}
+
+h1 em {
+  color: var(--dusk);
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--dim);
+  font: 11px ui-monospace, monospace;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.lede {
+  color: var(--dim);
+}

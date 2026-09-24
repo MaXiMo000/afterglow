@@ -1,0 +1,57 @@
+# Single public origin (docs/SECURITY.md section 6). Locally: https://localhost:8443 with Caddy's internal CA.
+# The header set is asserted by deploy/check-headers.sh in CI; change both together.
+{
+	admin off
+	skip_install_trust
+	auto_https disable_redirects
+}
+
+{$AFTERGLOW_SITE:localhost}:{$AFTERGLOW_PORT:8443} {
+	tls {$AFTERGLOW_TLS:internal}
+	encode zstd gzip
+
+	# Body cap (SECURITY T11). max_size only trips when a body is read, so also reject a declared
+	# Content-Length over the cap up front, whatever the route.
+	request_body {
+		max_size 16KB
+	}
+	@too_big expression `{http.request.header.Content-Length} != "" && int({http.request.header.Content-Length}) > 16384`
+	handle @too_big {
+		header Content-Type "application/json"
+		respond `{"error":"too_large"}` 413 {
+			close
+		}
+	}
+
+	header {
+		-Server
+		-Via
+		Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types 'none'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
+		Cross-Origin-Embedder-Policy "require-corp"
+		X-Frame-Options "DENY"
+		Permissions-Policy "accelerometer=(), autoplay=(), camera=(), clipboard-read=(), display-capture=(), encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), hid=(), idle-detection=(), magnetometer=(), microphone=(), midi=(), payment=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), usb=(), xr-spatial-tracking=()"
+		# HSTS without preload until the domain is stable (SECURITY T9).
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	@api path /api/* /healthz
+	handle @api {
+		header Cache-Control "no-store"
+		reverse_proxy api:8000 {
+			header_down -Server
+		}
+	}
+
+	handle {
+		root * /srv/www
+		@hashed path /assets/*
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		header ?Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

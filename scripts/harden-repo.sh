@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Apply GitHub-side security settings. NOT yet run against a real repo (see docs/HANDOVER.md);
-# each call is written from the GitHub REST docs - check the output and fix any 4xx.
+# Apply GitHub-side security settings. First run against MaXiMo000/afterglow on 2026-09-24: all calls ok,
+# settings read back and confirmed. Idempotent; safe to re-run.
 # Usage: ./scripts/harden-repo.sh owner repo
 set -uo pipefail
 OWNER="${1:?owner}"; REPO="${2:?repo}"

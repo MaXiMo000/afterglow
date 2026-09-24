@@ -44,6 +44,9 @@ Browser (static SPA)  --https-->  Caddy (TLS, CSP, static, rate-limit at edge)
 | Fonts self-hosted (Cormorant Garamond, IBM Plex Mono, Instrument Sans; subset, `font-display: swap`) | No third-party origins (CSP) |
 | GPU picking via ID buffer | O(1) hover cost regardless of file count |
 | Fallback 2D treemap + table | No-WebGL devices, screen readers, print |
+| Queue: Postgres `SELECT ... FOR UPDATE SKIP LOCKED` (not Redis) | One stateful service that also holds result metadata. Decided before A1 (owner-approved) |
+| Building height from the **current** tree only: one capped, batched blob fetch of HEAD's blobs, read as bytes to count lines, never checked out | A blobless clone has no file contents; lazy per-blob fetches during `git log` are slow and uncappable. History metrics use `--name-status` only. Decided before A1 (owner-approved) |
+| Result wire format: strict JSON for meta/insights + a versioned binary block (typed arrays) for per-file columns, both validated (lengths, finite numbers) | Meets the 1.5 MB payload budget without giving up strict schemas. Decided before A1 (owner-approved) |
 
 ## 4. API (v1)
 - `POST /api/v1/analyses` body `{"repo":"owner/name"}` -> `202 {"id","status"}` or `200` with cached result. Strict regex
@@ -90,7 +93,7 @@ Gate: no jank; chapter jump and reverse scroll are seamless; works with wheel, t
 | Initial JS gzip (landing + renderer) | <= 400 KB; three.js tree-shaken; everything else lazy |
 | Time to first rendered frame | <= 2.5 s on a mid-range Android, 4G |
 | Frame rate | 60 fps desktop and recent phones; >= 30 fps on the reference low-end phone; dynamic resolution keeps frame time under 16.6 ms |
-| Input latency | scroll-to-camera <= 1 frame; orbit/zoom feels immediate; INP < 200 ms |
+| Input latency | camera follows the smoothed scroll value within 1 frame; smoothing settles in <= 150 ms (owner-approved clarification: raw input cannot reach the camera in 1 frame through Lenis lerp); orbit/zoom feels immediate; INP < 200 ms |
 | Draw calls / triangles | <= 60 low tier, <= 150 high; buildings instanced |
 | Result payload | <= 1.5 MB gzip for a 50k-file repo; typed arrays, not verbose JSON |
 | JS heap | <= 300 MB; no growth over a 10-minute soak |

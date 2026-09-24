@@ -19,6 +19,10 @@ Afterglow = FastAPI backend that analyses a public GitHub repo's git history + a
 - Update `docs/` in the same PR as behaviour changes.
 - Ask the owner before: paid services, analytics, license change, sending user data anywhere new.
 
-## Commands (fill in as they are created)
-backend: `pip install -e ".[dev]" && ruff check . && mypy --strict app && bandit -q -r app && pytest`
-frontend: `npm ci --ignore-scripts && npm run typecheck && npm test && npm run build && npm run e2e`
+## Commands
+backend (in `backend/`): `pip install --require-hashes --no-deps -r requirements-dev.lock && pip install --no-deps --no-build-isolation -e . && ruff check . && ruff format --check . && mypy --strict app worker && bandit -q -r app worker && pytest && pip-audit -r requirements-dev.lock --require-hashes --disable-pip`
+backend lock (after editing `pyproject.toml`): `pip-compile --generate-hashes --allow-unsafe --strip-extras -o requirements.lock pyproject.toml` and the same with `--extra dev -o requirements-dev.lock`
+frontend (in `frontend/`): `npm ci --ignore-scripts && npm run typecheck && npm test && npm run build && npm run e2e`
+local stack (repo root, after `npm run build`): `docker compose -f deploy/compose.yaml up -d --build --wait`, then `bash deploy/check-headers.sh`; site at https://localhost:8443
+pre-commit: `pip install pre-commit && pre-commit install` (gitleaks runs from its pinned image; needs Docker)
+Pins: GitHub Actions by commit SHA, images by digest, Python by hash, npm by lockfile. Never replace a pin with a tag. Do not use `aquasecurity/trivy-action` (tag hijack, CVE-2026-33634); Trivy runs from its pinned image.

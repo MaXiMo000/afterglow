@@ -1,0 +1,5 @@
+*
+!requirements.lock
+!app/**
+!worker/**
+**/__pycache__
