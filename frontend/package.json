@@ -19,5 +19,10 @@
     "typescript": "7.0.2",
     "vite": "8.3.1",
     "vitest": "5.0.1"
+  },
+  "dependencies": {
+    "@fontsource/cormorant-garamond": "5.3.0",
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/instrument-sans": "5.3.0"
   }
 }

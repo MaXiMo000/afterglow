@@ -39,7 +39,7 @@ Browser (static SPA)  --https-->  Caddy (TLS, CSP, static, rate-limit at edge)
 | Python 3.12, FastAPI, Pydantic v2, uvicorn | Owner's stack; strict typed schemas at the boundary |
 | Worker parses `git log --name-status -z` from a **bare, blobless** clone | Never checks out attacker-controlled files; small and fast |
 | Vite + TypeScript strict, no UI framework | Small bundle, direct control of the render loop |
-| Three.js (tree-shaken) + custom `ShaderMaterial`s and own post chain, porting the prototype GLSL | Maintainable, proven on mobile; keeps the look. (Raw WebGL2 is acceptable only if the port to Three is shown to cost frame time.) |
+| ~~Three.js~~ **Raw WebGL2 in TypeScript, porting the prototype renderer** (changed in A3, owner may veto) | The prototype already is a complete, working WebGL2 renderer of exactly this look (instancing, planar reflection, HDR bloom, MSAA, tiers). Re-expressing it in Three.js abstractions adds ~150 KB gzip to the first-frame budget and gains no frame time, and GPU picking with PBO readback plus parallel shader compile need raw GL either way. The PLAN's stated condition (Three must be shown to cost frame time) is **not** what drove this: bundle size and reuse did. Revert path: the renderer is one module behind a small interface (`setWorld`, `alloc`, `render`, `pick`) |
 | Lenis for scroll smoothing, bundled and version-pinned, wrapped behind our own `ScrollEngine` interface | Solid inertial scroll; replaceable. No GSAP dependency |
 | Own tiny timeline + spring utilities | Avoid animation-library weight and licensing questions |
 | Fonts self-hosted (Cormorant Garamond, IBM Plex Mono, Instrument Sans; subset, `font-display: swap`) | No third-party origins (CSP) |
@@ -107,4 +107,4 @@ Gate: no jank; chapter jump and reverse scroll are seamless; works with wheel, t
 | JS heap | <= 300 MB; no growth over a 10-minute soak |
 | Layout shift | CLS 0 |
 | Idle | Render at low rate or stop when nothing moves and tab is hidden |
-Pick and record the **reference low-end device** in A3.
+Reference low-end device (chosen in A3): a 2023 budget Android phone class (Mali-G57 / Adreno 610 GPU, 4 GB RAM, Chrome), e.g. Samsung Galaxy A14. Not yet measured on hardware: see `docs/PERF-LOG.md`.

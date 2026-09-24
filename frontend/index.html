@@ -4,16 +4,74 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
-    <meta name="description" content="Paste a public GitHub repository and watch its history grow into a night city." />
+    <meta name="theme-color" content="#060a11" />
+    <meta name="description" content="Paste a public GitHub repository and watch its history grow into a night city: hotspots, quiet quarters, bus factor and hidden coupling." />
     <title>Afterglow</title>
     <script type="module" src="/src/main.ts"></script>
   </head>
-  <body>
-    <main id="app">
-      <p class="eyebrow">Afterglow</p>
-      <h1>Your codebase, <em>after dark.</em></h1>
-      <p class="lede" id="status">Under construction. The city arrives in milestone A3.</p>
+  <body class="mode-hero">
+    <a class="skip" href="#summary">Skip to the text summary</a>
+    <div id="stage">
+      <canvas id="gl" aria-hidden="true"></canvas>
+      <div id="scrim" aria-hidden="true"></div>
+    </div>
+
+    <header id="hud">
+      <div class="brand"><span class="mark" aria-hidden="true"></span><b>Afterglow</b><span class="repo" id="hudRepo"></span></div>
+      <nav class="actions" aria-label="View">
+        <button class="chip" id="btnNew" type="button" hidden>New repo</button>
+        <button class="chip" id="btnTable" type="button" aria-pressed="false">View as table</button>
+      </nav>
+    </header>
+
+    <main>
+      <section id="hero" aria-labelledby="heroTitle">
+        <p class="eyebrow">Repository history, visualised</p>
+        <h1 id="heroTitle">Your codebase, <em>after dark.</em></h1>
+        <p class="lede">Paste a public GitHub repository. Its whole history grows into a night city, and the risky streets light up.</p>
+        <form id="form" autocomplete="off" novalidate>
+          <label class="field" for="repoInput"><span>github.com /</span><input id="repoInput" name="repo" spellcheck="false" maxlength="140" placeholder="owner/name" aria-describedby="formErr formHint" /></label>
+          <button class="go" type="submit">Build the city</button>
+        </form>
+        <p id="formErr" class="form-error" role="alert"></p>
+        <p id="formHint" class="hint">Public repositories only. We read commit history (paths, times, pseudonymous authors), never file contents beyond line counts, and store no emails.</p>
+        <div class="samples"><span>Try</span>
+          <button type="button" data-repo="fastapi/typer">fastapi/typer</button>
+          <button type="button" data-repo="pallets/flask">pallets/flask</button>
+          <button type="button" data-repo="tiangolo/sqlmodel">tiangolo/sqlmodel</button>
+        </div>
+      </section>
+
+      <section id="loading" aria-labelledby="loadTitle" hidden>
+        <p class="eyebrow" id="loadTitle">Building the city</p>
+        <ol id="log" aria-live="polite"></ol>
+        <div class="bar" aria-hidden="true"><i id="barfill"></i></div>
+        <button class="ghost" id="btnCancel" type="button">Cancel</button>
+      </section>
+
+      <section id="city" aria-label="City view" hidden>
+        <div id="place"><p class="eyebrow" id="placeEy">Exploring</p><h2 id="placeName">the whole city</h2><p class="sub" id="placeSub"></p></div>
+        <p id="hints" aria-hidden="true">drag to orbit &middot; wheel to zoom &middot; click a building</p>
+      </section>
+
+      <section id="tableView" aria-labelledby="tableTitle" hidden>
+        <div class="table-head">
+          <h2 id="tableTitle">Districts and files</h2>
+          <p class="sub" id="tableNote"></p>
+        </div>
+        <canvas id="treemap" role="img" aria-label="Treemap of districts by file count"></canvas>
+        <div class="table-wrap"><table id="files"><caption id="filesCaption"></caption><thead><tr><th scope="col">File</th><th scope="col">Changes (12 mo)</th><th scope="col">Authors</th><th scope="col">Lines</th><th scope="col">Last change</th><th scope="col">Status</th></tr></thead><tbody></tbody></table></div>
+      </section>
+
+      <section id="summary" class="visually-hidden" aria-labelledby="summaryTitle">
+        <h2 id="summaryTitle">Text summary</h2>
+        <div id="summaryBody"><p>No repository loaded yet.</p></div>
+      </section>
     </main>
-    <noscript><p class="lede">Afterglow needs JavaScript. A table view will be available without WebGL.</p></noscript>
+
+    <aside id="tip" role="tooltip" hidden></aside>
+    <footer id="honesty" aria-label="About this data"></footer>
+    <p id="announce" class="visually-hidden" aria-live="polite"></p>
+    <noscript><p class="noscript">Afterglow needs JavaScript to fetch and draw the analysis.</p></noscript>
   </body>
 </html>
