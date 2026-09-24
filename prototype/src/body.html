@@ -1,0 +1,81 @@
+<div id="scroller" aria-hidden="true"></div>
+<div id="stage">
+  <canvas id="gl" aria-label="A night city built from a repository's commit history"></canvas>
+  <div id="fallback"></div>
+
+  <header id="hud">
+    <div class="brand"><span class="mark"></span><b>AFTERGLOW</b><span class="repo" id="repoPill">acme/orbit-api</span></div>
+    <div id="compass" aria-hidden="true"><div id="strip"></div><span id="heading">000&deg;</span></div>
+    <nav class="actions" aria-label="Tools">
+      <button class="chip" id="btnSearch" type="button">Search <kbd>/</kbd></button>
+      <button class="chip" id="btnExplore" type="button" aria-pressed="false">Explore</button>
+      <button class="chip" id="btnPhoto" type="button">Photo</button>
+    </nav>
+  </header>
+  <div id="protoTag">Prototype &middot; simulated data seeded from the repository name</div>
+
+  <!-- hero -->
+  <section id="hero" aria-labelledby="heroTitle">
+    <p class="eyebrow">Repository history, visualised</p>
+    <h1 id="heroTitle">Your codebase,<br><em>after dark.</em></h1>
+    <p class="lede">Paste a public GitHub repository. Its whole history grows into a night city, and the risky streets light up.</p>
+    <form id="form" autocomplete="off" novalidate>
+      <label class="field"><span>github.com /</span><input id="repoInput" value="acme/orbit-api" spellcheck="false" maxlength="140" aria-label="GitHub repository as owner/name"></label>
+      <button class="go" type="submit">Build the city</button>
+    </form>
+    <p id="formErr" role="alert"></p>
+    <div class="samples">Try
+      <button type="button" data-repo="acme/orbit-api">acme/orbit-api</button>
+      <button type="button" data-repo="acme/tideline">acme/tideline</button>
+      <button type="button" data-repo="acme/nightshift">acme/nightshift</button>
+    </div>
+    <button class="ghost" id="skip" type="button">Skip to explore</button>
+  </section>
+
+  <!-- loading -->
+  <section id="loading" aria-live="polite"><pre id="log"></pre><div class="bar"><i id="barfill"></i></div></section>
+
+  <!-- story -->
+  <div id="chapters">
+    <article class="chap" data-i="0"><p class="eyebrow">01 &middot; First light</p><h2>Every codebase starts as <em>one commit.</em></h2><p>Before the districts, the tests and the arguments, there was a single file and a message that said &ldquo;init&rdquo;.</p></article>
+    <article class="chap" data-i="1"><p class="eyebrow">02 &middot; Growth</p><h2>Nine years, <em>one city.</em></h2><p>Each building is a file. It rises the day it is created and stays lit while people keep working in it.</p>
+      <div class="stats"><div class="stat"><b id="stCommits">0</b><span>commits</span></div><div class="stat"><b id="stFiles">0</b><span>files</span></div><div class="stat"><b id="stPeople">0</b><span>people</span></div></div></article>
+    <article class="chap" data-i="2"><p class="eyebrow">03 &middot; Hot streets</p><h2>Some files change <em>every week.</em></h2><p>The red beacons mark files edited constantly by very few people. That is where regressions tend to start.</p></article>
+    <article class="chap" data-i="3"><p class="eyebrow">04 &middot; Quiet quarters</p><h2>Nothing here has moved in <em id="quietYears">six years.</em></h2><p>Dark windows, dense fog. Nobody remembers why it works, so nobody dares to touch it.</p></article>
+    <article class="chap" data-i="4"><p class="eyebrow">05 &middot; The people</p><h2><em id="busN">Three</em> people wrote most of the core.</h2><p>Each lantern is a contributor moving between files. If the few that circle the centre left tomorrow, who could explain it?</p></article>
+    <article class="chap" data-i="5"><p class="eyebrow">06 &middot; Yours</p><h2>Now <em>look around.</em></h2><p>Drag to orbit, scroll to zoom, press <kbd>/</kbd> to search any file, and scrub the timeline to replay history.</p><button class="go cta" id="ctaExplore" type="button">Open the city</button></article>
+  </div>
+  <aside id="callout" aria-hidden="true"><div class="line"></div><div class="dot"></div><div class="body"><div class="name"></div><div class="meta"></div></div></aside>
+  <nav id="rail" aria-label="Story chapters">
+    <button type="button" data-i="0"><span>First light</span><i></i></button>
+    <button type="button" data-i="1"><span>Growth</span><i></i></button>
+    <button type="button" data-i="2"><span>Hot streets</span><i></i></button>
+    <button type="button" data-i="3"><span>Quiet quarters</span><i></i></button>
+    <button type="button" data-i="4"><span>The people</span><i></i></button>
+    <button type="button" data-i="5"><span>Explore</span><i></i></button>
+  </nav>
+  <div id="scrollHint"><span>Scroll</span><i></i></div>
+
+  <!-- explore -->
+  <div id="place"><p class="eyebrow" id="placeEy">Exploring</p><h2 id="placeName">the whole city</h2><p class="sub" id="placeSub"></p></div>
+  <p id="hints">drag to orbit &middot; wheel to zoom &middot; / to search</p>
+  <aside id="panel" aria-label="Insights">
+    <p class="eyebrow">Insights</p>
+    <div class="kpis"><div><b id="kFiles">0</b><span>files</span></div><div><b id="kCommits">0</b><span>commits</span></div><div><b id="kPeople">0</b><span>people</span></div><div><b id="kAge">0</b><span>years</span></div></div>
+    <div class="tabs" role="tablist"><button role="tab" class="on" data-tab="hot">Hotspots</button><button role="tab" data-tab="bus">Bus factor</button><button role="tab" data-tab="quiet">Quiet</button></div>
+    <ul id="rows"></ul>
+  </aside>
+
+  <!-- scrubber -->
+  <div id="scrub">
+    <button id="play" type="button" aria-label="Play history"><svg viewBox="0 0 12 12" aria-hidden="true"><path id="playIcon" d="M2 1l9 5-9 5z"/></svg></button>
+    <div class="date"><b id="dateMain">MAR 2016</b><span id="dateSub">1 commit &middot; 1 file</span></div>
+    <div class="track" id="track" role="slider" aria-label="History position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0"><canvas id="spark"></canvas><i id="fill"></i><b id="knob"></b></div>
+    <div class="speeds"><button type="button" data-s="1" class="on">1&times;</button><button type="button" data-s="4">4&times;</button><button type="button" data-s="16">16&times;</button></div>
+  </div>
+  <div id="qual"><span id="fps">-- fps</span><button class="chip" id="btnQual" type="button">quality: cinematic</button></div>
+  <div id="photoNote">Photo mode &middot; press Esc to return</div>
+
+  <div id="tip" role="status"></div>
+  <div id="cmdk" hidden><div class="box" role="dialog" aria-modal="true" aria-label="Search files and actions"><input id="cmdInput" placeholder="Search files, or type an action" spellcheck="false" autocomplete="off" aria-label="Search"><ul id="cmdList"></ul></div></div>
+</div>
