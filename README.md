@@ -4,9 +4,10 @@ Paste a public GitHub repository. Its history grows into a cinematic night city:
 lit windows are recent work, red beacons are hotspots, dark fog is code nobody touches, lanterns are people.
 Scroll through the story, then fly the city and scrub through time.
 
-**Status:** A0-A3 done: paste a public repo, watch real analysis progress, then orbit a city built from its
-real history (hover any building for its numbers, or switch to the table view). The scroll story, full explore
-tools and effects pass are next (A4-A6). The hero background is a real, dated analysis of fastapi/fastapi.
+**Status:** A0-A4 done: paste a public repo, watch real analysis progress, scroll a short film built from its
+history (first light, growth, hotspots, quiet quarters, the people), then orbit the city (hover any building,
+or switch to the table view). Full explore tools and the effects pass are next (A5-A6). The hero background is a
+real, dated analysis of fastapi/fastapi.
 Afterglow is **not** yet claimed to be secure: see `docs/SECURITY.md` section 8.
 
 | Milestone | Status |
@@ -15,8 +16,9 @@ Afterglow is **not** yet claimed to be secure: see `docs/SECURITY.md` section 8.
 | A1 Analysis core | done |
 | A2 API + SSE + limits | done |
 | A3 Frontend foundation | done |
-| A4 Scroll story | next |
-| A5-A8 | planned (`docs/PLAN.md` section 5) |
+| A4 Scroll story | done |
+| A5 Explore | next |
+| A6-A8 | planned (`docs/PLAN.md` section 5) |
 
 | Path | What |
 | --- | --- |

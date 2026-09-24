@@ -20,6 +20,8 @@
       <div class="brand"><span class="mark" aria-hidden="true"></span><b>Afterglow</b><span class="repo" id="hudRepo"></span></div>
       <nav class="actions" aria-label="View">
         <button class="chip" id="btnNew" type="button" hidden>New repo</button>
+        <button class="chip" id="btnStory" type="button" hidden>Story</button>
+        <button class="chip" id="btnCity" type="button" hidden>Skip to the city</button>
         <button class="chip" id="btnTable" type="button" aria-pressed="false">View as table</button>
       </nav>
     </header>
@@ -49,6 +51,14 @@
         <button class="ghost" id="btnCancel" type="button">Cancel</button>
       </section>
 
+      <section id="story" aria-label="Story" hidden>
+        <div id="progress" aria-hidden="true"><i></i></div>
+        <div id="chapters"></div>
+        <nav id="rail" aria-label="Story chapters"></nav>
+        <aside id="callout" aria-hidden="true"><div class="line"></div><div class="dot"></div><div class="body"><div class="name"></div><div class="meta"></div></div></aside>
+        <p id="scrollHint" aria-hidden="true"><span>Scroll</span><i></i></p>
+      </section>
+
       <section id="city" aria-label="City view" hidden>
         <div id="place"><p class="eyebrow" id="placeEy">Exploring</p><h2 id="placeName">the whole city</h2><p class="sub" id="placeSub"></p></div>
         <p id="hints" aria-hidden="true">drag to orbit &middot; wheel to zoom &middot; click a building</p>
@@ -60,7 +70,7 @@
           <p class="sub" id="tableNote"></p>
         </div>
         <canvas id="treemap" role="img" aria-label="Treemap of districts by file count"></canvas>
-        <div class="table-wrap"><table id="files"><caption id="filesCaption"></caption><thead><tr><th scope="col">File</th><th scope="col">Changes (12 mo)</th><th scope="col">Authors</th><th scope="col">Lines</th><th scope="col">Last change</th><th scope="col">Status</th></tr></thead><tbody></tbody></table></div>
+        <div class="table-wrap"><table id="files"><caption id="filesCaption"></caption><thead><tr><th scope="col">File</th><th scope="col">Changes (12 mo)</th><th scope="col">Authors (all time)</th><th scope="col">Lines</th><th scope="col">Last change</th><th scope="col">Status</th></tr></thead><tbody></tbody></table></div>
       </section>
 
       <section id="summary" class="visually-hidden" aria-labelledby="summaryTitle">
@@ -69,6 +79,7 @@
       </section>
     </main>
 
+    <div id="scroller" aria-hidden="true" hidden></div>
     <aside id="tip" role="tooltip" hidden></aside>
     <footer id="honesty" aria-label="About this data"></footer>
     <p id="announce" class="visually-hidden" aria-live="polite"></p>

@@ -53,11 +53,20 @@ export class OrbitCamera {
   }
 }
 
-export function buildCamera(pos: V3, tgt: V3, width: number, height: number, far: number): Camera {
+export function buildCamera(pos: V3, tgt: V3, width: number, height: number, far: number, fovDeg = 50): Camera {
   const aspect = width / Math.max(1, height);
-  const fov = ((aspect < 1 ? 70 : 50) * Math.PI) / 180;
+  const fov = ((aspect < 1 ? fovDeg + 20 : fovDeg) * Math.PI) / 180; // portrait screens need a wider view
   const vp = mul(perspective(fov, aspect, 0.4, far), lookAt(pos, tgt, [0, 1, 0]));
   const f = norm(sub(tgt, pos));
   const r = norm(cross(f, [0, 1, 0]));
   return { vp, vpR: reflectVP(vp), pos, posR: [pos[0], -pos[1], pos[2]], right: r, up: cross(r, f), fwd: f, tanH: Math.tan(fov / 2) };
+}
+
+/** Orbit parameters that reproduce a given pose, so switching from a scripted camera to orbit never pops. */
+export function orbitFromPose(pos: V3, tgt: V3): Orbit {
+  const dx = pos[0] - tgt[0];
+  const dy = pos[1] - tgt[1];
+  const dz = pos[2] - tgt[2];
+  const dist = Math.max(1e-3, Math.hypot(dx, dy, dz));
+  return { yaw: Math.atan2(dx, dz), pitch: Math.asin(clamp(dy / dist, -1, 1)), dist, x: tgt[0], y: tgt[1], z: tgt[2] };
 }

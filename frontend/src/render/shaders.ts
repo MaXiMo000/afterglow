@@ -205,10 +205,10 @@ c+=(texture(uTex,vUv+uDir*1.).rgb+texture(uTex,vUv-uDir*1.).rgb)*.194;
 c+=(texture(uTex,vUv+uDir*2.).rgb+texture(uTex,vUv-uDir*2.).rgb)*.122;
 c+=(texture(uTex,vUv+uDir*3.).rgb+texture(uTex,vUv-uDir*3.).rgb)*.054;
 c+=(texture(uTex,vUv+uDir*4.).rgb+texture(uTex,vUv-uDir*4.).rgb)*.016;o=vec4(c,1.);}`};
-SRC.comp={vs:H+FS_TRI,fs:H+NOISE+`in vec2 vUv;uniform sampler2D uScene,uB1,uB2;uniform float uBloom,uB2k,uExp,uFade,uTime,uGrain;out vec4 o;
+SRC.comp={vs:H+FS_TRI,fs:H+NOISE+`in vec2 vUv;uniform sampler2D uScene,uB1,uB2;uniform float uBloom,uB2k,uExp,uFade,uTime,uGrain,uCA;out vec4 o;
 vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}
 void main(){
-  vec2 d=vUv-.5;float ca=.0022*dot(d,d)*4.;
+  vec2 d=vUv-.5;float ca=.0022*dot(d,d)*4.*uCA;/* PORT: scaled by scroll velocity (EXPERIENCE section 1) */
   vec3 c;c.r=texture(uScene,vUv+d*ca*2.).r;c.g=texture(uScene,vUv).g;c.b=texture(uScene,vUv-d*ca*2.).b;
   if(any(isnan(c))||any(isinf(c)))c=vec3(0.);
   c+=texture(uB1,vUv).rgb*uBloom+texture(uB2,vUv).rgb*uB2k;

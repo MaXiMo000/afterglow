@@ -14,6 +14,9 @@ Numbers must come from a named device and tool; anything estimated or not measur
 | 2026-09-25 | A3 | n/a (build output) | Initial JS gzip | 20.6 KB JS + 3.4 KB CSS (+ fonts ~110 KB woff2, cached) | <= 400 KB | `vite build` | Renderer included; no Three.js |
 | 2026-09-25 | A3 | Windows laptop, headless Chromium (ANGLE d3d11, real GPU), 1440x900 | Frame rate, fastapi/typer city, cinematic | 60 fps (vsync-capped) | 60 fps | rAF counter over 120 frames | Not a phone. Not a sustained profile |
 | 2026-09-25 | A3 | same, local stack | Hero ready incl. demo city (620 KB JSON) | 2.5 s | first frame <= 2.5 s on 4G | Playwright timing | Local network, desktop CPU: says nothing about 4G/mid-range Android |
+| 2026-09-25 | A4 | n/a (build output) | Initial JS gzip | 30.8 KB JS (incl. Lenis) + 4.3 KB CSS | <= 400 KB | `vite build` | |
+| 2026-09-25 | A4 | by construction | Camera latency to smoothed scroll | 0 frames | <= 1 frame | code: Lenis driven from our rAF, pose read in the same frame | Smoothing itself: lerp 0.14/frame, ~95% settled in ~20 frames (~330 ms at 60 Hz); **over the 150 ms target** in PLAN section 6 for large jumps. Tune in A7 with real devices |
+| 2026-09-25 | A4 | unit test | Reverse-scroll symmetry | pose(p) identical for 201 samples forward vs backward | exact | vitest `rig.test.ts` | Pure function of p; handheld noise is additive and time-based, outside the rig |
 
 Reference low-end device: budget Android class (Mali-G57 / Adreno 610, 4 GB), e.g. Galaxy A14 (PLAN section 6).
 **Not measured yet (no hardware in this environment):** any phone, the reference low-end device, 4G first frame, INP.
