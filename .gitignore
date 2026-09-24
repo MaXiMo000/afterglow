@@ -30,3 +30,8 @@ frontend/dist/
 Thumbs.db
 .idea/
 .vscode/
+
+# test output
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/

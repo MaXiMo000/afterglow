@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Apply GitHub-side security settings. NOT yet run against a real repo (see docs/HANDOVER.md);
-# each call is written from the GitHub REST docs - check the output and fix any 4xx.
+# Apply GitHub-side security settings. First run against MaXiMo000/afterglow on 2026-09-24: all calls ok,
+# settings read back and confirmed. Idempotent; safe to re-run.
 # Usage: ./scripts/harden-repo.sh owner repo
 set -uo pipefail
 OWNER="${1:?owner}"; REPO="${2:?repo}"
@@ -31,7 +31,7 @@ api -X PUT "repos/$OWNER/$REPO/actions/permissions/workflow" \
 # Protect main: PR + status checks, no force-push/deletion. Admin (you) can still bypass.
 gh api -X PUT "repos/$OWNER/$REPO/branches/main/protection" --input - >/dev/null <<'JSON' && echo "ok   branch protection" || echo "FAIL branch protection"
 {
-  "required_status_checks": { "strict": true, "contexts": ["backend", "frontend", "gitleaks"] },
+  "required_status_checks": { "strict": true, "contexts": ["backend", "frontend", "gitleaks", "codeql (python)", "codeql (javascript-typescript)", "codeql (actions)", "trivy", "semgrep"] },
   "enforce_admins": false,
   "required_pull_request_reviews": { "required_approving_review_count": 0 },
   "restrictions": null,

@@ -1,0 +1,79 @@
+# Static analysis and image scanning. Runs on PRs, main, and weekly so new advisories surface without a code change.
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codeql:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write # upload results to code scanning; nothing else is writable
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript, actions]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+          config: |
+            paths-ignore:
+              - prototype
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          category: /language:${{ matrix.language }}
+
+  trivy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # Pinned by digest; trivy-action is deliberately not used (tag hijack, March 2026, CVE-2026-33634).
+      TRIVY: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build images
+        run: |
+          docker build -t afterglow-api -f backend/Dockerfile.api backend
+          docker build -t afterglow-worker -f backend/Dockerfile.worker backend
+      - name: Scan images
+        run: |
+          for img in afterglow-api afterglow-worker; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY" \
+              image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$img"
+          done
+      - name: Scan Dockerfiles and compose
+        run: docker run --rm -v "$PWD:/src" "$TRIVY" config --exit-code 1 --severity HIGH,CRITICAL /src
+
+  semgrep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Semgrep
+        run: >
+          docker run --rm -v "$PWD:/src" -w /src
+          semgrep/semgrep:1.178.0@sha256:32e459968daabe7ab86968184a29109b9564aa00392401156f9788452b42786b
+          semgrep scan --config p/default --config p/python --config p/typescript --config p/dockerfile
+          --error --metrics=off --exclude prototype

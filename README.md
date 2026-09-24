@@ -4,8 +4,15 @@ Paste a public GitHub repository. Its history grows into a cinematic night city:
 lit windows are recent work, red beacons are hotspots, dark fog is code nobody touches, lanterns are people.
 Scroll through the story, then fly the city and scrub through time.
 
-**Status:** design + working visual prototype. The product (FastAPI backend, real data, production
-frontend) is not built yet. Start with `PROMPT.md`.
+**Status:** milestone A0 (bootstrap) done: monorepo, lockfiles, CI, security scanning, Caddy + strict CSP
+skeleton. There is no analysis or city yet; the visual prototype in `prototype/` uses simulated data.
+Afterglow is **not** yet claimed to be secure: see `docs/SECURITY.md` section 8.
+
+| Milestone | Status |
+| --- | --- |
+| A0 Bootstrap | done |
+| A1 Analysis core | next |
+| A2-A8 | planned (`docs/PLAN.md` section 5) |
 
 | Path | What |
 | --- | --- |
@@ -17,4 +24,20 @@ frontend) is not built yet. Start with `PROMPT.md`.
 | `docs/PROTOTYPE.md` | What the reference prototype does, what is wrong with it, how to port it |
 | `prototype/` | Reference implementation (single-file WebGL2, simulated data). Open `prototype/dist/afterglow.html` |
 | `docs/reference/` | Screenshots of the prototype |
+| `backend/` | FastAPI API (`app/`) and analysis worker (`worker/`), hash-pinned lockfiles |
+| `frontend/` | Vite + TypeScript strict SPA, vitest, Playwright e2e |
+| `deploy/` | Caddyfile (TLS, CSP, headers), compose stack, header checks |
+| `docs/PERF-LOG.md` | Measured performance numbers |
 | `scripts/` | `publish.sh` (create public repo + harden it), `harden-repo.sh` |
+
+## Develop
+
+Needs Python 3.12, Node 24 and Docker. Exact commands are in `CLAUDE.md`. Short version:
+
+```bash
+cd frontend && npm ci --ignore-scripts && npm run build && cd ..
+docker compose -f deploy/compose.yaml up -d --build --wait
+bash deploy/check-headers.sh
+```
+
+Then open https://localhost:8443 (Caddy's local CA, so the browser will warn once).

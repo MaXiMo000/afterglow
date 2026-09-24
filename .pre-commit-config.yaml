@@ -1,0 +1,26 @@
+# Install once: pip install pre-commit && pre-commit install
+# gitleaks runs from its pinned container image, so no Go toolchain is needed (Docker required).
+repos:
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: gitleaks (staged changes)
+        language: docker_image
+        entry: >-
+          --entrypoint sh
+          ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+          -c 'git config --global --add safe.directory /src && gitleaks git --pre-commit --staged --redact --no-banner /src'
+        pass_filenames: false
+        always_run: true
+      - id: ruff
+        name: ruff
+        language: system
+        entry: ruff check --force-exclude
+        types: [python]
+        files: ^backend/
+      - id: ruff-format
+        name: ruff format
+        language: system
+        entry: ruff format --check --force-exclude
+        types: [python]
+        files: ^backend/
