@@ -45,7 +45,8 @@ jobs:
         run: bandit -q -r app core worker egress
       - name: Tests (with Postgres)
         run: |
-          eval "$(../scripts/test-db.sh)"
+          env_lines="$(../scripts/test-db.sh)"  # assignment fails the step if the script fails
+          eval "$env_lines"
           pytest
       - name: Dependency audit
         run: pip-audit -r requirements-dev.lock --require-hashes --disable-pip --strict
