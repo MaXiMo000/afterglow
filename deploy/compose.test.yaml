@@ -1,0 +1,7 @@
+# Test-only override: exposes Postgres on localhost so pytest on the host can reach it. Docker does not publish
+# ports of containers that sit only on internal networks, so the test DB also joins `edge`. Never use in prod.
+# docker compose -f deploy/compose.yaml -f deploy/compose.test.yaml up -d --wait db
+services:
+  db:
+    ports: ["127.0.0.1:55432:5432"]
+    networks: [backend, worker, edge]

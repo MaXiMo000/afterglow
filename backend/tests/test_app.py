@@ -44,3 +44,8 @@ def test_unhandled_error_hides_details(prod_settings: Settings) -> None:
     assert r.json() == {"error": "internal"}
     assert "secret" not in r.text
     assert "Traceback" not in r.text
+
+
+def test_api_responses_are_not_cached_by_default(client: TestClient) -> None:
+    assert client.get("/healthz").headers["cache-control"] == "no-store"
+    assert client.get("/nope").headers["cache-control"] == "no-store"

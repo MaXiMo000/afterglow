@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+import sys
+
 import pytest
+
+if sys.platform == "win32":  # psycopg async cannot run on the Proactor loop (Windows dev machines only)
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 from fastapi.testclient import TestClient
 
 from app.main import create_app

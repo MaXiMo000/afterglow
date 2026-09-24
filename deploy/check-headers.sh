@@ -56,5 +56,15 @@ code="$(head -c 40000 /dev/zero | tr '\0' 'a' | curl -sSk -o /dev/null -w '%{htt
   -H 'Content-Type: application/json' -H 'Transfer-Encoding: chunked' --data-binary @- "$BASE/healthz" || true)"
 case "$code" in 413|405) ;; *) echo "FAIL chunked oversized body returned $code, want 413 or 405"; fail=1 ;; esac
 
+# A client cannot pick its own rate-limit identity: Caddy overwrites X-Real-IP (T11). Invalid bodies are
+# rejected before touching the database, so this burns only the rate budget of this runner's IP.
+codes=""
+for i in $(seq 1 12); do
+  codes="$codes $(curl -sSk -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+    -H 'X-Afterglow: 1' -H "X-Real-IP: 10.0.0.$i" -H "X-Forwarded-For: 10.0.1.$i" \
+    --data '{"repo":"bad/"}' "$BASE/api/v1/analyses")"
+done
+case "$codes" in *429*) ;; *) echo "FAIL spoofed X-Real-IP bypassed the rate limit:$codes"; fail=1 ;; esac
+
 [ "$fail" -eq 0 ] && echo "ok   all security headers present on $BASE"
 exit "$fail"

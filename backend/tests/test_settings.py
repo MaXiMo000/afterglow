@@ -8,6 +8,8 @@ BASE = {
     "AFTERGLOW_ENV": "prod",
     "AFTERGLOW_ALLOWED_HOSTS": "afterglow.dev",
     "AFTERGLOW_PUBLIC_ORIGIN": "https://afterglow.dev",
+    "AFTERGLOW_DATABASE_URL": "postgresql://afterglow_api@db/afterglow",
+    "AFTERGLOW_IP_KEY": "ab" * 32,
 }
 
 
@@ -48,7 +50,10 @@ def test_dev_allows_http_origin() -> None:
     assert s.public_origin == "http://localhost:5173"
 
 
-@pytest.mark.parametrize("key", ["AFTERGLOW_ALLOWED_HOSTS", "AFTERGLOW_PUBLIC_ORIGIN"])
+@pytest.mark.parametrize(
+    "key",
+    ["AFTERGLOW_ALLOWED_HOSTS", "AFTERGLOW_PUBLIC_ORIGIN", "AFTERGLOW_DATABASE_URL", "AFTERGLOW_IP_KEY"],
+)
 def test_missing_setting_fails_closed(key: str) -> None:
     with pytest.raises(ConfigError):
         load_settings({k: v for k, v in BASE.items() if k != key})
@@ -57,3 +62,15 @@ def test_missing_setting_fails_closed(key: str) -> None:
 def test_unknown_env_rejected() -> None:
     with pytest.raises(ConfigError):
         load_settings({**BASE, "AFTERGLOW_ENV": "debug"})
+
+
+@pytest.mark.parametrize("key", ["", "zz" * 32, "ab" * 31])
+def test_weak_or_bad_ip_key_rejected(key: str) -> None:
+    with pytest.raises(ConfigError):
+        load_settings({**BASE, "AFTERGLOW_IP_KEY": key})
+
+
+@pytest.mark.parametrize("url", ["", "sqlite:///x", "mysql://db", "http://db"])
+def test_bad_database_url_rejected(url: str) -> None:
+    with pytest.raises(ConfigError):
+        load_settings({**BASE, "AFTERGLOW_DATABASE_URL": url})

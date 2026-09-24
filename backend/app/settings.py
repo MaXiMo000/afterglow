@@ -23,6 +23,8 @@ class Settings:
     env: Env
     allowed_hosts: tuple[str, ...]
     public_origin: str
+    database_url: str = ""  # empty: DB-backed routes answer 503 (unit tests of the app shell)
+    ip_key: bytes = b""  # HMAC key for client-IP pseudonyms; raw IPs are never stored
 
     @property
     def is_prod(self) -> bool:
@@ -65,8 +67,22 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
     try:
         hosts_raw = source["AFTERGLOW_ALLOWED_HOSTS"]
         origin_raw = source["AFTERGLOW_PUBLIC_ORIGIN"]
+        db_raw = source["AFTERGLOW_DATABASE_URL"]
+        key_raw = source["AFTERGLOW_IP_KEY"]
     except KeyError as missing:
         raise ConfigError(f"missing required setting {missing.args[0]}") from None
+    if not db_raw.startswith("postgresql://"):
+        raise ConfigError("AFTERGLOW_DATABASE_URL must be a postgresql:// URL")
+    try:
+        ip_key = bytes.fromhex(key_raw)
+    except ValueError:
+        raise ConfigError("AFTERGLOW_IP_KEY must be hex") from None
+    if len(ip_key) < 32:
+        raise ConfigError("AFTERGLOW_IP_KEY must be at least 32 random bytes (64 hex chars)")
     return Settings(
-        env=env, allowed_hosts=_parse_hosts(hosts_raw), public_origin=_parse_origin(origin_raw, env)
+        env=env,
+        allowed_hosts=_parse_hosts(hosts_raw),
+        public_origin=_parse_origin(origin_raw, env),
+        database_url=db_raw,
+        ip_key=ip_key,
     )

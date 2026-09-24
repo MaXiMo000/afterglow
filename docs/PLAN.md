@@ -28,7 +28,8 @@ Browser (static SPA)  --https-->  Caddy (TLS, CSP, static, rate-limit at edge)
                               Result store (object storage or disk) keyed by owner/repo@sha
 ```
 - API never runs git. Workers never serve traffic. Different users, different containers, different networks.
-- Results are immutable, cached by `owner/repo@head_sha`, and served as compact JSON (or binary typed arrays) with `ETag`.
+- Results are immutable, cached by `owner/repo@head_sha`, stored in Postgres (validated on write and read) and served as
+  compact JSON with `ETag` and `Cache-Control: immutable`. No volume is shared between API and worker.
 - Private repos: **not supported on the hosted service.** Provide a local CLI (`afterglow scan .`) that produces the same result
   file offline; the user drags it into the page. Tokens never leave the user's machine.
 
@@ -46,16 +47,20 @@ Browser (static SPA)  --https-->  Caddy (TLS, CSP, static, rate-limit at edge)
 | Fallback 2D treemap + table | No-WebGL devices, screen readers, print |
 | Queue: Postgres `SELECT ... FOR UPDATE SKIP LOCKED` (not Redis) | One stateful service that also holds result metadata. Decided before A1 (owner-approved) |
 | Building height from the **current** tree only: one capped, batched blob fetch of HEAD's blobs, read as bytes to count lines, never checked out | A blobless clone has no file contents; lazy per-blob fetches during `git log` are slow and uncappable. History metrics use `--name-status` only. Decided before A1 (owner-approved) |
-| Result wire format: strict JSON for meta/insights + a versioned binary block (typed arrays) for per-file columns, both validated (lengths, finite numbers) | Meets the 1.5 MB payload budget without giving up strict schemas. Decided before A1 (owner-approved) |
+| Result wire format: strict JSON, compressed by Caddy (zstd/gzip). ~~Binary block for per-file columns~~ dropped in A2 | Measured: 62.5 KB gzip on the wire for 3,139 files, extrapolating to ~1 MB at the 50k-file cap, under the 1.5 MB budget. Revisit only if A3 measures JSON parse time as a frame-budget problem. Owner had approved the binary plan; this reverses it on evidence |
 | Metric definitions (A1): hotspot = >= 5 changes in the 12 months before HEAD by <= 3 authors, top 20; quiet = no change in the 2 years before HEAD; bus factor = fewest authors covering >= 50% of commits touching a district; coupling = co-change count / min(changes) over the latest 10k commits, ignoring commits touching > 20 files, min 3 co-changes | Needs no file contents. Bus factor is **commit-weighted, not line-weighted** (blame needs every historical blob); the UI must say so |
 | Time reference is HEAD's commit time, not wall-clock | Results are reproducible and cacheable by sha |
 | Districts = top-level directories; if one holds more than half the files it is split one level deeper | Monorepos (`src/`, `packages/`) still get useful districts |
 
 ## 4. API (v1)
-- `POST /api/v1/analyses` body `{"repo":"owner/name"}` -> `202 {"id","status"}` or `200` with cached result. Strict regex
+- `POST /api/v1/analyses` body `{"repo":"owner/name"}`, headers `Content-Type: application/json` and `X-Afterglow: 1`
+  -> `202 {"id","status":"queued"}` (new or deduplicated) or `200 {"id","status":"done"}` if a result under 1 h old exists.
+  Errors: `400 invalid_repo`, `403 forbidden`, `413 too_large`, `415`, `429 rate_limited|too_many_jobs`, `503 busy` (+ `Retry-After`). Strict regex
   `^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$`, not `.`/`..`, no URLs, no other hosts.
 - `GET /api/v1/analyses/{id}/events` -> SSE progress (`queued`, `cloning`, `parsing n/N`, `scoring`, `done`, `failed` with a safe reason code).
-- `GET /api/v1/analyses/{id}` -> result (schema below). `404` for unknown ids; ids are random, unguessable.
+- `GET /api/v1/analyses/{id}` -> `200` result (schema below), `409 not_ready`, `422 <reason>` for failed jobs, `404` unknown.
+  Ids are 32 lower-case hex chars (random UUIDv4). SSE frames: `{"status","stage","n","total"[,"reason"]}`; stages are
+  `queued, cloning, counting, parsing, sizing, scoring, done, failed`.
 - Result schema (strict, `extra=forbid`, bounded): `meta{repo,sha,generated_at,commits,files,people,span,truncated{files,commits}}`,
   `dirs[]`, `files[] {path,dir,loc,birth,last,changes_12m,authors,hot,dead}`, `coupling[] {a,b,strength}`,
   `people[] {handle,commits,areas}`, `insights{hotspots[],bus_factor[],quiet[],coupling[]}`, `timeline[]`.

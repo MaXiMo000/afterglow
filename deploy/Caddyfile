@@ -40,9 +40,14 @@
 
 	@api path /api/* /healthz
 	handle @api {
-		header Cache-Control "no-store"
+		# Cache-Control comes from the API: no-store by default, immutable for results.
 		reverse_proxy api:8000 {
+			# The only client IP the API trusts; any client-sent value is overwritten (rate limits, T11).
+			header_up X-Real-IP {remote_host}
+			header_up -X-Forwarded-For
 			header_down -Server
+			# Stream SSE progress without buffering.
+			flush_interval -1
 		}
 	}
 
