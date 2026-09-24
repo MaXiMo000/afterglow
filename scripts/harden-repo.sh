@@ -31,7 +31,7 @@ api -X PUT "repos/$OWNER/$REPO/actions/permissions/workflow" \
 # Protect main: PR + status checks, no force-push/deletion. Admin (you) can still bypass.
 gh api -X PUT "repos/$OWNER/$REPO/branches/main/protection" --input - >/dev/null <<'JSON' && echo "ok   branch protection" || echo "FAIL branch protection"
 {
-  "required_status_checks": { "strict": true, "contexts": ["backend", "frontend", "gitleaks"] },
+  "required_status_checks": { "strict": true, "contexts": ["backend", "frontend", "gitleaks", "codeql (python)", "codeql (javascript-typescript)", "codeql (actions)", "trivy", "semgrep"] },
   "enforce_admins": false,
   "required_pull_request_reviews": { "required_approving_review_count": 0 },
   "restrictions": null,
