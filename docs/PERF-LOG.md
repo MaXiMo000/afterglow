@@ -19,6 +19,9 @@ Numbers must come from a named device and tool; anything estimated or not measur
 | 2026-09-25 | A4 | unit test | Reverse-scroll symmetry | pose(p) identical for 201 samples forward vs backward | exact | vitest `rig.test.ts` | Pure function of p; handheld noise is additive and time-based, outside the rig |
 | 2026-09-25 | A5 | n/a (build output) | Initial JS gzip | 39.7 KB JS + ~5 KB CSS | <= 400 KB | `vite build` | All explore tools included |
 | 2026-09-25 | A5 | unit test | Zoom-to-cursor error | < 1.5 px at 1200x800 after a 0.7x zoom | point stays under cursor | vitest `camera.test.ts` | |
+| 2026-09-25 | A6 | n/a (build output) | Initial JS gzip | 41.9 KB JS + ~6 KB CSS | <= 400 KB | `vite build` | All effects included |
+| 2026-09-25 | A6 | Windows laptop, headless Chromium (ANGLE d3d11) | Story + city, cinematic, with DOF/flare/rays | no console errors; frame rate **not re-measured** | 60 fps | Playwright walkthrough | Extra passes: half-res DOF blur (3-5 passes), 20-tap rays, 1 ripple draw of N instances. Needs real-device profiling in A7 |
+| 2026-09-25 | A6 | same, 3 parallel software-GPU pages | Long e2e walkthrough under stress | page crashes on both A5 and A6 builds | n/a | `--repeat-each=6 --workers=3` | Local machine overload, not a regression; CI uses 2 workers |
 
 Reference low-end device: budget Android class (Mali-G57 / Adreno 610, 4 GB), e.g. Galaxy A14 (PLAN section 6).
 **Not measured yet (no hardware in this environment):** any phone, the reference low-end device, 4G first frame, INP.

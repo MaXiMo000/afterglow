@@ -46,6 +46,7 @@ const ERROR_TEXT: Record<string, string> = {
   busy: 'The service is busy. Please try again in a minute.',
   worker_lost: 'The analysis was interrupted. Please try again.',
   unavailable: 'The service is unavailable right now.',
+  no_files: 'This repository has no files at its latest commit, so there is no city to draw.',
 };
 
 export class App {
@@ -58,7 +59,7 @@ export class App {
   private readonly cam = new OrbitCamera();
   private readonly P: Params = {
     t: 1, fog: FOG, hot: 0.5, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.035, ca: 1,
-    arcs: 1, lanterns: 1, cmp: [0, 0, 0],
+    arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1,
   }; // prettier-ignore
   private time = 0;
   private last = 0;
@@ -92,6 +93,8 @@ export class App {
   private photo = false;
   private exportNext = false;
   private pendingView: View | null = null;
+  private loadFrac = 0; // real analysis progress 0..1, drives the city un-building during loading (A6)
+  private lastRepo = '';
   private readonly held = new Set<string>();
   private readonly palette = new Palette();
   private readonly inspector = new Inspector((i) => this.select(i));
@@ -257,6 +260,10 @@ export class App {
       return;
     }
     setText($('#formErr'), '');
+    this.lastRepo = `${repo.owner}/${repo.name}`;
+    this.loadFrac = 0;
+    $('#loadActions').hidden = true;
+    $('#btnCancel').hidden = false;
     this.abort?.abort();
     const abort = new AbortController();
     this.abort = abort;
@@ -289,7 +296,8 @@ export class App {
             const order = ['queued', 'cloning', 'counting', 'parsing', 'sizing', 'scoring', 'done'];
             const base = Math.max(0, order.indexOf(p.stage)) / (order.length - 1);
             const within = p.stage === 'parsing' && p.total ? (p.n / p.total) / (order.length - 1) : 0;
-            bar.style.width = `${Math.round(Math.min(1, base + within) * 100)}%`;
+            this.loadFrac = Math.min(1, base + within);
+            bar.style.width = `${Math.round(this.loadFrac * 100)}%`;
           },
           abort.signal,
         );
@@ -299,6 +307,7 @@ export class App {
       line('Drawing the city');
       const r = await fetchResult(id);
       if (abort.signal.aborted) return;
+      if (!r.files.length) throw new ApiError('no_files');
       bar.style.width = '100%';
       this.demo = false;
       this.show(r);
@@ -320,8 +329,16 @@ export class App {
     } catch (e) {
       if (abort.signal.aborted) return;
       const code = e instanceof ApiError ? e.code : 'unavailable';
-      line(ERROR_TEXT[code] ?? 'Something went wrong. Please try again.', 'fail');
-      this.announce(ERROR_TEXT[code] ?? 'Analysis failed.');
+      const offline = !navigator.onLine;
+      const text = offline ? 'You appear to be offline. Check your connection and try again.' : (ERROR_TEXT[code] ?? 'Something went wrong. Please try again.');
+      line(text, 'fail');
+      this.announce(text);
+      // Empty/error state (A6): always offer a way forward, never a dead end.
+      const retry = !['invalid_repo', 'not_found', 'empty_repo', 'no_files', 'too_large'].includes(code) || offline;
+      $('#btnRetry').hidden = !retry;
+      $('#loadActions').hidden = false;
+      $('#btnCancel').hidden = true; // nothing left to cancel; Back covers it
+      ($(retry ? '#btnRetry' : '#btnBack') as HTMLButtonElement).focus();
     }
   }
 
@@ -558,7 +575,7 @@ export class App {
   private paletteItems(): Item[] {
     const r = this.result;
     if (!r || this.demo) return [];
-    const items: Item[] = KEYMAP.map((k) => ({ kind: 'action', label: k.label, hint: k.keys.join(' / '), key: `a:${k.id}`, run: () => this.run(k.id) }));
+    const items: Item[] = KEYMAP.map((k) => ({ kind: 'action', label: k.label, hint: k.keys.join(' or '), key: `a:${k.id}`, run: () => this.run(k.id) }));
     r.dirs.forEach((d, i) =>
       items.push({ kind: 'district', label: `${d.name}/`, hint: `district \u00b7 ${fmt(d.files)} files`, key: `d:${i}`, run: () => this.flyToDistrict(i) }),
     );
@@ -639,6 +656,11 @@ export class App {
       },
       { passive: true },
     );
+    $('#btnRetry').addEventListener('click', () => void this.analyse(this.lastRepo));
+    $('#btnBack').addEventListener('click', () => {
+      this.setMode(this.result && !this.demo ? 'city' : 'hero');
+      if (this.mode === 'hero') ($('#repoInput') as HTMLInputElement).focus();
+    });
     $('#btnCancel').addEventListener('click', () => {
       this.abort?.abort();
       this.setMode(this.result && !this.demo ? 'city' : 'hero');
@@ -655,7 +677,8 @@ export class App {
     addEventListener('blur', () => this.held.clear());
     addEventListener('keydown', (e) => {
       const active = document.activeElement as HTMLElement | null;
-      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(active?.tagName ?? '');
+      // An input inside a just-closed dialog can stay activeElement until the browser's focus fixup runs.
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(active?.tagName ?? '') && !active?.closest('dialog:not([open])');
       if (document.querySelector('dialog[open]')) return; // dialogs handle their own keys (Esc closes)
       if (e.key === 'Escape') {
         // Back out one level: photo -> table -> panels/selection/compare -> story.
@@ -933,7 +956,9 @@ export class App {
     } else if (this.mode !== 'story') {
       P.hot = 0.5;
       P.fog = FOG * 1.15;
-      P.t = 1;
+      // Loading is a scene (A6): the background city un-builds in step with real analysis progress.
+      const goal = this.mode === 'loading' ? 1 - 0.92 * this.loadFrac : 1;
+      P.t = reduced ? goal : P.t + (goal - P.t) * (1 - Math.exp(-dt * 2.5));
       P.exposure = 1;
       if (!reduced) this.cam.goal.yaw += dt * 0.03; // slow drift behind the hero and loading log
     } else {
@@ -975,6 +1000,36 @@ export class App {
       tgt = [lerp(b.tgt[0], tgt[0], e), lerp(b.tgt[1], tgt[1], e), lerp(b.tgt[2], tgt[2], e)];
       fov = lerp(b.fov, fov, e);
       if (b.k >= 1) this.blend = null;
+    }
+    // A6 effects. Depth of field: story pulls focus onto each chapter's subject; the city focuses the selection or
+    // the orbit target; the hero stays soft behind the text.
+    const w0 = this.world;
+    const dist = (a: Vec, b: Vec): number => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    let focus = dist(pos, tgt);
+    if (sf && w0) {
+      const at = this.story.chapters[sf.pose.chapter]?.callout?.at;
+      if (at) focus = dist(pos, at as Vec);
+    } else if (this.mode === 'city' && w0 && this.selected >= 0) {
+      focus = dist(pos, [w0.pos[this.selected * 3]!, w0.pos[this.selected * 3 + 1]!, w0.pos[this.selected * 3 + 2]!]);
+    }
+    P.focusDist += (focus - (P.focusDist || focus)) * (1 - Math.exp(-dt * 4)); // focus pulls glide, never snap
+    P.dof = this.mode === 'story' ? 1 : this.mode === 'city' ? (this.photo ? 1 : 0.55) : 0.4;
+    P.motion = reduced ? 0 : 1;
+    P.sel = this.mode === 'city' ? this.selected : -1;
+    const liftGoal = this.mode === 'city' && P.hover >= 0 && !reduced ? 1 : 0;
+    P.lift += (liftGoal - P.lift) * (1 - Math.exp(-dt * 10));
+    // Camera shake: very small, only close to hotspot beams, never with reduced motion.
+    if (!reduced && w0 && w0.hot.length && (this.mode === 'city' || this.mode === 'story')) {
+      let near = Infinity;
+      for (const fi of w0.hot) near = Math.min(near, Math.hypot(pos[0] - w0.pos[fi * 3]!, pos[2] - w0.pos[fi * 3 + 2]!));
+      const amp = 0.09 * smoothstep(42, 12, near) * P.hot;
+      if (amp > 1e-3) {
+        const t = this.time;
+        const sx = Math.sin(t * 23.1) * 0.6 + Math.sin(t * 37.7) * 0.4;
+        const sy = Math.sin(t * 29.3) * 0.6 + Math.sin(t * 17.9) * 0.4;
+        pos = [pos[0] + sx * amp, pos[1] + sy * amp, pos[2]];
+        tgt = [tgt[0] + sx * amp * 0.5, tgt[1] + sy * amp * 0.5, tgt[2]];
+      }
     }
     this.fov = fov;
     this.lastPose = { pos, tgt };

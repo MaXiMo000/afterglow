@@ -87,9 +87,26 @@ jobs:
       - name: Playwright browser
         working-directory: frontend
         run: npx playwright install --with-deps chromium
-      - name: E2E (CSP, Trusted Types, same-origin only)
+      - name: E2E (CSP, Trusted Types, same-origin only, visual baselines)
         working-directory: frontend
-        run: npm run e2e
+        # "missing" only writes baselines that do not exist yet; existing ones are compared as usual.
+        run: npm run e2e -- --update-snapshots=missing
+      - name: Visual baselines are committed
+        run: |
+          changed="$(git status --porcelain -- frontend/tests/e2e/visual.spec.ts-snapshots)"
+          if [ -n "$changed" ]; then
+            echo "::error::New or changed visual baselines. Review the 'visual-baselines' artifact and commit it."
+            echo "$changed"
+            exit 1
+          fi
+      - name: Upload new visual baselines for review
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: visual-baselines
+          path: frontend/tests/e2e/visual.spec.ts-snapshots
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Stack logs on failure
         if: failure()
         run: docker compose -f deploy/compose.yaml logs --no-color

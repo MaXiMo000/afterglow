@@ -8,6 +8,8 @@ export default defineConfig({
   // Each page renders a 3k-building city, on a software GPU in CI: keep contention low.
   workers: process.env['CI'] ? 2 : 3,
   expect: { timeout: 15_000 },
+  // Visual baselines exist for Linux only (CI renders them; see .github/workflows/visual-baselines.yml).
+  ignoreSnapshots: process.platform !== 'linux',
   timeout: 60_000,
   forbidOnly: !!process.env['CI'],
   retries: 0,

@@ -139,7 +139,7 @@ export class Insights {
     if (this.tab === 'hot')
       for (const i of r.insights.hotspots) {
         const f = r.files[i]!;
-        add(f.path, `${fmt(f.changes_12m)} / 12 mo`, `${fmt(f.authors)} authors all time \u00b7 last ${ago(f.last, now)}`, () => this.onFile(i), 'bad');
+        add(f.path, `${fmt(f.changes_12m)} / 12 mo`, `${fmt(f.authors)} ${f.authors === 1 ? 'author' : 'authors'} all time \u00b7 last ${ago(f.last, now)}`, () => this.onFile(i), 'bad');
       }
     if (this.tab === 'bus')
       for (const d of r.insights.bus_factor) {
@@ -175,7 +175,7 @@ export function renderHelp(root: HTMLElement): void {
       groups.set(def.group, dl);
       sections.push(el('h3', def.group), dl);
     }
-    dl.append(el('dt', def.keys.join(' / ')), el('dd', def.label));
+    dl.append(el('dt', def.keys.join(' or ')), el('dd', def.label));
   }
   root.replaceChildren(...sections);
 }

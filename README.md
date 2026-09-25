@@ -7,7 +7,9 @@ Scroll through the story, then fly the city and scrub through time.
 **Status:** A0-A5 done: paste a public repo, watch real analysis progress, scroll a short film built from its
 history, then explore the city with the full toolset: zoom toward the cursor, inertia, presets, search (/),
 inspector, insights, timeline playback, compare two dates, mini-map, share links, photo mode with PNG export, and a
-keyboard map (?). The effects pass is next (A6). The hero background is a real, dated analysis of fastapi/fastapi.
+keyboard map (?). The effects pass (A6) adds depth of field, lens flare and god rays, birth ripples, commit-flow
+pulses, hover lift, lantern trails and a loading scene driven by real progress. Accessibility and device performance
+hardening are next (A7). The hero background is a real, dated analysis of fastapi/fastapi.
 Afterglow is **not** yet claimed to be secure: see `docs/SECURITY.md` section 8.
 
 | Milestone | Status |
@@ -18,8 +20,9 @@ Afterglow is **not** yet claimed to be secure: see `docs/SECURITY.md` section 8.
 | A3 Frontend foundation | done |
 | A4 Scroll story | done |
 | A5 Explore | done |
-| A6 Effects + UI polish | next |
-| A7-A8 | planned (`docs/PLAN.md` section 5) |
+| A6 Effects + UI polish | done |
+| A7 Accessibility + performance hardening | next |
+| A8 | planned (`docs/PLAN.md` section 5) |
 
 | Path | What |
 | --- | --- |

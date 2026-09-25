@@ -189,7 +189,7 @@ export function buildCamera(pos: V3, tgt: V3, width: number, height: number, far
   const vp = mul(perspective(fov, aspect, 0.4, far), lookAt(pos, tgt, [0, 1, 0]));
   const f = norm(sub(tgt, pos));
   const r = norm(cross(f, [0, 1, 0]));
-  return { vp, vpR: reflectVP(vp), pos, posR: [pos[0], -pos[1], pos[2]], right: r, up: cross(r, f), fwd: f, tanH: Math.tan(fov / 2) };
+  return { vp, vpR: reflectVP(vp), pos, posR: [pos[0], -pos[1], pos[2]], right: r, up: cross(r, f), fwd: f, tanH: Math.tan(fov / 2), near: 0.4, far };
 }
 
 /** World-space ray through a canvas point (CSS px) for the given camera. */

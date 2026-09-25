@@ -9,17 +9,20 @@ import { mirrorY, rng, type M4, type V3 } from './math';
 import { SRC } from './shaders';
 import { INST, type World } from '../world/build';
 
-export type Tier = { name: 'simple' | 'balanced' | 'cinematic'; dpr: number; refl: number; bloom: 0 | 1 | 2; msaa: number; mist: number; cloud: number; fire: number };
+export type Tier = { name: 'simple' | 'balanced' | 'cinematic'; dpr: number; refl: number; bloom: 0 | 1 | 2; msaa: number; mist: number; cloud: number; fire: number; dof: 0 | 1 | 2; flare: 0 | 1 | 2 };
 export const TIERS: readonly Tier[] = [
-  { name: 'simple', dpr: 1.0, refl: 0, bloom: 0, msaa: 0, mist: 0, cloud: 0, fire: 60 },
-  { name: 'balanced', dpr: 1.25, refl: 0.35, bloom: 1, msaa: 0, mist: 10, cloud: 1, fire: 120 },
-  { name: 'cinematic', dpr: 1.75, refl: 0.5, bloom: 2, msaa: 4, mist: 26, cloud: 1, fire: 220 },
+  { name: 'simple', dpr: 1.0, refl: 0, bloom: 0, msaa: 0, mist: 0, cloud: 0, fire: 60, dof: 0, flare: 0 },
+  { name: 'balanced', dpr: 1.25, refl: 0.35, bloom: 1, msaa: 0, mist: 10, cloud: 1, fire: 120, dof: 1, flare: 1 },
+  { name: 'cinematic', dpr: 1.75, refl: 0.5, bloom: 2, msaa: 4, mist: 26, cloud: 1, fire: 220, dof: 2, flare: 2 },
 ];
 
-export type Camera = { vp: M4; vpR: M4; pos: V3; posR: V3; right: V3; up: V3; fwd: V3; tanH: number };
+export type Camera = { vp: M4; vpR: M4; pos: V3; posR: V3; right: V3; up: V3; fwd: V3; tanH: number; near: number; far: number };
 export type Params = { t: number; fog: number; hot: number; focus: number; focusAmt: number; hover: number; fade: number; exposure: number; grain: number; ca: number;
   /** Explore toggles (A5): coupling arcs, lanterns, and compare mode [on, fromT, toT] in normalised history time. */
-  arcs: number; lanterns: number; cmp: [number, number, number] };
+  arcs: number; lanterns: number; cmp: [number, number, number];
+  /** Effects (A6): hover lift 0..1, selected file (-1 none), focus distance for depth of field (0 off), DOF amount,
+   *  motion 0/1 (reduced motion turns off ripples, heartbeat and trails). */
+  lift: number; sel: number; focusDist: number; dof: number; motion: number };
 
 const FOG_COL: V3 = [0.075, 0.17, 0.19];
 const MOON: V3 = [-0.42, 0.36, -0.83];
@@ -29,7 +32,8 @@ const MAX_FIRE = 220;
 const MAX_MIST = 26;
 
 type Prog = { p: WebGLProgram; u: Record<string, WebGLUniformLocation | null> };
-type Target = { f: WebGLFramebuffer; t: WebGLTexture | null; rbs: WebGLRenderbuffer[]; w: number; h: number };
+type Target = { f: WebGLFramebuffer; t: WebGLTexture | null; rbs: WebGLRenderbuffer[]; w: number; h: number; d?: WebGLTexture };
+const TRAIL = 8; // lantern trail samples
 
 export class RendererError extends Error {}
 
@@ -45,12 +49,15 @@ export class Renderer {
   private cw = 2;
   private ch = 2;
   private world: World | null = null;
-  private vaos: { bld?: WebGLVertexArrayObject; pad?: WebGLVertexArrayObject; beam?: WebGLVertexArrayObject; fire?: WebGLVertexArrayObject; lant?: WebGLVertexArrayObject; mist?: WebGLVertexArrayObject; water?: WebGLVertexArrayObject; curves: WebGLVertexArrayObject[] } = { curves: [] };
+  private vaos: { bld?: WebGLVertexArrayObject; pad?: WebGLVertexArrayObject; beam?: WebGLVertexArrayObject; fire?: WebGLVertexArrayObject; lant?: WebGLVertexArrayObject; mist?: WebGLVertexArrayObject; water?: WebGLVertexArrayObject; ripple?: WebGLVertexArrayObject; curves: WebGLVertexArrayObject[] } = { curves: [] };
   private buffers: WebGLBuffer[] = [];
   private n = 0;
   private padCount = 0;
   private lanternBuf: WebGLBuffer | null = null;
   private lanternCount = 0;
+  private trail: Float32Array | null = null; // TRAIL past positions per lantern, newest first
+  private trailOut: Float32Array | null = null; // reused upload buffer (no per-frame allocation)
+  private trailAt = 0;
   private cube!: { vb: WebGLBuffer; ib: WebGLBuffer };
   private nullTex: WebGLTexture;
   private pickState: { fbo: WebGLFramebuffer; rb: WebGLRenderbuffer; depth: WebGLRenderbuffer; pbo: WebGLBuffer; fence: WebGLSync | null; resolve: ((id: number) => void) | null } | null = null;
@@ -248,10 +255,20 @@ export class Renderer {
       this.buf(fc), this.attr(2, 3);
     });
     this.lanternCount = w.lanterns.length;
-    const lm = new Float32Array(this.lanternCount * 4);
-    const lc = new Float32Array(this.lanternCount * 3);
-    for (let i = 0; i < this.lanternCount; i++) lm.set([0.9, i / Math.max(1, this.lanternCount), 0, 2.2], i * 4), lc.set([1, 0.78, 0.45], i * 3);
-    this.lanternBuf = this.buf(new Float32Array(this.lanternCount * 3), gl.DYNAMIC_DRAW);
+    // A6: each lantern draws its head plus TRAIL fading samples of where it has been.
+    const pts = this.lanternCount * (1 + TRAIL);
+    const lm = new Float32Array(pts * 4);
+    const lc = new Float32Array(pts * 3);
+    for (let i = 0; i < this.lanternCount; i++)
+      for (let k = 0; k <= TRAIL; k++) {
+        const j = i * (1 + TRAIL) + k;
+        lm.set([k ? 0.55 - k * 0.04 : 0.9, i / Math.max(1, this.lanternCount), 0, k ? 0.9 * (1 - k / (TRAIL + 1)) ** 1.6 : 2.2], j * 4);
+        lc.set([1, 0.78, 0.45], j * 3);
+      }
+    this.trail = new Float32Array(this.lanternCount * TRAIL * 3);
+    this.trailOut = new Float32Array(pts * 3);
+    this.trailAt = 0;
+    this.lanternBuf = this.buf(new Float32Array(pts * 3), gl.DYNAMIC_DRAW);
     this.vaos.lant = this.vao(() => {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.lanternBuf);
       this.attr(0, 3);
@@ -259,7 +276,15 @@ export class Renderer {
       this.buf(lc), this.attr(2, 3);
     });
 
-    // Hotspot beams.
+    // Ripples and the selection ring share the building instance buffer (A6).
+    this.vaos.ripple = this.vao(() => {
+      this.buf(new Float32Array([-1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, 1])), this.attr(0, 2);
+      gl.bindBuffer(gl.ARRAY_BUFFER, instVB);
+      this.attr(2, 4, INST * 4, 0, 1);
+      this.attr(3, 4, INST * 4, 16, 1);
+    });
+
+    // Hotspot beams (instance 0 is the hottest: it gets the heartbeat).
     const hd = new Float32Array(w.hot.length * 4);
     w.hot.forEach((fi, i) => hd.set([w.pos[fi * 3]!, w.pos[fi * 3 + 1]!, w.pos[fi * 3 + 2]!, w.inst[fi * INST + 5]!], i * 4));
     this.vaos.beam = this.vao(() => {
@@ -292,7 +317,7 @@ export class Renderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     return t;
   }
-  private mkFBO(w0: number, h0: number, depth: boolean): Target {
+  private mkFBO(w0: number, h0: number, depth: boolean | 'texture'): Target {
     const gl = this.gl;
     const w = Math.max(2, w0 | 0);
     const h = Math.max(2, h0 | 0);
@@ -301,6 +326,18 @@ export class Renderer {
     const t = this.mkTex(w, h);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
     const rbs: WebGLRenderbuffer[] = [];
+    if (depth === 'texture') {
+      // Sampled by the depth-of-field pass (A6).
+      const d = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, d);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, w, h, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, d, 0);
+      return { f, t, rbs, w, h, d };
+    }
     if (depth) {
       const rb = gl.createRenderbuffer()!;
       gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
@@ -334,6 +371,7 @@ export class Renderer {
     const gl = this.gl;
     gl.deleteFramebuffer(o.f);
     if (o.t) gl.deleteTexture(o.t);
+    if (o.d) gl.deleteTexture(o.d);
     for (const rb of o.rbs) gl.deleteRenderbuffer(rb);
   }
 
@@ -345,7 +383,11 @@ export class Renderer {
     this.tier = tier;
     this.cw = w;
     this.ch = h;
-    this.T['scene'] = this.mkFBO(w, h, true);
+    this.T['scene'] = this.mkFBO(w, h, 'texture');
+    if (tier.dof) {
+      this.T['dofa'] = this.mkFBO(w / 2, h / 2, false);
+      this.T['dofb'] = this.mkFBO(w / 2, h / 2, false);
+    }
     if (tier.msaa && this.maxSamples >= tier.msaa) {
       const ms = this.mkMS(w, h, Math.min(tier.msaa, this.maxSamples));
       if (ms) this.T['ms'] = ms;
@@ -444,6 +486,7 @@ export class Renderer {
     gl.uniform1f(u['uFocus']!, P.focus);
     gl.uniform1f(u['uFocusAmt']!, P.focusAmt);
     gl.uniform1f(u['uHover']!, refl ? -1 : P.hover);
+    gl.uniform1f(u['uLift']!, refl ? 0 : P.lift);
     gl.uniform3fv(u['uPal']!, PAL);
     gl.uniform3fv(u['uCmp']!, refl ? [0, 0, 0] : P.cmp);
     gl.bindVertexArray(this.vaos.bld!);
@@ -453,6 +496,14 @@ export class Renderer {
     gl.depthMask(false);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
+    u = this.use('ripple');
+    gl.uniformMatrix4fv(u['uVP']!, false, vp);
+    gl.uniform1f(u['uT']!, P.t);
+    gl.uniform1f(u['uSel']!, P.sel);
+    gl.uniform1f(u['uTime']!, time);
+    gl.uniform1f(u['uMotion']!, P.motion);
+    gl.bindVertexArray(this.vaos.ripple!);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.n);
     u = this.use('line');
     gl.uniformMatrix4fv(u['uVP']!, false, vp);
     gl.uniform1f(u['uT']!, P.t);
@@ -471,6 +522,7 @@ export class Renderer {
       gl.uniform1f(u['uT']!, P.t);
       gl.uniform1f(u['uTime']!, time);
       gl.uniform1f(u['uHot']!, P.hot);
+      gl.uniform1f(u['uBeat']!, P.motion);
       gl.bindVertexArray(this.vaos.beam!);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, w.hot.length);
     }
@@ -486,7 +538,7 @@ export class Renderer {
     if (this.lanternCount && P.lanterns) {
       gl.uniform1f(u['uMotion']!, 0);
       gl.bindVertexArray(this.vaos.lant!);
-      gl.drawArrays(gl.POINTS, 0, this.lanternCount);
+      gl.drawArrays(gl.POINTS, 0, this.lanternCount * (P.motion ? 1 + TRAIL : 1));
     }
     if (this.tier.mist) {
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -515,9 +567,24 @@ export class Renderer {
     if (!this.world || this.isLost) return;
     const gl = this.gl;
     const T = this.T;
-    if (lanterns && this.lanternBuf) {
+    if (lanterns && this.lanternBuf && this.trail) {
+      // Head + trail per lantern; the trail samples positions every ~70 ms so it fades behind the lantern.
+      const n = this.lanternCount;
+      const tr = this.trail;
+      if (time - this.trailAt > 0.07) {
+        this.trailAt = time;
+        for (let i = 0; i < n; i++) {
+          tr.copyWithin(i * TRAIL * 3 + 3, i * TRAIL * 3, (i + 1) * TRAIL * 3 - 3);
+          tr.set(lanterns.subarray(i * 3, i * 3 + 3), i * TRAIL * 3);
+        }
+      }
+      const out = this.trailOut!;
+      for (let i = 0; i < n; i++) {
+        out.set(lanterns.subarray(i * 3, i * 3 + 3), i * (1 + TRAIL) * 3);
+        out.set(tr.subarray(i * TRAIL * 3, (i + 1) * TRAIL * 3), i * (1 + TRAIL) * 3 + 3);
+      }
       gl.bindBuffer(gl.ARRAY_BUFFER, this.lanternBuf);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, lanterns);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, out);
     }
     for (let i = 2; i >= 0; i--) {
       gl.activeTexture(gl.TEXTURE0 + i);
@@ -532,7 +599,7 @@ export class Renderer {
     if (T['ms']) {
       gl.bindFramebuffer(gl.READ_FRAMEBUFFER, T['ms'].f);
       gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, T['scene']!.f);
-      gl.blitFramebuffer(0, 0, this.cw, this.ch, 0, 0, this.cw, this.ch, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      gl.blitFramebuffer(0, 0, this.cw, this.ch, 0, 0, this.cw, this.ch, gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT, gl.NEAREST);
     }
     gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.BLEND);
@@ -566,6 +633,28 @@ export class Renderer {
         pass(T['b2b'], T['b2a'], 0, 1.6);
       }
     }
+    // Depth of field source: a half-resolution blurred copy of the scene (wider on the high tier).
+    const dofA = T['dofa'];
+    const dofB = T['dofb'];
+    if (dofA && dofB && P.dof > 0 && P.focusDist > 0) {
+      const blurPass = (src: WebGLTexture | null, sw: number, sh: number, dst: Target, dx: number, dy: number): void => {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, dst.f);
+        gl.viewport(0, 0, dst.w, dst.h);
+        gl.bindTexture(gl.TEXTURE_2D, src);
+        this.tri('blur', (u) => {
+          gl.uniform1i(u['uTex']!, 0);
+          gl.uniform2f(u['uDir']!, dx / sw, dy / sh);
+        });
+      };
+      const r = this.tier.dof > 1 ? 2.2 : 1.3;
+      blurPass(scene.t, this.cw, this.ch, dofA, 0, 0);
+      blurPass(dofA.t, dofA.w, dofA.h, dofB, r, 0);
+      blurPass(dofB.t, dofB.w, dofB.h, dofA, 0, r);
+      if (this.tier.dof > 1) {
+        blurPass(dofA.t, dofA.w, dofA.h, dofB, r * 1.7, r * 0.9);
+        blurPass(dofB.t, dofB.w, dofB.h, dofA, -r * 0.9, r * 1.7);
+      }
+    }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, this.cw, this.ch);
     const bind = (unit: number, t: WebGLTexture | null): void => {
@@ -576,10 +665,22 @@ export class Renderer {
     bind(0, scene.t);
     bind(1, T['b1a']?.t ?? dummy);
     bind(2, (T['b2a'] ?? T['b1a'])?.t ?? dummy);
+    bind(3, dofA?.t ?? dummy);
+    bind(4, scene.d ?? null);
+    const moon = this.moonScreen(C);
     this.tri('comp', (u) => {
       gl.uniform1i(u['uScene']!, 0);
       gl.uniform1i(u['uB1']!, 1);
       gl.uniform1i(u['uB2']!, 2);
+      gl.uniform1i(u['uDof']!, 3);
+      gl.uniform1i(u['uDepth']!, 4);
+      gl.uniform1f(u['uDofAmt']!, dofA && P.focusDist > 0 ? P.dof : 0);
+      gl.uniform1f(u['uFocusD']!, P.focusDist);
+      gl.uniform1f(u['uNear']!, C.near);
+      gl.uniform1f(u['uFar']!, C.far);
+      gl.uniform1f(u['uFlare']!, this.tier.bloom ? this.tier.flare : 0);
+      gl.uniform1f(u['uRays']!, this.tier.bloom && this.tier.flare > 1 ? 1 : 0);
+      gl.uniform3fv(u['uMoon']!, moon);
       gl.uniform1f(u['uBloom']!, this.tier.bloom ? 0.9 : 0);
       gl.uniform1f(u['uB2k']!, this.tier.bloom > 1 ? 1.1 : 0);
       gl.uniform1f(u['uExp']!, P.exposure);
@@ -589,6 +690,18 @@ export class Renderer {
       gl.uniform1f(u['uCA']!, P.ca);
     });
     this.resolvePick();
+  }
+
+  /** Moon position in screen UV (x, y) and visibility (z), for god rays. */
+  private moonScreen(C: Camera): [number, number, number] {
+    const p: V3 = [C.pos[0] + MOON[0] * 800, C.pos[1] + MOON[1] * 800, C.pos[2] + MOON[2] * 800];
+    const m = C.vp;
+    const w = m[3]! * p[0] + m[7]! * p[1] + m[11]! * p[2] + m[15]!;
+    if (w <= 0) return [0, 0, 0];
+    const x = ((m[0]! * p[0] + m[4]! * p[1] + m[8]! * p[2] + m[12]!) / w) * 0.5 + 0.5;
+    const y = ((m[1]! * p[0] + m[5]! * p[1] + m[9]! * p[2] + m[13]!) / w) * 0.5 + 0.5;
+    const edge = Math.max(Math.abs(x - 0.5), Math.abs(y - 0.5));
+    return [x, y, Math.max(0, Math.min(1, (0.85 - edge) / 0.35))];
   }
 
   // ---------- GPU picking: 1x1 ID pass under the cursor, read back without stalling ----------

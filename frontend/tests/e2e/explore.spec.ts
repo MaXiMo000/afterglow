@@ -45,6 +45,7 @@ async function openCity(page: Page): Promise<void> {
 const key = (page: Page, k: string) => page.keyboard.press(k);
 
 test('every explore feature is reachable by keyboard alone', async ({ page }) => {
+  test.slow(); // walks through every feature in one test
   await openCity(page);
 
   // Help overlay lists the keys; Esc closes it.
