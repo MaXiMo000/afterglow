@@ -263,6 +263,7 @@ export class App {
     this.lastRepo = `${repo.owner}/${repo.name}`;
     this.loadFrac = 0;
     $('#loadActions').hidden = true;
+    $('#btnCancel').hidden = false;
     this.abort?.abort();
     const abort = new AbortController();
     this.abort = abort;
@@ -336,6 +337,7 @@ export class App {
       const retry = !['invalid_repo', 'not_found', 'empty_repo', 'no_files', 'too_large'].includes(code) || offline;
       $('#btnRetry').hidden = !retry;
       $('#loadActions').hidden = false;
+      $('#btnCancel').hidden = true; // nothing left to cancel; Back covers it
       ($(retry ? '#btnRetry' : '#btnBack') as HTMLButtonElement).focus();
     }
   }
@@ -573,7 +575,7 @@ export class App {
   private paletteItems(): Item[] {
     const r = this.result;
     if (!r || this.demo) return [];
-    const items: Item[] = KEYMAP.map((k) => ({ kind: 'action', label: k.label, hint: k.keys.join(' / '), key: `a:${k.id}`, run: () => this.run(k.id) }));
+    const items: Item[] = KEYMAP.map((k) => ({ kind: 'action', label: k.label, hint: k.keys.join(' or '), key: `a:${k.id}`, run: () => this.run(k.id) }));
     r.dirs.forEach((d, i) =>
       items.push({ kind: 'district', label: `${d.name}/`, hint: `district \u00b7 ${fmt(d.files)} files`, key: `d:${i}`, run: () => this.flyToDistrict(i) }),
     );
@@ -675,7 +677,8 @@ export class App {
     addEventListener('blur', () => this.held.clear());
     addEventListener('keydown', (e) => {
       const active = document.activeElement as HTMLElement | null;
-      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(active?.tagName ?? '');
+      // An input inside a just-closed dialog can stay activeElement until the browser's focus fixup runs.
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(active?.tagName ?? '') && !active?.closest('dialog:not([open])');
       if (document.querySelector('dialog[open]')) return; // dialogs handle their own keys (Esc closes)
       if (e.key === 'Escape') {
         // Back out one level: photo -> table -> panels/selection/compare -> story.
