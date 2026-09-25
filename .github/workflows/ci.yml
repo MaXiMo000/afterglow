@@ -29,6 +29,8 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/requirements-dev.lock
+      - name: git >= 2.44 (needed for --no-lazy-fetch)
+        run: git --version && git --no-lazy-fetch version
       - name: Install (hash-pinned)
         run: |
           python -m pip install --require-hashes --no-deps -r requirements-dev.lock
@@ -38,9 +40,9 @@ jobs:
           ruff check .
           ruff format --check .
       - name: Types
-        run: mypy --strict app worker
+        run: mypy --strict app core worker egress
       - name: Bandit
-        run: bandit -q -r app worker
+        run: bandit -q -r app core worker egress
       - name: Tests
         run: pytest
       - name: Dependency audit

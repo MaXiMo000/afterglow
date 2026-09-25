@@ -1,9 +1,9 @@
 # Analysis worker image. Separate from the API (SECURITY T4): its own image, user, network and egress policy.
-# git is the only extra tool; it is only ever run against bare, blobless clones (A1).
-FROM python:3.12-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e
+# git >= 2.44 is required for --no-lazy-fetch (trixie ships 2.47). git only ever runs on bare clones.
+FROM python:3.12-slim-trixie@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
+    AFTERGLOW_SCRATCH=/scratch AFTERGLOW_STORE=/store
 WORKDIR /srv
 
 RUN apt-get update \
@@ -12,9 +12,11 @@ RUN apt-get update \
 
 COPY requirements.lock .
 RUN pip install --require-hashes --no-deps -r requirements.lock \
- && useradd --system --uid 10002 --no-create-home --shell /usr/sbin/nologin worker
+ && useradd --system --uid 10002 --no-create-home --shell /usr/sbin/nologin worker \
+ && mkdir -p /scratch /store && chown 10002:10002 /scratch /store
 
+COPY core ./core
 COPY worker ./worker
 
 USER 10002:10002
-CMD ["python", "-m", "worker"]
+ENTRYPOINT ["python", "-m", "worker"]
