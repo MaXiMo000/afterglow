@@ -6,9 +6,9 @@ requires-python = ">=3.12,<3.13"
 license = "MIT"
 dependencies = [
   "fastapi>=0.141.1",
-  "uvicorn>=0.38",
-  "psycopg[binary]>=3.3",
-  "psycopg-pool>=3.3",
+  "uvicorn>=0.53.0",
+  "psycopg[binary]>=3.3.6",
+  "psycopg-pool>=3.3.2",
 ]
 
 [project.optional-dependencies]
@@ -18,8 +18,8 @@ dev = [
   "ruff>=0.16.8",
   "mypy>=2.3.1",
   "bandit>=1.9.4",
-  "pip-audit>=2.9",
-  "setuptools>=75",
+  "pip-audit>=2.10.1",
+  "setuptools>=84.0.0",
 ]
 
 [build-system]
