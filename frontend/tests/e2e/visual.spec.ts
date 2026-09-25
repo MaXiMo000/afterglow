@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-// A6 visual regression baselines for the UI chrome. The WebGL canvas (and anything anchored to it) is masked: GPU
+// A6 visual regression baselines for the UI chrome. The WebGL canvas (and anything anchored to it) is hidden: GPU
 // output is not pixel-deterministic across drivers. Baselines are Linux-only (generated in CI by the
 // visual-baselines workflow); other platforms skip the comparison (see playwright.config.ts ignoreSnapshots).
 const ID = 'd'.repeat(32);
@@ -40,12 +40,26 @@ const settle = async (page: Page): Promise<void> => {
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(1200);
 };
-const shot = (page: Page, name: string, extraMasks: string[] = []) =>
-  expect(page).toHaveScreenshot(name, {
-    animations: 'disabled',
-    mask: ['#gl', '#callout', '#minimap', ...extraMasks].map((s) => page.locator(s)),
-    maxDiffPixelRatio: 0.01,
+/**
+ * Hide what is not pixel-deterministic (WebGL output, the 3D-anchored callout, the mini-map drawn from the live
+ * camera) with visibility:hidden. Playwright's `mask` paints over the element's whole box on top of everything, and
+ * the canvas fills the viewport, so masking would hide the UI too. Setting style via CSSOM is allowed by the CSP.
+ */
+async function shot(page: Page, name: string): Promise<void> {
+  await page.evaluate(() => {
+    for (const id of ['gl', 'callout', 'minimap']) {
+      const el = document.getElementById(id);
+      if (el) el.style.visibility = 'hidden';
+    }
   });
+  await expect(page).toHaveScreenshot(name, { animations: 'disabled', maxDiffPixelRatio: 0.01 });
+  await page.evaluate(() => {
+    for (const id of ['gl', 'callout', 'minimap']) {
+      const el = document.getElementById(id);
+      if (el) el.style.visibility = '';
+    }
+  });
+}
 
 test('hero', async ({ page }) => {
   await page.goto('/?quality=simple');
