@@ -7,6 +7,13 @@
     <meta name="theme-color" content="#060a11" />
     <meta name="description" content="Paste a public GitHub repository and watch its history grow into a night city: hotspots, quiet quarters, bus factor and hidden coupling." />
     <title>Afterglow</title>
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/node_modules/@fontsource/cormorant-garamond/files/cormorant-garamond-latin-400-normal.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/node_modules/@fontsource/cormorant-garamond/files/cormorant-garamond-latin-400-italic.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/node_modules/@fontsource/instrument-sans/files/instrument-sans-latin-400-normal.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/node_modules/@fontsource/instrument-sans/files/instrument-sans-latin-500-normal.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/node_modules/@fontsource/instrument-sans/files/instrument-sans-latin-600-normal.woff2" />
     <script type="module" src="/src/main.ts"></script>
   </head>
   <body class="mode-hero">
@@ -105,7 +112,7 @@
       </div>
       <p id="toast" role="status" hidden></p>
 
-      <section id="tableView" aria-labelledby="tableTitle" hidden>
+      <section id="tableView" aria-labelledby="tableTitle" tabindex="0" hidden>
         <div class="table-head">
           <h2 id="tableTitle">Districts and files</h2>
           <p class="sub" id="tableNote"></p>

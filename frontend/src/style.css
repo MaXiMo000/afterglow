@@ -1,11 +1,5 @@
 /* Afterglow UI. Colours, type, spacing and motion come from src/tokens.ts via virtual:tokens.css. */
-@import '@fontsource/cormorant-garamond/latin-400.css';
-@import '@fontsource/cormorant-garamond/latin-400-italic.css';
-@import '@fontsource/ibm-plex-mono/latin-400.css';
-@import '@fontsource/ibm-plex-mono/latin-500.css';
-@import '@fontsource/instrument-sans/latin-400.css';
-@import '@fontsource/instrument-sans/latin-500.css';
-@import '@fontsource/instrument-sans/latin-600.css';
+@import './fonts.css';
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -48,7 +42,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: radial-gradient(circle at 35% 35%, #ffe2b0, var(--color-amber) 45%, #c2492f 100%); }
 .repo { color: var(--color-dim); letter-spacing: 0.06em; text-transform: none; border-left: 1px solid var(--color-line); padding-left: var(--space-3); }
 .repo:empty { display: none; }
-.actions { display: flex; gap: var(--space-2); }
+.actions { display: flex; flex: 1; justify-content: flex-end; gap: var(--space-2); } /* fills the bar: chips appearing never move it (CLS) */
 .chip { white-space: nowrap; background: var(--color-glass); border: 1px solid var(--color-line); border-radius: var(--radius-sm); padding: 6px 11px;
   font: 500 var(--size-xs) var(--font-mono); letter-spacing: 0.08em; backdrop-filter: blur(8px);
   transition: border-color var(--motion-base) var(--motion-ease-out), background var(--motion-base) var(--motion-ease-out), transform var(--motion-fast); }
@@ -66,7 +60,7 @@ main > section { position: fixed; z-index: var(--z-panel); }
 .field { display: flex; align-items: center; gap: var(--space-2); flex: 1 1 300px; min-width: 0; background: var(--color-glass);
   border: 1px solid var(--color-line); border-radius: var(--radius-sm); padding: 0 14px; backdrop-filter: blur(10px);
   transition: border-color var(--motion-base); }
-.field:focus-within { border-color: var(--color-amber); }
+.field:focus-within { border-color: var(--color-amber); outline: 2px solid var(--color-amber); outline-offset: 3px; }
 .field span { font: var(--size-sm) var(--font-mono); color: var(--color-faint); white-space: nowrap; }
 .field input { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--color-text); font: 14px var(--font-mono); padding: 15px 0; outline: none; }
 .go { background: var(--color-amber); color: #1a0f06; border: 0; border-radius: var(--radius-sm); padding: 0 24px; min-height: 48px; font-weight: 600;
