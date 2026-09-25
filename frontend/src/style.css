@@ -253,6 +253,28 @@ dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
 .status-quiet { color: var(--color-sky); }
 .noscript { position: fixed; inset: auto var(--gutter) 40px; z-index: var(--z-toast); }
 
+
+/* A6 motion language: mode changes and panels fade and rise instead of popping (disabled with reduced motion) */
+#hero, #loading, #city, #story, #tableView, .panel, #timeline, #compareLegend, #minimap, #photoBar, #toast, #tip, dialog, .chip {
+  transition-property: opacity, translate, display, overlay, border-color, background, transform;
+  transition-duration: var(--motion-slow), var(--motion-slow), var(--motion-slow), var(--motion-slow), var(--motion-base), var(--motion-base), var(--motion-fast);
+  transition-timing-function: var(--motion-ease-out);
+  transition-behavior: allow-discrete;
+}
+@starting-style {
+  #hero:not([hidden]), #loading:not([hidden]), #city:not([hidden]), #story:not([hidden]), #tableView:not([hidden]),
+  .panel:not([hidden]), #timeline:not([hidden]), #compareLegend:not([hidden]), #minimap:not([hidden]), #photoBar:not([hidden]), #toast:not([hidden]) {
+    opacity: 0;
+    translate: 0 10px;
+  }
+  dialog[open] { opacity: 0; translate: 0 -8px; }
+}
+dialog::backdrop { transition: opacity var(--motion-base) var(--motion-ease-out), display var(--motion-base) allow-discrete, overlay var(--motion-base) allow-discrete; }
+@starting-style { dialog[open]::backdrop { opacity: 0; } }
+.chip:focus-visible, .go:focus-visible { box-shadow: 0 0 0 4px rgba(255, 180, 94, 0.18); }
+.go:active, .chip:active { transform: translateY(1px) scale(0.98); }
+.load-actions { display: flex; gap: 18px; align-items: center; }
+
 @media (max-width: 760px) {
   .repo, #hints, #minimap { display: none; }
   #timeline { grid-template-columns: auto 1fr; }

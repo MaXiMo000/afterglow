@@ -61,14 +61,15 @@ void main(){
   } else rc=skyColor(reflect(-V,N));
   vec3 c=mix(deep,rc,refl);
   vec3 Lm=normalize(uMoonDir);vec3 R=reflect(-Lm,N);
-  c+=vec3(.75,.88,1.)*pow(max(dot(R,V),0.),220.)*min(2.2,60./(dist+20.));
+  float far=smoothstep(25.,260.,dist);/* A6: filtered glint - wider, dimmer highlight with distance */
+  c+=vec3(.75,.88,1.)*pow(max(dot(R,V),0.),mix(220.,28.,far))*min(2.2,60./(dist+20.))*mix(1.,.22,far);
   float fg=1.-exp(-dist*uFog*.7);
   c=mix(c,uFogCol,fg*.9);
   o=vec4(c,1.);
 }`};
 
 const BUILDING_COMMON=`
-uniform mat4 uVP;uniform float uT,uTime;
+uniform mat4 uVP;uniform float uT,uTime,uHover,uLift;
 `;
 SRC.bld={vs:H+`
 layout(location=0) in vec3 aPos;layout(location=1) in vec3 aNor;
@@ -80,13 +81,16 @@ void main(){
   float ge=1.-pow(1.-g,3.);ge*=1.+.06*sin(g*3.14159);
   if(g<=0.){gl_Position=vec4(2.,2.,2.,1.);return;}
   float h=iB.x*ge;
-  vec3 w=vec3(iA.x+aPos.x*iA.z,.28+aPos.y*h,iA.y+aPos.z*iA.w);
+  /* A6: hover lift - the hovered building rises a little */
+  float lift=step(abs(float(gl_InstanceID)-uHover),.5)*uLift;
+  h*=1.+.07*lift;
+  vec3 w=vec3(iA.x+aPos.x*iA.z,.28+.35*lift+aPos.y*h,iA.y+aPos.z*iA.w);
   vW=w;vN=aNor;vXZ=aPos.xz+.5;vSize=iA.zw;vB=iB;vC=iC;vG=g;vTop=.28+h;vInst=float(gl_InstanceID);vDist=iD.x;
   gl_Position=uVP*vec4(w,1.);
 }`,
 fs:H+NOISE+`
 in vec3 vW;in vec3 vN;in vec2 vXZ;in vec2 vSize;in vec4 vB;in vec4 vC;in float vG;in float vTop;flat in float vInst;flat in float vDist;
-uniform float uT,uTime,uFog,uHot,uFocus,uFocusAmt,uHover;uniform vec3 uCam,uFogCol,uCmp;uniform vec3 uPal[5];/* PORT: 5 palette kinds, not 12 districts */
+uniform float uT,uTime,uFog,uHot,uFocus,uFocusAmt,uHover,uLift;uniform vec3 uCam,uFogCol,uCmp;uniform vec3 uPal[5];/* PORT: 5 palette kinds, not 12 districts */
 out vec4 o;
 void main(){
   vec3 N=normalize(vN);vec3 tc=uCam-vW;float dist=length(tc);vec3 V=tc/dist;
@@ -133,7 +137,8 @@ void main(){
     col=mix(col,tint*.55,.7);emis=mix(emis*.25,tint*1.1*win,.65);
   }
   float hv=step(abs(vInst-uHover),.5);
-  col+=vec3(.20,.42,.5)*hv*(.5+rim*2.);emis+=vec3(.2,.5,.6)*hv*.6*win;
+  col+=vec3(.20,.42,.5)*hv*(.5+rim*2.);emis+=vec3(.2,.5,.6)*hv*.6*win+warm*hv*lit*win*.8*uLift;
+  if(uHover>-.5&&hv<.5){col*=mix(1.,.8,uLift);emis*=mix(1.,.78,uLift);} /* A6: neighbours dim */
   vec3 c=col+emis;
   float fg=1.-exp(-dist*uFog);fg*=mix(1.,.5,smoothstep(0.,18.,vW.y));
   c=mix(c,uFogCol,fg);
@@ -166,7 +171,10 @@ void main(){
 
 SRC.line={vs:H+`layout(location=0) in vec3 aP;layout(location=1) in float aU;uniform mat4 uVP;out float vU;void main(){vU=aU;gl_Position=uVP*vec4(aP,1.);}`,
 fs:H+`in float vU;uniform float uT,uTime,uBirth,uS,uVis;out vec4 o;
-void main(){float v=smoothstep(uBirth,uBirth+.05,uT);float p=fract(vU*2.-uTime*.12);float pulse=.25+.75*smoothstep(.82,1.,p);o=vec4(vec3(.35,.85,.8)*pulse*uS*v*uVis*.8,1.);}`};
+void main(){float v=smoothstep(uBirth,uBirth+.05,uT);
+  /* A6: commit-flow pulses - packets travel faster along arcs with more co-change */
+  float p=fract(vU*3.-uTime*(.06+.34*uS));float pulse=.18+.82*smoothstep(.9,1.,p)+.5*smoothstep(.985,1.,p);
+  o=vec4(vec3(.35,.85,.8)*pulse*(.35+.65*uS)*v*uVis*.8,1.);}`};
 
 SRC.pts={vs:H+`
 layout(location=0) in vec3 aPos;layout(location=1) in vec4 aP;layout(location=2) in vec3 aCol;
@@ -184,14 +192,18 @@ fs:H+`in vec3 vCol;in float vI;out vec4 o;void main(){float r=length(gl_PointCoo
 
 SRC.beam={vs:H+`
 layout(location=0) in vec2 aQ;layout(location=1) in vec4 iP;
-uniform mat4 uVP;uniform vec3 uCam;out vec2 vQ;out float vB;
+uniform mat4 uVP;uniform vec3 uCam;out vec2 vQ;out float vB;flat out float vTop;
 void main(){
-  vec3 tc=uCam-iP.xyz;tc.y=0.;vec3 r=normalize(cross(vec3(0.,1.,0.),tc));
+  vec3 tc=uCam-iP.xyz;tc.y=0.;vec3 r=normalize(cross(vec3(0.,1.,0.),tc)+vec3(1e-4,0.,0.));
   vec3 w=iP.xyz+r*aQ.x*.9+vec3(0.,aQ.y*28.,0.);
-  vQ=aQ;vB=iP.w;gl_Position=uVP*vec4(w,1.);
+  vQ=aQ;vB=iP.w;vTop=gl_InstanceID==0?1.:0.;gl_Position=uVP*vec4(w,1.);
 }`,
-fs:H+`in vec2 vQ;in float vB;uniform float uT,uTime,uHot;out vec4 o;
-void main(){float vis=smoothstep(vB+.04,vB+.08,uT)*uHot;float a=pow(max(1.-vQ.y,0.),1.7)*pow(max(1.-abs(vQ.x),0.),2.2);/* PORT: clamp; MSAA extrapolates varyings past the quad edge and pow(negative) is NaN */float pulse=.7+.3*sin(uTime*2.1+vB*40.);o=vec4(vec3(1.,.30,.22)*a*pulse*vis*1.6,a*vis);}`};
+fs:H+`in vec2 vQ;in float vB;flat in float vTop;uniform float uT,uTime,uHot,uBeat;out vec4 o;
+void main(){float vis=smoothstep(vB+.04,vB+.08,uT)*uHot;float a=pow(max(1.-vQ.y,0.),1.7)*pow(max(1.-abs(vQ.x),0.),2.2);/* PORT: clamp; MSAA extrapolates varyings past the quad edge and pow(negative) is NaN */float pulse=.7+.3*sin(uTime*2.1+vB*40.);
+  /* A6: heartbeat on the hottest beacon (~1.1 Hz double beat) */
+  float ph=fract(uTime*1.1);float beat=exp(-ph*10.)+.55*exp(-max(ph-.2,0.)*10.)*step(.2,ph);
+  pulse+=vTop*uBeat*beat*.9;
+  o=vec4(vec3(1.,.30,.22)*a*pulse*vis*1.6,a*vis);}`};
 
 SRC.mist={vs:H+`
 layout(location=0) in vec2 aQ;layout(location=1) in vec4 iP;
@@ -215,13 +227,34 @@ c+=(texture(uTex,vUv+uDir*1.).rgb+texture(uTex,vUv-uDir*1.).rgb)*.194;
 c+=(texture(uTex,vUv+uDir*2.).rgb+texture(uTex,vUv-uDir*2.).rgb)*.122;
 c+=(texture(uTex,vUv+uDir*3.).rgb+texture(uTex,vUv-uDir*3.).rgb)*.054;
 c+=(texture(uTex,vUv+uDir*4.).rgb+texture(uTex,vUv-uDir*4.).rgb)*.016;o=vec4(c,1.);}`};
-SRC.comp={vs:H+FS_TRI,fs:H+NOISE+`in vec2 vUv;uniform sampler2D uScene,uB1,uB2;uniform float uBloom,uB2k,uExp,uFade,uTime,uGrain,uCA;out vec4 o;
+SRC.comp={vs:H+FS_TRI,fs:H+NOISE+`in vec2 vUv;uniform sampler2D uScene,uB1,uB2,uDof,uDepth;uniform float uBloom,uB2k,uExp,uFade,uTime,uGrain,uCA;
+uniform float uDofAmt,uFocusD,uNear,uFar,uFlare,uRays;uniform vec3 uMoon;out vec4 o;
+float linDepth(float d){float z=d*2.-1.;return 2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear));}
 vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}
 void main(){
   vec2 d=vUv-.5;float ca=.0022*dot(d,d)*4.*uCA;/* PORT: scaled by scroll velocity (EXPERIENCE section 1) */
   vec3 c;c.r=texture(uScene,vUv+d*ca*2.).r;c.g=texture(uScene,vUv).g;c.b=texture(uScene,vUv-d*ca*2.).b;
   if(any(isnan(c))||any(isinf(c)))c=vec3(0.);
+  /* A6: depth of field - blend toward a blurred copy by circle of confusion around the focus distance */
+  if(uDofAmt>0.&&uFocusD>0.){
+    float z=linDepth(texture(uDepth,vUv).r);
+    float coc=clamp(abs(z-uFocusD)/(uFocusD*.9+6.),0.,1.);coc=smoothstep(.08,1.,coc)*uDofAmt;
+    vec3 b=texture(uDof,vUv).rgb;if(any(isnan(b))||any(isinf(b)))b=c;
+    c=mix(c,b,coc);
+  }
   c+=texture(uB1,vUv).rgb*uBloom+texture(uB2,vUv).rgb*uB2k;
+  /* A6: lens flare ghosts from bright areas, and god rays streaming from the moon */
+  if(uFlare>0.){
+    vec2 gv=(vec2(.5)-vUv)*.42;vec3 fl=vec3(0.);
+    for(int i=1;i<4;i++){vec2 off=fract(vUv+gv*float(i));float wt=pow(max(1.-length(vec2(.5)-off)/.707,0.),6.);
+      fl+=texture(uB1,off).rgb*wt*(i==1?vec3(1.,.6,.5):i==2?vec3(.5,.8,1.):vec3(.8,.5,1.));}
+    c+=fl*.18*uFlare;
+  }
+  if(uRays>0.&&uMoon.z>0.){
+    vec2 dl=(vUv-uMoon.xy)/20.;vec2 st=vUv;float dec=1.;vec3 ry=vec3(0.);
+    for(int i=0;i<20;i++){st-=dl;ry+=texture(uB1,clamp(st,0.,1.)).rgb*dec;dec*=.9;}
+    c+=ry*.045*uRays*uMoon.z;
+  }
   c*=uExp;c=aces(c);
   float lum=dot(c,vec3(.299,.587,.114));
   c=mix(c*vec3(.90,1.02,1.07),c*vec3(1.07,.985,.95),smoothstep(.3,.85,lum));
@@ -243,3 +276,21 @@ void main(){
 }`,
 fs:H+`flat in int vId;out vec4 o;
 void main(){o=vec4(float(vId&255),float((vId>>8)&255),float((vId>>16)&255),255.)/255.;}`};
+
+/* A6: building birth ripple on the pad as history passes a file's creation (a pure function of uT, so it plays
+   backwards too), plus a steady selection ring. Uses the building instance buffer. */
+SRC.ripple={vs:H+`
+layout(location=0) in vec2 aQ;layout(location=2) in vec4 iA;layout(location=3) in vec4 iB;
+uniform mat4 uVP;uniform float uT,uSel,uTime,uMotion;out vec2 vQ;out float vA;flat out float vS;
+void main(){
+  float sel=step(abs(float(gl_InstanceID)-uSel),.5);
+  float age=(uT-iB.y)/.02;
+  float live=step(0.,age)*step(age,1.)*uMotion;
+  if(live<.5&&sel<.5){gl_Position=vec4(2.,2.,2.,1.);return;}
+  float r=sel>.5?max(iA.z,iA.w)*.75+.55+.06*sin(uTime*3.)*uMotion:.6+age*3.2;
+  vQ=aQ;vA=sel>.5?.85:(1.-age)*(1.-age);vS=sel;
+  gl_Position=uVP*vec4(iA.x+aQ.x*r,.31,iA.y+aQ.y*r,1.);
+}`,
+fs:H+`in vec2 vQ;in float vA;flat in float vS;out vec4 o;
+void main(){float d=length(vQ);float ring=smoothstep(.7,.86,d)*(1.-smoothstep(.9,1.,d));
+  o=vec4(mix(vec3(.45,.95,1.),vec3(1.,.72,.38),vS)*ring*vA*1.5,1.);}`};

@@ -169,7 +169,10 @@ export function buildWorld(result: Result): World {
     d.act = list.length ? actSum / list.length : 0;
   }
 
-  const hot = files.map((f, i) => (f.hot ? i : -1)).filter((i) => i >= 0);
+  const hot = files
+    .map((f, i) => (f.hot ? i : -1))
+    .filter((i) => i >= 0)
+    .sort((a, b) => files[b]!.changes_12m - files[a]!.changes_12m || a - b); // hottest first: it gets the heartbeat
 
   // Coupling arcs between districts: file-level co-change pairs summed per district pair (strongest 16).
   const pairCount = new Map<string, number>();
