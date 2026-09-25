@@ -12,6 +12,10 @@ updates:
     schedule: { interval: weekly }
     cooldown: { default-days: 7 }
     open-pull-requests-limit: 5
+    ignore:
+      # @types/node must match the Node major we run (24: CI, engines); bump both together by hand.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
