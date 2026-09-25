@@ -4,17 +4,18 @@ Paste a public GitHub repository. Its history grows into a cinematic night city:
 lit windows are recent work, red beacons are hotspots, dark fog is code nobody touches, lanterns are people.
 Scroll through the story, then fly the city and scrub through time.
 
-**Status:** A0 (bootstrap) and A1 (analysis core) done. The worker analyses real public repositories
-(`docker compose -f deploy/compose.yaml run --rm worker owner/name`); there is no public API or city yet, and
-the visual prototype in `prototype/` still uses simulated data.
+**Status:** A0-A2 done: the API queues analyses of real public repositories, streams progress over SSE and serves
+strict, validated results; the worker runs sandboxed with GitHub-only egress. There is no city UI yet (A3); the
+visual prototype in `prototype/` still uses simulated data.
 Afterglow is **not** yet claimed to be secure: see `docs/SECURITY.md` section 8.
 
 | Milestone | Status |
 | --- | --- |
 | A0 Bootstrap | done |
 | A1 Analysis core | done |
-| A2 API + SSE + limits | next |
-| A3-A8 | planned (`docs/PLAN.md` section 5) |
+| A2 API + SSE + limits | done |
+| A3 Frontend foundation | next |
+| A4-A8 | planned (`docs/PLAN.md` section 5) |
 
 | Path | What |
 | --- | --- |
@@ -37,8 +38,9 @@ Afterglow is **not** yet claimed to be secure: see `docs/SECURITY.md` section 8.
 Needs Python 3.12, Node 24 and Docker. Exact commands are in `CLAUDE.md`. Short version:
 
 ```bash
+scripts/dev-env.sh
 cd frontend && npm ci --ignore-scripts && npm run build && cd ..
-docker compose -f deploy/compose.yaml up -d --build --wait
+docker compose -f deploy/compose.yaml --profile worker up -d --build --wait
 bash deploy/check-headers.sh
 ```
 

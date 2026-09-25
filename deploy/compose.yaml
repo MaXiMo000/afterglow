@@ -1,5 +1,6 @@
-# Local stack: Caddy (TLS + headers + static) -> API. Worker is isolated on its own network (A1 adds egress policy).
-# Build the frontend first (`npm run build` in frontend/), then: docker compose -f deploy/compose.yaml up -d --build --wait
+# Local stack: Caddy (TLS + headers + static) -> API -> Postgres <- worker -> egress proxy -> github.com.
+# First run: scripts/dev-env.sh (random secrets into deploy/.env), build the frontend (`npm run build` in
+# frontend/), then: docker compose -f deploy/compose.yaml --profile worker up -d --build --wait
 name: afterglow
 
 x-hardening: &hardening
@@ -33,24 +34,51 @@ services:
       AFTERGLOW_ENV: prod
       AFTERGLOW_ALLOWED_HOSTS: localhost,api
       AFTERGLOW_PUBLIC_ORIGIN: https://localhost:8443
+      AFTERGLOW_DATABASE_URL: postgresql://afterglow_api:${AFTERGLOW_DB_API_PASSWORD:?run scripts/dev-env.sh}@db/afterglow
+      AFTERGLOW_IP_KEY: ${AFTERGLOW_IP_KEY:?run scripts/dev-env.sh}
     tmpfs: [/tmp]
     networks: [backend]
+    depends_on:
+      db: { condition: service_healthy }
     mem_limit: 512m
 
-  # One-shot until A2 adds the queue: docker compose -f deploy/compose.yaml run --rm worker owner/name
+  db:
+    <<: *hardening
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    # The entrypoint starts as root to fix data-dir ownership, then drops to the postgres user.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    environment:
+      POSTGRES_DB: afterglow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run scripts/dev-env.sh}
+      AFTERGLOW_DB_API_PASSWORD: ${AFTERGLOW_DB_API_PASSWORD:?run scripts/dev-env.sh}
+      AFTERGLOW_DB_WORKER_PASSWORD: ${AFTERGLOW_DB_WORKER_PASSWORD:?run scripts/dev-env.sh}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./db/init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql.in:ro
+    tmpfs: [/tmp, /var/run/postgresql]
+    networks: [backend, worker]  # API and worker both need it; it has no route out (both are internal)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d afterglow"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    mem_limit: 512m
+
   worker:
     <<: *hardening
     build: { context: ../backend, dockerfile: Dockerfile.worker }
     profiles: [worker]
-    restart: "no"
+    command: ["serve"]
     environment:
       AFTERGLOW_GIT_PROXY: http://egress:3128
-    # Scratch is tmpfs, capped; clones never touch a persistent disk. Store holds only schema-valid results.
+      AFTERGLOW_WORKER_DATABASE_URL: postgresql://afterglow_worker:${AFTERGLOW_DB_WORKER_PASSWORD:?run scripts/dev-env.sh}@db/afterglow
+    # Scratch is tmpfs, capped; clones never touch a persistent disk. Fresh directory per job.
     tmpfs: ["/scratch:size=1100m,uid=10002,gid=10002,mode=0700"]
-    volumes: ["worker_store:/store"]
-    networks: [worker]  # internal: no route anywhere except the egress proxy
+    networks: [worker]  # internal: only the egress proxy and the database are reachable
     depends_on:
       egress: { condition: service_started }
+      db: { condition: service_healthy }
     mem_limit: 1g
     cpus: 1.0
 
@@ -70,4 +98,4 @@ networks:
 
 volumes:
   caddy_data: {}
-  worker_store: {}
+  db_data: {}

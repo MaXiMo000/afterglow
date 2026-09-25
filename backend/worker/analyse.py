@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -63,7 +64,9 @@ class FileStats:
     authors_12m: set[int] = field(default_factory=set)
 
 
-def parse_log(chunks: object, caps: Caps) -> tuple[list[Commit], bool]:
+def parse_log(
+    chunks: object, caps: Caps, tick: Callable[[int], None] | None = None
+) -> tuple[list[Commit], bool]:
     """Parse `git log -z --name-status --format=%x00%H%x00%at%x00%an` output, newest first.
 
     Tokens are NUL-separated; an empty token starts a commit (paths and statuses are never empty). Anything
@@ -96,7 +99,11 @@ def parse_log(chunks: object, caps: Caps) -> tuple[list[Commit], bool]:
             if tok in (b"", b"\n"):  # record boundary; a lone newline follows a commit with no file changes
                 if rec:
                     flush(rec)
+                    if tick and len(commits) % 2000 == 0:
+                        tick(len(commits))
                     if len(commits) >= caps.commits:
+                        if tick:
+                            tick(len(commits))
                         return commits, True
                 rec = []
             elif rec is None:
@@ -110,6 +117,8 @@ def parse_log(chunks: object, caps: Caps) -> tuple[list[Commit], bool]:
         rec.append(tail)
     if rec:
         flush(rec)
+    if tick:
+        tick(len(commits))
     return commits, False
 
 
@@ -333,20 +342,35 @@ def co_change(commits: list[Commit], file_index: dict[bytes, int], files: list[F
     return [Coupling(a=a, b=b, count=n, strength=min(1.0, s)) for s, n, a, b in scored[:MAX_COUPLING]]
 
 
-def analyse(repo: RepoRef, scratch: Path, caps: Caps, *, url: str | None = None) -> Result:
+Progress = Callable[[str, int, int], None]  # (stage, n, total); stages match the jobs.stage column
+
+
+def analyse(
+    repo: RepoRef, scratch: Path, caps: Caps, *, url: str | None = None, progress: Progress | None = None
+) -> Result:
     """Clone, read and score one repository. `url` overrides the GitHub URL for local test fixtures only."""
+    report = progress or (lambda *_: None)
     git = Git(scratch, caps, time.monotonic() + caps.wall_s)
     source = url or repo.clone_url
+    report("cloning", 0, 0)
     hist = git.clone(source, "hist.git", "--filter=blob:none")
     try:
         sha = git.run(hist, "rev-parse", "--verify", "HEAD^{commit}").strip().decode("ascii")
     except AnalysisError:
         raise AnalysisError("empty_repo") from None
+    report("counting", 0, 0)
+    total = min(int(git.run(hist, "rev-list", "--count", "HEAD").strip() or 0), caps.commits)
+
+    def tick(n: int) -> None:
+        report("parsing", n, total)
+
     commits, truncated = parse_log(
         git.stream(hist, "log", "-z", "--no-renames", "--name-status", "--no-color",
                    "--format=%x00%H%x00%at%x00%an", "HEAD"),
         caps,
+        tick,
     )  # fmt: skip
+    report("sizing", 0, 0)
     try:
         head = git.clone(source, "head.git", "--depth=1")
         loc, complete = line_counts(git, head, caps)
@@ -354,4 +378,5 @@ def analyse(repo: RepoRef, scratch: Path, caps: Caps, *, url: str | None = None)
         if exc.reason not in ("too_large", "clone_failed"):
             raise
         loc, complete = {}, False
+    report("scoring", 0, 0)
     return build_result(repo, sha, commits, truncated, loc, complete, caps)
