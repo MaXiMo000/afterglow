@@ -20,6 +20,8 @@ class C:
     email: str = "ann@example.com"
     time: int = 1_700_000_000
     message: bytes = b"change"
+    parent: int | None = None  # 1-based index of the parent commit; default: the previous commit
+    merge: int | None = None  # 1-based index of a second parent (makes a merge commit)
 
 
 def _quote(path: str) -> bytes:
@@ -41,7 +43,9 @@ def make_repo(root: Path, commits: list[C], name: str = "src") -> str:
         out += b"committer " + c.author.encode() + f" <{c.email}> {c.time} +0000\n".encode()
         out += f"data {len(c.message)}\n".encode() + c.message + b"\n"
         if n > 1:
-            out += f"from :{n - 1}\n".encode()
+            out += f"from :{c.parent or n - 1}\n".encode()
+        if c.merge:
+            out += f"merge :{c.merge}\n".encode()
         for path, content in c.files.items():
             q = _quote(path)
             if content is None:

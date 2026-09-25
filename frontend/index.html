@@ -22,6 +22,10 @@
         <button class="chip" id="btnNew" type="button" hidden>New repo</button>
         <button class="chip" id="btnStory" type="button" hidden>Story</button>
         <button class="chip" id="btnCity" type="button" hidden>Skip to the city</button>
+        <button class="chip" id="btnSearch" type="button" hidden>Search <kbd>/</kbd></button>
+        <button class="chip" id="btnInsights" type="button" aria-pressed="false" hidden>Insights <kbd>I</kbd></button>
+        <button class="chip" id="btnPhoto" type="button" hidden>Photo <kbd>P</kbd></button>
+        <button class="chip" id="btnHelp" type="button" hidden aria-label="Keyboard help">?</button>
         <button class="chip" id="btnTable" type="button" aria-pressed="false">View as table</button>
       </nav>
     </header>
@@ -61,8 +65,41 @@
 
       <section id="city" aria-label="City view" hidden>
         <div id="place"><p class="eyebrow" id="placeEy">Exploring</p><h2 id="placeName">the whole city</h2><p class="sub" id="placeSub"></p></div>
-        <p id="hints" aria-hidden="true">drag to orbit &middot; wheel to zoom &middot; click a building</p>
+        <p id="hints" aria-hidden="true">drag to orbit &middot; wheel to zoom &middot; double-click to fly &middot; ? for keys</p>
       </section>
+
+      <aside id="inspector" class="panel" aria-label="Selected file" hidden>
+        <button class="close ghost" type="button" aria-label="Close file details">Close</button>
+        <div class="content"></div>
+      </aside>
+
+      <aside id="insights" class="panel" aria-label="Insights" hidden>
+        <p class="eyebrow">Insights</p>
+        <div class="kpis"></div>
+        <div class="tabs" role="tablist" aria-label="Insight lists">
+          <button role="tab" type="button" data-tab="hot" aria-selected="true">Hotspots</button>
+          <button role="tab" type="button" data-tab="bus" aria-selected="false">Bus factor</button>
+          <button role="tab" type="button" data-tab="quiet" aria-selected="false">Quiet</button>
+          <button role="tab" type="button" data-tab="coupling" aria-selected="false">Coupling</button>
+        </div>
+        <ol class="rows"></ol>
+      </aside>
+
+      <div id="timeline" hidden>
+        <button class="play" type="button" aria-label="Play history"><span aria-hidden="true"></span></button>
+        <div class="date"><b></b><span></span></div>
+        <div class="track" role="slider" tabindex="0" aria-label="Point in history" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+          <canvas aria-hidden="true"></canvas><i class="fill"></i><b class="knob"></b><i class="mark a" hidden></i><i class="mark b" hidden></i>
+        </div>
+        <span class="speed" aria-live="polite"></span>
+      </div>
+      <div id="compareLegend" hidden aria-live="polite"></div>
+      <canvas id="minimap" role="img" aria-label="Mini-map of districts and the camera" hidden></canvas>
+      <div id="photoBar" hidden>
+        <button class="go" id="btnSave" type="button">Save PNG</button>
+        <button class="ghost" id="btnPhotoExit" type="button">Exit photo mode (Esc)</button>
+      </div>
+      <p id="toast" role="status" hidden></p>
 
       <section id="tableView" aria-labelledby="tableTitle" hidden>
         <div class="table-head">
@@ -79,6 +116,15 @@
       </section>
     </main>
 
+    <dialog id="palette" aria-label="Search">
+      <input role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="palList" aria-label="Search files, districts, people, or an action" placeholder="Search files, districts, people, or an action" spellcheck="false" autocomplete="off" />
+      <ul id="palList" role="listbox" aria-label="Results"></ul>
+    </dialog>
+    <dialog id="help" aria-labelledby="helpTitle">
+      <h2 id="helpTitle">Keyboard</h2>
+      <div class="help-body"></div>
+      <form method="dialog"><button class="chip" type="submit">Close (Esc)</button></form>
+    </dialog>
     <div id="scroller" aria-hidden="true" hidden></div>
     <aside id="tip" role="tooltip" hidden></aside>
     <footer id="honesty" aria-label="About this data"></footer>

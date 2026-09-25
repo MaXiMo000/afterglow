@@ -17,7 +17,9 @@ export const TIERS: readonly Tier[] = [
 ];
 
 export type Camera = { vp: M4; vpR: M4; pos: V3; posR: V3; right: V3; up: V3; fwd: V3; tanH: number };
-export type Params = { t: number; fog: number; hot: number; focus: number; focusAmt: number; hover: number; fade: number; exposure: number; grain: number; ca: number };
+export type Params = { t: number; fog: number; hot: number; focus: number; focusAmt: number; hover: number; fade: number; exposure: number; grain: number; ca: number;
+  /** Explore toggles (A5): coupling arcs, lanterns, and compare mode [on, fromT, toT] in normalised history time. */
+  arcs: number; lanterns: number; cmp: [number, number, number] };
 
 const FOG_COL: V3 = [0.075, 0.17, 0.19];
 const MOON: V3 = [-0.42, 0.36, -0.83];
@@ -443,6 +445,7 @@ export class Renderer {
     gl.uniform1f(u['uFocusAmt']!, P.focusAmt);
     gl.uniform1f(u['uHover']!, refl ? -1 : P.hover);
     gl.uniform3fv(u['uPal']!, PAL);
+    gl.uniform3fv(u['uCmp']!, refl ? [0, 0, 0] : P.cmp);
     gl.bindVertexArray(this.vaos.bld!);
     gl.drawElementsInstanced(gl.TRIANGLES, 30, gl.UNSIGNED_SHORT, 0, this.n);
     if (refl) return;
@@ -455,7 +458,7 @@ export class Renderer {
     gl.uniform1f(u['uT']!, P.t);
     gl.uniform1f(u['uTime']!, time);
     gl.uniform1f(u['uVis']!, 0.55 + 0.45 * P.hot);
-    w.curves.forEach((c, i) => {
+    if (P.arcs) w.curves.forEach((c, i) => {
       gl.uniform1f(u['uBirth']!, c.birth);
       gl.uniform1f(u['uS']!, c.s);
       gl.bindVertexArray(this.vaos.curves[i]!);
@@ -480,7 +483,7 @@ export class Renderer {
     gl.uniform1f(u['uVis']!, 1);
     gl.bindVertexArray(this.vaos.fire!);
     gl.drawArrays(gl.POINTS, 0, Math.min(this.tier.fire, MAX_FIRE));
-    if (this.lanternCount) {
+    if (this.lanternCount && P.lanterns) {
       gl.uniform1f(u['uMotion']!, 0);
       gl.bindVertexArray(this.vaos.lant!);
       gl.drawArrays(gl.POINTS, 0, this.lanternCount);

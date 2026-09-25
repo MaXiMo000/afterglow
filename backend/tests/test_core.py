@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from core.repo import InvalidRepoError, parse_repo
-from core.schema import Result, clean_text
+from core.schema import ANALYSER_VERSION, Result, clean_text
 from core.store import ResultStore
 
 SHA = "a" * 40
@@ -97,7 +97,7 @@ def test_store_roundtrip_and_tamper(tmp_path: Path) -> None:
     store.put(repo, result)
     assert store.get(parse_repo("a/b"), SHA) == result
     path = next(tmp_path.rglob("*.json"))
-    assert path.name == f"{SHA}.v1.json"
+    assert path.name == f"{SHA}.v{ANALYSER_VERSION}.json"
     path.write_text(json.dumps(minimal(extra=1)))
     assert store.get(repo, SHA) is None  # planted/corrupt file is a miss, never served
     with pytest.raises(ValueError, match="does not belong"):

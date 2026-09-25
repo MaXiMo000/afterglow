@@ -185,7 +185,8 @@ def line_counts(git: Git, head: Path, caps: Caps) -> tuple[dict[bytes, int], boo
 
 
 def build_result(repo: RepoRef, sha: str, commits: list[Commit], history_truncated: bool,
-                 loc: dict[bytes, int], sizes_complete: bool, caps: Caps) -> Result:  # fmt: skip
+                 loc: dict[bytes, int], sizes_complete: bool, caps: Caps,
+                 head_paths: set[bytes] | None = None) -> Result:  # fmt: skip
     if not commits:
         raise AnalysisError("empty_repo")
     head_t = commits[0].time
@@ -216,9 +217,13 @@ def build_result(repo: RepoRef, sha: str, commits: list[Commit], history_truncat
                 s.changes_12m += 1
                 s.authors_12m.add(c.author)
 
-    alive = [(clean_text(p), p, s) for p, s in stats.items() if s.alive]
+    # Files that exist now come from HEAD's tree: "newest change was not a delete" is wrong when
+    # a side branch edits a file after (by date) it was deleted on main and the merge keeps the deletion.
+    exists = (lambda p, s: p in head_paths) if head_paths is not None else (lambda p, s: s.alive)
+    alive = [(clean_text(p), p, s) for p, s in stats.items() if exists(p, s)]
+    at_head = len(head_paths) if head_paths is not None else sum(s.alive for s in stats.values())
     alive.sort(key=lambda t: (-t[2].changes, -t[2].last, t[0]))
-    files_truncated = len(alive) > caps.files or paths_truncated
+    files_truncated = len(alive) > caps.files or paths_truncated or len(alive) < at_head
     alive = alive[: caps.files]
 
     tops = Counter(p.split("/")[0] for p, _, _ in alive if "/" in p)
@@ -298,7 +303,7 @@ def build_result(repo: RepoRef, sha: str, commits: list[Commit], history_truncat
     return Result(
         meta=Meta(
             repo=repo.slug, sha=sha, analyser=ANALYSER_VERSION, generated_at=int(time.time()),
-            commits=len(commits), files=sum(s.alive for s in stats.values()),
+            commits=len(commits), files=at_head,
             people=len(author_commits), span=[commits[-1].time, head_t],
             truncated=Truncated(files=files_truncated, commits=history_truncated, sizes=not sizes_complete),
         ),
@@ -358,6 +363,12 @@ def analyse(
         sha = git.run(hist, "rev-parse", "--verify", "HEAD^{commit}").strip().decode("ascii")
     except AnalysisError:
         raise AnalysisError("empty_repo") from None
+    # Trees are part of a blobless clone, so HEAD's file list is available without any file contents.
+    head_paths = {
+        p
+        for p in git.run(hist, "ls-tree", "-r", "-z", "--name-only", "--full-tree", "HEAD").split(b"\0")
+        if p
+    }
     report("counting", 0, 0)
     total = min(int(git.run(hist, "rev-list", "--count", "HEAD").strip() or 0), caps.commits)
 
@@ -379,4 +390,4 @@ def analyse(
             raise
         loc, complete = {}, False
     report("scoring", 0, 0)
-    return build_result(repo, sha, commits, truncated, loc, complete, caps)
+    return build_result(repo, sha, commits, truncated, loc, complete, caps, head_paths)

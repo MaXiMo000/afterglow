@@ -99,6 +99,20 @@ def test_timeline(golden: Result) -> None:
     assert all(b.t > a.t for a, b in itertools.pairwise(months))
 
 
+def test_files_at_head_come_from_the_tree(tmp_path: Path) -> None:
+    """Regression: a side branch edits a.py *after* (by date) main deleted it; the merge keeps the deletion.
+    The newest change in history is an edit, but a.py does not exist at HEAD and must not be a building."""
+    commits = [
+        C({"a.py": "1\n", "b.py": "1\n"}, time=T0),
+        C({"a.py": None}, time=T0 + 10),  # main deletes a.py
+        C({"a.py": "2\n"}, time=T0 + 20, parent=1),  # side branch edits it later
+        C({}, time=T0 + 30, parent=2, merge=3),  # merge resolved with a.py deleted
+    ]
+    result = run(tmp_path, commits)
+    assert {f.path for f in result.files} == {"b.py"}
+    assert result.meta.files == 1
+
+
 def test_bus_factor() -> None:
     from collections import Counter
 
