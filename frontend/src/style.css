@@ -49,7 +49,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .repo { color: var(--color-dim); letter-spacing: 0.06em; text-transform: none; border-left: 1px solid var(--color-line); padding-left: var(--space-3); }
 .repo:empty { display: none; }
 .actions { display: flex; gap: var(--space-2); }
-.chip { background: var(--color-glass); border: 1px solid var(--color-line); border-radius: var(--radius-sm); padding: 6px 11px;
+.chip { white-space: nowrap; background: var(--color-glass); border: 1px solid var(--color-line); border-radius: var(--radius-sm); padding: 6px 11px;
   font: 500 var(--size-xs) var(--font-mono); letter-spacing: 0.08em; backdrop-filter: blur(8px);
   transition: border-color var(--motion-base) var(--motion-ease-out), background var(--motion-base) var(--motion-ease-out), transform var(--motion-fast); }
 .chip:hover { border-color: rgba(255, 180, 94, 0.6); background: var(--color-glass-hi); }
@@ -255,7 +255,7 @@ dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
 
 
 /* A6 motion language: mode changes and panels fade and rise instead of popping (disabled with reduced motion) */
-#hero, #loading, #city, #story, #tableView, .panel, #timeline, #compareLegend, #minimap, #photoBar, #toast, #tip, dialog, .chip {
+#hero, #loading, #city, #story, #tableView, .panel, #timeline, #compareLegend, #minimap, #photoBar, #toast, #tip, .chip {
   transition-property: opacity, translate, display, overlay, border-color, background, transform;
   transition-duration: var(--motion-slow), var(--motion-slow), var(--motion-slow), var(--motion-slow), var(--motion-base), var(--motion-base), var(--motion-fast);
   transition-timing-function: var(--motion-ease-out);
@@ -269,12 +269,19 @@ dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
   }
   dialog[open] { opacity: 0; translate: 0 -8px; }
 }
-dialog::backdrop { transition: opacity var(--motion-base) var(--motion-ease-out), display var(--motion-base) allow-discrete, overlay var(--motion-base) allow-discrete; }
+/* Dialogs animate in only. An exit transition keeps a closing modal in the top layer with focus still inside it, so
+   the next key press would land in the dialog instead of the page (found by the keyboard walkthrough test). */
+dialog[open] { transition: opacity var(--motion-base) var(--motion-ease-out), translate var(--motion-base) var(--motion-ease-out); }
+dialog[open]::backdrop { transition: opacity var(--motion-base) var(--motion-ease-out); }
 @starting-style { dialog[open]::backdrop { opacity: 0; } }
 .chip:focus-visible, .go:focus-visible { box-shadow: 0 0 0 4px rgba(255, 180, 94, 0.18); }
 .go:active, .chip:active { transform: translateY(1px) scale(0.98); }
 .load-actions { display: flex; gap: 18px; align-items: center; }
 
+@media (max-width: 1100px) {
+  .chip kbd, #hints { display: none; }
+  .actions { gap: 6px; }
+}
 @media (max-width: 760px) {
   .repo, #hints, #minimap { display: none; }
   #timeline { grid-template-columns: auto 1fr; }
