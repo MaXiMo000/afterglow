@@ -1,21 +1,29 @@
 /**
- * App controller for A3: hero -> loading (real SSE progress) -> city, plus the 2D table fallback.
- * The scroll story (A4), full explore tools (A5) and the effects pass (A6) build on this.
+ * App controller: hero -> loading (real SSE progress) -> story (A4) -> city with the explore tools (A5), plus the
+ * 2D table fallback. The effects pass (A6) builds on this.
  */
 import { ApiError, fetchResult, followProgress, startAnalysis, type Progress } from '../lib/api';
-import { parseRepo } from '../lib/repo';
+import { parseRepo, type RepoRef } from '../lib/repo';
 import { validateResult, type Result } from '../lib/result';
-import { lerp, smoothstep } from '../render/math';
+import { decodeView, encodeView, type View } from '../lib/share';
+import { clamp, lerp, smoothstep } from '../render/math';
 import { Renderer, RendererError, TIERS, type Params } from '../render/renderer';
 import { buildWorld, type World } from '../world/build';
-import { buildCamera, OrbitCamera, orbitFromPose } from './camera';
+import { buildCamera, OrbitCamera, orbitFromPose, rayThrough, type Preset } from './camera';
 import { $, ago, el, fmt, fmtDate, reducedMotion, setText } from './dom';
+import { actionFor, KEYMAP, type ActionId } from './keymap';
+import { Palette, type Item } from './palette';
+import { compareCounts, Inspector, Insights, MiniMap, renderHelp, Timeline } from './panels';
 import { Story } from './story';
 import { drawTreemap, honestyLines, renderSummary, renderTable } from './table';
 
 type Mode = 'hero' | 'loading' | 'story' | 'city';
+type Vec = [number, number, number];
 const DEMO_URL = '/demo/fastapi-fastapi.json';
 const FOG = 0.0072;
+const SPEEDS = [1, 4, 16, 64];
+const PLAY_SECONDS = 40; // whole history at 1x
+const PRESETS: Preset[] = ['overview', 'street', 'top', 'skyline', 'cinematic'];
 
 const STAGE_TEXT: Record<string, string> = {
   queued: 'Waiting for a free worker',
@@ -48,7 +56,10 @@ export class App {
   private result: Result | null = null;
   private demo = true;
   private readonly cam = new OrbitCamera();
-  private readonly P: Params = { t: 1, fog: FOG, hot: 0.5, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.035, ca: 1 };
+  private readonly P: Params = {
+    t: 1, fog: FOG, hot: 0.5, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.035, ca: 1,
+    arcs: 1, lanterns: 1, cmp: [0, 0, 0],
+  }; // prettier-ignore
   private time = 0;
   private last = 0;
   private tierIdx = 2;
@@ -59,7 +70,7 @@ export class App {
   private lanterns: Float32Array | null = null;
   private selected = -1;
   private focusGoal = 0;
-  private ptrs = new Map<number, { x: number; y: number }>();
+  private ptrs = new Map<number, { x: number; y: number; t: number }>();
   private dragMoved = 0;
   private pinch = 0;
   private hoverAt: { x: number; y: number } | null = null;
@@ -70,8 +81,26 @@ export class App {
   private lastVP: Float32Array | null = null;
   private pointer = { x: 0, y: 0 };
   /** Time-based blend used only for mode changes (outside the scrubbed story range). */
-  private blend: { pos: [number, number, number]; tgt: [number, number, number]; fov: number; k: number } | null = null;
+  private blend: { pos: Vec; tgt: Vec; fov: number; k: number } | null = null;
   private fov = 50;
+  private lastPose: { pos: Vec; tgt: Vec } | null = null;
+  // Explore state (A5)
+  private tT = 1; // target history position; P.t eases toward it
+  private playing = false;
+  private speedIdx = 0;
+  private compare: { a: number; b: number } | null = null;
+  private photo = false;
+  private exportNext = false;
+  private pendingView: View | null = null;
+  private readonly held = new Set<string>();
+  private readonly palette = new Palette();
+  private readonly inspector = new Inspector((i) => this.select(i));
+  private readonly insights = new Insights(
+    (i) => this.select(i, true),
+    (d) => this.flyToDistrict(d),
+  );
+  private readonly minimap = new MiniMap((x, z) => this.cam.flyTo({ ...this.cam.goal, x, z }, 0.8, reducedMotion()));
+  private readonly timeline = new Timeline((t) => this.scrub(t));
   private readonly canvas = $('#gl') as HTMLCanvasElement;
   private readonly body = document.body;
 
@@ -87,11 +116,20 @@ export class App {
     } catch {
       this.renderer = null; // no WebGL2: the table is the whole UI
     }
+    renderHelp($('#help .help-body'));
+    this.palette.setSource(() => this.paletteItems());
     this.bindUi();
     this.bindCanvas();
     addEventListener('resize', () => this.resize(true));
     this.canvas.addEventListener('webglcontextlost', () => this.fallback('The 3D view stopped (graphics context lost).'));
-    void this.loadDemo();
+    const shared = decodeView(location.hash);
+    if (shared) {
+      // A share link names a repo: analyse it (rate-limited like any request) and restore the view afterwards.
+      this.pendingView = shared;
+      void this.analyse(`${shared.repo.owner}/${shared.repo.name}`);
+    } else {
+      void this.loadDemo();
+    }
     requestAnimationFrame((t) => {
       this.last = t;
       requestAnimationFrame(this.frame);
@@ -121,6 +159,11 @@ export class App {
     this.selected = -1;
     this.P.focus = -1;
     this.focusGoal = 0;
+    this.tT = this.P.t = 1;
+    this.playing = false;
+    this.compare = null;
+    this.inspector.hide();
+    this.timeline.set(r);
     if (this.renderer) {
       try {
         this.renderer.setWorld(this.world);
@@ -162,7 +205,18 @@ export class App {
     $('#city').hidden = m !== 'city';
     $('#btnNew').hidden = m === 'hero';
     $('#btnCity').hidden = m !== 'story';
-    $('#btnStory').hidden = m !== 'city' || this.demo || !this.renderer;
+    const explore = m === 'city' && !this.demo;
+    $('#btnStory').hidden = !explore || !this.renderer;
+    for (const id of ['#btnSearch', '#btnInsights', '#btnPhoto', '#btnHelp']) $(id).hidden = !explore;
+    this.timeline.root.hidden = !explore;
+    if (!explore) {
+      this.insights.toggle(this.result!, false);
+      this.inspector.hide();
+      this.minimap.canvas.hidden = true;
+      this.setCompare(null);
+      this.playing = false;
+      if (this.photo) this.togglePhoto();
+    }
     if (m !== 'story' && this.story.active) this.story.exit();
     this.hideTip();
   }
@@ -181,6 +235,7 @@ export class App {
     this.cam.goal = orbitFromPose(pos, tgt);
     this.cam.snap();
     this.fov = 50;
+    this.tT = this.P.t = 1;
     this.setMode('city');
     history.replaceState(null, '', '#explore');
   }
@@ -190,10 +245,9 @@ export class App {
     this.blend = { pos: [...pos], tgt: [...tgt], fov: this.fov, k: 0 };
   }
 
-  private currentPose(): { pos: [number, number, number]; tgt: [number, number, number] } {
+  private currentPose(): { pos: Vec; tgt: Vec } {
     return this.lastPose ?? this.cam.pose();
   }
-  private lastPose: { pos: [number, number, number]; tgt: [number, number, number] } | null = null;
 
   private async analyse(raw: string): Promise<void> {
     const cleaned = raw.trim().replace(/^https?:\/\/(www\.)?github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '');
@@ -249,12 +303,16 @@ export class App {
       this.demo = false;
       this.show(r);
       this.announce(`Loaded ${r.meta.repo}: ${fmt(r.meta.files)} files.`);
+      const view = this.pendingView;
+      this.pendingView = null;
       if (!this.renderer) {
         this.setMode('city');
         this.openTable(true);
-      } else if (location.hash === '#explore') {
+      } else if (view || location.hash === '#explore') {
         this.cam.frame(this.world!.radius);
+        if (view?.cam) this.cam.goal = { ...view.cam, y: 4 };
         this.cam.snap();
+        if (view?.t !== null && view?.t !== undefined) this.tT = this.P.t = view.t;
         this.setMode('city');
       } else {
         this.enterStory();
@@ -271,6 +329,15 @@ export class App {
     setText($('#announce'), text);
   }
 
+  private toast(text: string): void {
+    const t = $('#toast');
+    setText(t, text);
+    t.hidden = false;
+    clearTimeout(this.toastTimer);
+    this.toastTimer = window.setTimeout(() => (t.hidden = true), 2400);
+  }
+  private toastTimer = 0;
+
   private fallback(reason: string): void {
     this.renderer?.dispose();
     this.renderer = null;
@@ -285,10 +352,254 @@ export class App {
     if (open && this.result && !this.demo) {
       renderTable(this.result, $('#files tbody'), $('#filesCaption'), $('#tableNote'));
       drawTreemap(this.result, $('#treemap') as HTMLCanvasElement);
-      $('#tableTitle').focus?.();
     } else if (open) {
       $('#filesCaption').textContent = 'Load a repository to see its files.';
     }
+  }
+
+  // ---------- explore actions (A5): one entry point for keys, palette and buttons ----------
+  private run(id: ActionId): void {
+    const w = this.world;
+    const r = this.result;
+    if (!w || !r) return;
+    const reduced = reducedMotion();
+    switch (id) {
+      case 'home':
+        this.cam.autoOrbit = false;
+        this.cam.flyTo(this.cam.home(w.radius), 0.9, reduced);
+        break;
+      case 'reset':
+        this.select(-1);
+        this.setCompare(null);
+        this.tT = 1;
+        this.playing = false;
+        this.cam.autoOrbit = false;
+        this.cam.flyTo(this.cam.home(w.radius), 0.9, reduced);
+        break;
+      case 'frame':
+        if (this.selected >= 0) this.flyToFile(this.selected);
+        else this.toast('Select a building first (click, or search with /).');
+        break;
+      case 'preset1':
+      case 'preset2':
+      case 'preset3':
+      case 'preset4':
+      case 'preset5': {
+        const p = PRESETS[Number(id.slice(-1)) - 1]!;
+        this.cam.autoOrbit = p === 'cinematic';
+        this.cam.flyTo(this.cam.preset(p, w.radius), 1, reduced);
+        this.announce(`View: ${KEYMAP.find((k) => k.id === id)?.label ?? p}`);
+        break;
+      }
+      case 'play':
+        if (!this.playing && this.tT >= 0.999) this.tT = this.P.t = 0;
+        this.playing = !this.playing;
+        this.announce(this.playing ? 'Playing history' : 'Paused');
+        break;
+      case 'slower':
+      case 'faster':
+        this.speedIdx = clamp(this.speedIdx + (id === 'faster' ? 1 : -1), 0, SPEEDS.length - 1);
+        this.announce(`Playback ${SPEEDS[this.speedIdx]}x`);
+        break;
+      case 'stepBack':
+      case 'stepFwd': {
+        this.playing = false;
+        const month = (31 * 86400) / (w.t1 - w.t0);
+        this.scrub(clamp(this.tT + (id === 'stepFwd' ? month : -month), 0, 1));
+        break;
+      }
+      case 'timeline':
+        this.timeline.root.hidden = !this.timeline.root.hidden;
+        break;
+      case 'compare':
+        this.setCompare(this.compare ? null : { a: clamp(this.tT - 0.25, 0, 0.75), b: this.tT >= 0.999 ? 1 : this.tT });
+        break;
+      case 'palette':
+        this.palette.show();
+        break;
+      case 'insights':
+        this.insights.toggle(r);
+        $('#btnInsights').setAttribute('aria-pressed', String(this.insights.open));
+        break;
+      case 'minimap':
+        this.minimap.canvas.hidden = !this.minimap.canvas.hidden;
+        break;
+      case 'table':
+        this.openTable($('#tableView').hasAttribute('hidden'));
+        break;
+      case 'help':
+        ($('#help') as HTMLDialogElement).showModal();
+        break;
+      case 'photo':
+        this.togglePhoto();
+        break;
+      case 'arcs':
+        this.P.arcs = this.P.arcs ? 0 : 1;
+        this.toast(this.P.arcs ? 'Coupling arcs on' : 'Coupling arcs off');
+        break;
+      case 'lanterns':
+        this.P.lanterns = this.P.lanterns ? 0 : 1;
+        this.toast(this.P.lanterns ? 'Lanterns on' : 'Lanterns off');
+        break;
+      case 'share':
+        void this.share();
+        break;
+      case 'story':
+        this.enterStory(true);
+        break;
+    }
+  }
+
+  private scrub(t: number): void {
+    this.tT = t;
+    this.playing = false;
+    if (reducedMotion()) this.P.t = t;
+  }
+
+  private setCompare(c: { a: number; b: number } | null): void {
+    this.compare = c;
+    const box = $('#compareLegend');
+    const r = this.result;
+    const w = this.world;
+    if (!c || !r || !w) {
+      box.hidden = true;
+      this.P.cmp = [0, 0, 0];
+      return;
+    }
+    this.P.cmp = [1, c.a, c.b];
+    const at = (t: number): number => w.t0 + t * (w.t1 - w.t0);
+    const n = compareCounts(r, at(c.a), at(c.b));
+    const row = (cls: string, label: string, count: number): HTMLElement => {
+      const p = el('div');
+      const i = el('i', null, cls);
+      i.setAttribute('aria-hidden', 'true');
+      p.append(i, document.createTextNode(`${label}: ${fmt(count)}`));
+      return p;
+    };
+    box.replaceChildren(
+      el('strong', `Compare ${fmtDate(at(c.a))} \u2192 ${fmtDate(at(c.b))}`),
+      row('c-added', 'Added in this window', n.added),
+      row('c-last', 'Last changed in this window', n.lastIn),
+      row('c-after', 'Still changing after it', n.after),
+      row('c-before', 'Untouched since before it', n.before),
+      el('p', 'Deleted files are not in this analysis, so removals are not shown. Use , and . to move the window end, [ ] for speed.', 'sub'),
+    );
+    box.hidden = false;
+  }
+
+  private async share(): Promise<void> {
+    const r = this.result;
+    const repo = r ? parseRepo(r.meta.repo) : null;
+    if (!repo) return;
+    const g = this.cam.goal;
+    const hash = encodeView({ repo: repo as RepoRef, cam: { yaw: g.yaw, pitch: g.pitch, dist: g.dist, x: g.x, z: g.z }, t: this.tT });
+    const url = `${location.origin}${location.pathname}${hash}`;
+    history.replaceState(null, '', hash);
+    try {
+      await navigator.clipboard.writeText(url);
+      this.toast('Link to this view copied');
+    } catch {
+      this.toast('Link is in the address bar (clipboard unavailable)');
+    }
+  }
+
+  private togglePhoto(): void {
+    this.photo = !this.photo;
+    this.body.classList.toggle('photo', this.photo);
+    $('#photoBar').hidden = !this.photo;
+    this.cam.autoOrbit = this.photo;
+    if (this.photo) ($('#btnSave') as HTMLButtonElement).focus();
+    this.announce(this.photo ? 'Photo mode. Save PNG, or Esc to leave.' : 'Left photo mode');
+  }
+
+  /** Called right after a render, while the drawing buffer is still valid: compose a poster and download it. */
+  private exportPng(): void {
+    const r = this.result;
+    if (!r) return;
+    const src = this.canvas;
+    const out = document.createElement('canvas');
+    const w = src.width;
+    const h = src.height;
+    out.width = w;
+    out.height = h;
+    const ctx = out.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(src, 0, 0);
+    const pad = Math.round(w * 0.03);
+    const g = ctx.createLinearGradient(0, h * 0.72, 0, h);
+    g.addColorStop(0, 'rgba(6,10,17,0)');
+    g.addColorStop(1, 'rgba(6,10,17,0.85)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, h * 0.7, w, h * 0.3);
+    ctx.fillStyle = '#ece6db';
+    ctx.font = `italic ${Math.round(h * 0.06)}px "Cormorant Garamond", Georgia, serif`;
+    ctx.fillText(r.meta.repo, pad, h - pad * 2.2);
+    ctx.font = `${Math.round(h * 0.018)}px "IBM Plex Mono", monospace`;
+    ctx.fillStyle = '#a9bbbd';
+    const t = this.world ? this.world.t0 + this.P.t * (this.world.t1 - this.world.t0) : r.meta.span[1];
+    const caveats = honestyLines(r).filter((l) => !l.startsWith('Bus')).join(' ');
+    ctx.fillText(
+      `Afterglow \u00b7 ${r.meta.sha.slice(0, 7)} \u00b7 as of ${fmtDate(t)} \u00b7 ${fmt(r.meta.files)} files, ${fmt(r.meta.commits)} commits${caveats ? ' \u00b7 ' + caveats : ''}`,
+      pad,
+      h - pad,
+      w - pad * 2,
+    );
+    out.toBlob((blob) => {
+      if (!blob) return;
+      const a = el('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `afterglow-${r.meta.repo.replace('/', '-')}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      this.toast('PNG saved');
+    }, 'image/png');
+  }
+
+  private paletteItems(): Item[] {
+    const r = this.result;
+    if (!r || this.demo) return [];
+    const items: Item[] = KEYMAP.map((k) => ({ kind: 'action', label: k.label, hint: k.keys.join(' / '), key: `a:${k.id}`, run: () => this.run(k.id) }));
+    r.dirs.forEach((d, i) =>
+      items.push({ kind: 'district', label: `${d.name}/`, hint: `district \u00b7 ${fmt(d.files)} files`, key: `d:${i}`, run: () => this.flyToDistrict(i) }),
+    );
+    r.people.forEach((p) =>
+      items.push({
+        kind: 'person',
+        label: p.handle,
+        hint: `${fmt(p.commits)} commits \u00b7 ${p.areas.map((a) => r.dirs[a]?.name).join(', ')}`,
+        key: `p:${p.handle}`,
+        run: () => {
+          if (p.areas[0] !== undefined) this.flyToDistrict(p.areas[0]);
+        },
+      }),
+    );
+    r.files.forEach((f, i) => items.push({ kind: 'file', label: f.path, hint: `${fmt(f.changes_12m)} / 12 mo`, key: `f:${i}`, run: () => this.select(i, true) }));
+    return items;
+  }
+
+  private flyToFile(i: number): void {
+    const w = this.world;
+    if (!w) return;
+    this.cam.autoOrbit = false;
+    const h = w.pos[i * 3 + 1]!;
+    this.cam.flyTo({ yaw: this.cam.goal.yaw, pitch: 0.42, dist: clamp(h * 3 + 18, 16, 60), x: w.pos[i * 3]!, y: Math.min(8, h * 0.5), z: w.pos[i * 3 + 2]! }, 0.85, reducedMotion());
+  }
+
+  private flyToDistrict(d: number): void {
+    const w = this.world;
+    const dist = w?.dists[d];
+    if (!w || !dist) return;
+    this.select(-1);
+    this.P.focus = d;
+    this.focusGoal = 1;
+    this.cam.autoOrbit = false;
+    this.cam.flyTo({ yaw: this.cam.goal.yaw, pitch: 0.55, dist: clamp(dist.r * 2.6, 20, this.cam.maxDist), x: dist.x, y: 2, z: dist.z }, 0.9, reducedMotion());
+    const r = this.result!;
+    const x = r.dirs[d]!;
+    setText($('#placeEy'), 'District');
+    setText($('#placeName'), x.name);
+    setText($('#placeSub'), `${fmt(x.files)} files \u00b7 bus factor ${fmt(x.bus_factor)}${x.quiet ? ' \u00b7 quiet' : ''}`);
+    this.announce(`District ${x.name}: ${fmt(x.files)} files.`);
   }
 
   // ---------- input ----------
@@ -299,16 +610,35 @@ export class App {
     });
     for (const b of document.querySelectorAll<HTMLButtonElement>('.samples button')) {
       b.addEventListener('click', () => {
-        (($('#repoInput') as HTMLInputElement).value = b.dataset['repo'] ?? '');
+        ($('#repoInput') as HTMLInputElement).value = b.dataset['repo'] ?? '';
         void this.analyse(b.dataset['repo'] ?? '');
       });
     }
     $('#btnCity').addEventListener('click', () => this.enterCity());
     $('#btnStory').addEventListener('click', () => this.enterStory(true));
-    addEventListener('pointermove', (e) => {
-      this.pointer.x = (e.clientX / innerWidth) * 2 - 1;
-      this.pointer.y = (e.clientY / innerHeight) * 2 - 1;
-    }, { passive: true });
+    $('#btnSearch').addEventListener('click', () => this.run('palette'));
+    $('#btnInsights').addEventListener('click', () => this.run('insights'));
+    $('#btnPhoto').addEventListener('click', () => this.run('photo'));
+    $('#btnHelp').addEventListener('click', () => this.run('help'));
+    $('#btnSave').addEventListener('click', () => (this.exportNext = true));
+    $('#btnPhotoExit').addEventListener('click', () => this.togglePhoto());
+    ($('#timeline .play') as HTMLButtonElement).addEventListener('click', () => this.run('play'));
+    $('#timeline .track').addEventListener('keydown', (e) => {
+      const k = (e as KeyboardEvent).key;
+      if (k === 'ArrowLeft' || k === 'ArrowRight') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.scrub(clamp(this.tT + (k === 'ArrowRight' ? 0.02 : -0.02), 0, 1));
+      }
+    });
+    addEventListener(
+      'pointermove',
+      (e) => {
+        this.pointer.x = (e.clientX / innerWidth) * 2 - 1;
+        this.pointer.y = (e.clientY / innerHeight) * 2 - 1;
+      },
+      { passive: true },
+    );
     $('#btnCancel').addEventListener('click', () => {
       this.abort?.abort();
       this.setMode(this.result && !this.demo ? 'city' : 'hero');
@@ -317,29 +647,59 @@ export class App {
       this.abort?.abort();
       this.openTable(false);
       this.setMode('hero');
+      history.replaceState(null, '', location.pathname + location.search);
       ($('#repoInput') as HTMLInputElement).focus();
     });
     $('#btnTable').addEventListener('click', () => this.openTable($('#tableView').hasAttribute('hidden')));
+    addEventListener('keyup', (e) => this.held.delete(e.key.toLowerCase()));
+    addEventListener('blur', () => this.held.clear());
     addEventListener('keydown', (e) => {
-      const typing = /^(INPUT|TEXTAREA)$/.test((document.activeElement as HTMLElement | null)?.tagName ?? '');
+      const active = document.activeElement as HTMLElement | null;
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(active?.tagName ?? '');
+      if (document.querySelector('dialog[open]')) return; // dialogs handle their own keys (Esc closes)
       if (e.key === 'Escape') {
+        // Back out one level: photo -> table -> panels/selection/compare -> story.
+        if (this.photo) return this.togglePhoto();
         if (!$('#tableView').hidden) return this.openTable(false);
-        if (this.selected >= 0) return this.select(-1);
+        if (this.compare) return this.setCompare(null);
+        if (this.selected >= 0 || this.P.focus >= 0) return this.select(-1);
+        if (this.insights.open) return this.run('insights');
+        if (this.mode === 'city' && !this.demo && this.renderer) return this.enterStory(true);
+        return;
       }
-      if (this.mode !== 'city' || typing) return;
-      const s = e.shiftKey ? 2 : 1;
+      if (this.mode !== 'city' || typing || this.demo) return;
+      if (e.key === ' ' && active?.tagName === 'BUTTON') return; // Space activates the focused button
+      const action = actionFor(e);
+      if (action) {
+        e.preventDefault();
+        this.run(action);
+        return;
+      }
       const k = e.key.toLowerCase();
-      let hit = true;
-      if (k === 'arrowleft' || k === 'a') this.cam.orbit(-18 * s, 0);
-      else if (k === 'arrowright' || k === 'd') this.cam.orbit(18 * s, 0);
-      else if (k === 'arrowup' || k === 'w') this.cam.orbit(0, 15 * s);
-      else if (k === 'arrowdown' || k === 's') this.cam.orbit(0, -15 * s);
-      else if (k === '+' || k === '=') this.cam.zoom(0.88);
-      else if (k === '-') this.cam.zoom(1.14);
-      else if (k === 'h' && this.world) this.cam.frame(this.world.radius);
-      else hit = false;
-      if (hit) e.preventDefault();
+      if (k === 'shift') this.held.add(k);
+      if (['w', 'a', 's', 'd', 'q', 'e', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', '+', '=', '-'].includes(k)) {
+        e.preventDefault();
+        this.held.add(k);
+        this.cam.autoOrbit = false;
+      }
     });
+  }
+
+  /** Continuous keyboard movement while keys are held (frame-rate independent). */
+  private keyMove(dt: number, shift: boolean): void {
+    if (!this.held.size) return;
+    const s = (shift ? 2 : 1) * dt * 60;
+    const h = this.held;
+    if (h.has('w')) this.cam.walk(s * 0.5, 0);
+    if (h.has('s')) this.cam.walk(-s * 0.5, 0);
+    if (h.has('a')) this.cam.walk(0, -s * 0.5);
+    if (h.has('d')) this.cam.walk(0, s * 0.5);
+    if (h.has('arrowleft') || h.has('q')) this.cam.orbit(-6 * s, 0);
+    if (h.has('arrowright') || h.has('e')) this.cam.orbit(6 * s, 0);
+    if (h.has('arrowup')) this.cam.orbit(0, 5 * s);
+    if (h.has('arrowdown')) this.cam.orbit(0, -5 * s);
+    if (h.has('+') || h.has('=')) this.cam.zoom(1 - 0.02 * s);
+    if (h.has('-')) this.cam.zoom(1 + 0.02 * s);
   }
 
   private bindCanvas(): void {
@@ -347,8 +707,10 @@ export class App {
     c.addEventListener('pointerdown', (e) => {
       if (this.mode !== 'city') return;
       c.setPointerCapture(e.pointerId);
-      this.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      this.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now() });
       this.dragMoved = 0;
+      this.cam.autoOrbit = false;
+      this.cam.still();
       if (this.ptrs.size === 2) {
         const [a, b] = [...this.ptrs.values()];
         this.pinch = Math.hypot(a!.x - b!.x, a!.y - b!.y);
@@ -362,25 +724,30 @@ export class App {
         if (e.pointerType !== 'touch') this.hoverAt = { x: e.clientX, y: e.clientY };
         return;
       }
+      const now = performance.now();
       const dx = e.clientX - p.x;
       const dy = e.clientY - p.y;
+      const dt = Math.max(1, now - p.t) / 1000;
       this.dragMoved += Math.abs(dx) + Math.abs(dy);
       p.x = e.clientX;
       p.y = e.clientY;
+      p.t = now;
       if (this.ptrs.size === 1) {
         if (e.shiftKey || e.buttons === 2) this.cam.pan(dx, dy);
-        else this.cam.orbit(dx, dy);
+        else this.cam.orbit(dx, dy, dt);
       } else if (this.ptrs.size === 2) {
         const [a, b] = [...this.ptrs.values()];
         const d = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-        if (this.pinch) this.cam.zoom(this.pinch / d);
+        if (this.pinch) this.zoomAt(this.pinch / d, (a!.x + b!.x) / 2, (a!.y + b!.y) / 2);
         this.pinch = d;
       }
       this.hideTip();
     });
     const up = (e: PointerEvent): void => {
-      if (!this.ptrs.has(e.pointerId)) return;
+      const p = this.ptrs.get(e.pointerId);
+      if (!p) return;
       const click = this.dragMoved < 6 && this.ptrs.size === 1;
+      if (performance.now() - p.t > 90) this.cam.still(); // held still before release: no fling
       this.ptrs.delete(e.pointerId);
       if (this.ptrs.size < 2) this.pinch = 0;
       if (!this.ptrs.size) c.classList.remove('drag');
@@ -388,6 +755,12 @@ export class App {
     };
     c.addEventListener('pointerup', up);
     c.addEventListener('pointercancel', up);
+    c.addEventListener('dblclick', (e) => {
+      if (this.mode !== 'city') return;
+      void this.pickAt(e.clientX, e.clientY).then((i) => {
+        if (i >= 0) this.select(i, true);
+      });
+    });
     c.addEventListener('pointerleave', () => {
       this.hoverAt = null;
       this.P.hover = this.selected;
@@ -401,10 +774,18 @@ export class App {
       (e) => {
         if (this.mode !== 'city') return;
         e.preventDefault();
-        this.cam.zoom(Math.exp(e.deltaY * 0.0011));
+        // Trackpad pinch arrives as ctrl+wheel with small deltas; both zoom toward the cursor.
+        this.zoomAt(Math.exp(e.deltaY * (e.ctrlKey ? 0.01 : 0.0011)), e.clientX, e.clientY);
       },
       { passive: false },
     );
+  }
+
+  private zoomAt(factor: number, x: number, y: number): void {
+    this.cam.autoOrbit = false;
+    const rect = this.canvas.getBoundingClientRect();
+    const C = this.cameraNow();
+    this.cam.zoomAt(factor, C.pos, rayThrough(C, x - rect.left, y - rect.top, rect.width, rect.height));
   }
 
   private async pickAt(x: number, y: number): Promise<number> {
@@ -419,13 +800,15 @@ export class App {
     return next;
   }
 
-  private select(i: number): void {
+  private select(i: number, fly = false): void {
     const r = this.result;
     const w = this.world;
     this.selected = i;
+    this.P.hover = i;
     if (!r || !w || i < 0) {
       this.P.focus = -1;
       this.focusGoal = 0;
+      this.inspector.hide();
       setText($('#placeEy'), 'Exploring');
       setText($('#placeName'), 'the whole city');
       setText($('#placeSub'), '');
@@ -435,10 +818,8 @@ export class App {
     const d = r.dirs[f.dir]!;
     this.P.focus = f.dir;
     this.focusGoal = 1;
-    this.cam.goal.x = w.pos[i * 3]!;
-    this.cam.goal.z = w.pos[i * 3 + 2]!;
-    this.cam.goal.y = Math.min(8, w.pos[i * 3 + 1]! * 0.5);
-    this.cam.goal.dist = Math.min(this.cam.goal.dist, 60);
+    if (fly) this.flyToFile(i);
+    this.inspector.show(r, i);
     setText($('#placeEy'), 'District');
     setText($('#placeName'), d.name);
     setText($('#placeSub'), `${fmt(d.files)} files \u00b7 bus factor ${fmt(d.bus_factor)}${d.quiet ? ' \u00b7 quiet' : ''}`);
@@ -517,7 +898,7 @@ export class App {
     }
   }
 
-  private cameraNow(pos?: [number, number, number], tgt?: [number, number, number], fov = this.fov) {
+  private cameraNow(pos?: Vec, tgt?: Vec, fov = this.fov) {
     const pose = pos && tgt ? { pos, tgt } : (this.lastPose ?? this.cam.pose());
     const far = Math.max(1200, (this.world?.radius ?? 100) * 6);
     return buildCamera(pose.pos, pose.tgt, this.canvas.clientWidth, this.canvas.clientHeight, far, fov);
@@ -537,6 +918,18 @@ export class App {
     if (this.mode === 'city') {
       P.hot = 1;
       P.fog = FOG;
+      P.exposure = 1;
+      this.keyMove(dt, this.held.has('shift'));
+      // History playback and scrubbing: P.t eases toward the target so scrubs glide, never jump.
+      if (this.playing) {
+        this.tT = Math.min(1, this.tT + (dt * SPEEDS[this.speedIdx]!) / PLAY_SECONDS);
+        if (this.tT >= 1) this.playing = false;
+      }
+      P.t = reduced || this.playing ? this.tT : P.t + (this.tT - P.t) * (1 - Math.exp(-dt * 8));
+      if (this.compare) {
+        this.compare.b = Math.max(this.compare.a + 0.01, this.tT);
+        P.cmp = [1, this.compare.a, this.compare.b];
+      }
     } else if (this.mode !== 'story') {
       P.hot = 0.5;
       P.fog = FOG * 1.15;
@@ -547,8 +940,8 @@ export class App {
       P.fog = FOG;
     }
     this.cam.update(dt, reduced);
-    let pos: [number, number, number];
-    let tgt: [number, number, number];
+    let pos: Vec;
+    let tgt: Vec;
     let fov = 50;
     P.ca = 1;
     const sf = this.mode === 'story' ? this.story.frame(now, this.lastVP, this.canvas.clientWidth, this.canvas.clientHeight) : null;
@@ -573,10 +966,6 @@ export class App {
       }
     } else {
       ({ pos, tgt } = this.cam.pose());
-      if (this.mode === 'city') {
-        P.t = 1;
-        P.exposure = 1;
-      }
     }
     if (this.blend) {
       const b = this.blend;
@@ -605,6 +994,11 @@ export class App {
         this.lanterns.set([lerp(a[0], b[0], u), lerp(a[1], b[1], u) + Math.sin(u * Math.PI) * 3.5, lerp(a[2], b[2], u)], i * 3);
       }
     }
+    if (w && this.mode === 'city' && !this.demo) {
+      this.timeline.update(this.tT, this.playing, SPEEDS[this.speedIdx]!, this.compare, (t) => w.t0 + t * (w.t1 - w.t0));
+      const hotDirs = new Set(this.result!.insights.hotspots.map((i) => this.result!.files[i]!.dir));
+      this.minimap.draw(w, pos, tgt, hotDirs);
+    }
 
     const R = this.renderer;
     if (!R || !w) return;
@@ -617,7 +1011,7 @@ export class App {
       }
       if (!this.rendererReady) return;
     }
-    if (this.hoverAt && !this.pickBusy && this.mode === 'city') {
+    if (this.hoverAt && !this.pickBusy && this.mode === 'city' && !this.photo) {
       const at = this.hoverAt;
       this.hoverAt = null;
       this.pickBusy = true;
@@ -630,6 +1024,10 @@ export class App {
       });
     }
     R.render(C, P, this.time, this.lanterns);
+    if (this.exportNext) {
+      this.exportNext = false;
+      this.exportPng(); // same task as the render: the drawing buffer is still intact
+    }
     this.adapt(rawMs);
   };
 }

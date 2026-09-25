@@ -86,7 +86,7 @@ void main(){
 }`,
 fs:H+NOISE+`
 in vec3 vW;in vec3 vN;in vec2 vXZ;in vec2 vSize;in vec4 vB;in vec4 vC;in float vG;in float vTop;flat in float vInst;flat in float vDist;
-uniform float uT,uTime,uFog,uHot,uFocus,uFocusAmt,uHover;uniform vec3 uCam,uFogCol;uniform vec3 uPal[5];/* PORT: 5 palette kinds, not 12 districts */
+uniform float uT,uTime,uFog,uHot,uFocus,uFocusAmt,uHover;uniform vec3 uCam,uFogCol,uCmp;uniform vec3 uPal[5];/* PORT: 5 palette kinds, not 12 districts */
 out vec4 o;
 void main(){
   vec3 N=normalize(vN);vec3 tc=uCam-vW;float dist=length(tc);vec3 V=tc/dist;
@@ -122,6 +122,16 @@ void main(){
   if(N.y>.5){col*=1.15;emis+=vec3(1.,.28,.18)*vC.z*uHot*.9;}
   float inF=(uFocus<-.5)?1.:step(abs(vDist-uFocus),.5);/* PORT: focus by district index, not palette */
   col*=mix(1.,mix(.32,1.25,inF),uFocusAmt);emis*=mix(1.,mix(.35,1.3,inF),uFocusAmt);
+  /* PORT (A5): compare mode tints each building by what the data says happened between two dates.
+     added in window = green, last change in window = amber, still changing after = blue, untouched before = grey */
+  if(uCmp.x>.5){
+    float added=step(uCmp.y,vB.y-1e-5)*step(vB.y,uCmp.z);
+    float lastIn=(1.-added)*step(uCmp.y,vB.z-1e-5)*step(vB.z,uCmp.z);
+    float after=(1.-added)*(1.-lastIn)*step(uCmp.z,vB.z-1e-5);
+    float before=1.-added-lastIn-after;
+    vec3 tint=added*vec3(.37,.84,.7)+lastIn*vec3(1.,.7,.37)+after*vec3(.54,.7,1.)+before*vec3(.34,.38,.42);
+    col=mix(col,tint*.55,.7);emis=mix(emis*.25,tint*1.1*win,.65);
+  }
   float hv=step(abs(vInst-uHover),.5);
   col+=vec3(.20,.42,.5)*hv*(.5+rim*2.);emis+=vec3(.2,.5,.6)*hv*.6*win;
   vec3 c=col+emis;
