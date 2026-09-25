@@ -17,7 +17,7 @@ export const TIERS: readonly Tier[] = [
 ];
 
 export type Camera = { vp: M4; vpR: M4; pos: V3; posR: V3; right: V3; up: V3; fwd: V3; tanH: number };
-export type Params = { t: number; fog: number; hot: number; focus: number; focusAmt: number; hover: number; fade: number; exposure: number; grain: number };
+export type Params = { t: number; fog: number; hot: number; focus: number; focusAmt: number; hover: number; fade: number; exposure: number; grain: number; ca: number };
 
 const FOG_COL: V3 = [0.075, 0.17, 0.19];
 const MOON: V3 = [-0.42, 0.36, -0.83];
@@ -583,6 +583,7 @@ export class Renderer {
       gl.uniform1f(u['uFade']!, P.fade);
       gl.uniform1f(u['uTime']!, time);
       gl.uniform1f(u['uGrain']!, P.grain);
+      gl.uniform1f(u['uCA']!, P.ca);
     });
     this.resolvePick();
   }

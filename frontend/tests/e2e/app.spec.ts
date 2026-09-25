@@ -59,7 +59,7 @@ test('hostile paths render as inert text everywhere (T5)', async ({ page }) => {
   await page.fill('#repoInput', 'acme/orbit');
   await page.click('button.go');
   await expect(page.locator('#log')).toContainText('Reading history: 20 of 46 commits');
-  await expect(page.locator('body')).toHaveClass(/mode-city/);
+  await expect(page.locator('body')).toHaveClass(/mode-story/);
   await page.click('#btnTable');
   await expect(page.locator('#files tbody')).toContainText(`core/${XSS}.py`);
   await expect(page.locator('#summaryBody')).toContainText(`x${XSS}`);
@@ -125,5 +125,5 @@ test('pasted GitHub URLs are accepted', async ({ page }) => {
   await page.goto('/?quality=simple');
   await page.fill('#repoInput', 'https://github.com/acme/orbit.git');
   await page.click('button.go');
-  await expect(page.locator('body')).toHaveClass(/mode-city/);
+  await expect(page.locator('body')).toHaveClass(/mode-story/);
 });

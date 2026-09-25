@@ -8,6 +8,7 @@ export default defineConfig({
   // Each page renders a 3k-building city, on a software GPU in CI: keep contention low.
   workers: process.env['CI'] ? 2 : 3,
   expect: { timeout: 15_000 },
+  timeout: 60_000,
   forbidOnly: !!process.env['CI'],
   retries: 0,
   reporter: process.env['CI'] ? 'line' : 'list',
@@ -16,5 +17,6 @@ export default defineConfig({
     // Caddy's local internal CA is not in the test browser's trust store.
     ignoreHTTPSErrors: true,
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // Small viewport: CI renders on a software GPU, where full-screen water/sky shaders dominate frame time.
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 900, height: 560 } } }],
 });

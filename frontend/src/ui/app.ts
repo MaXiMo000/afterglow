@@ -8,11 +8,12 @@ import { validateResult, type Result } from '../lib/result';
 import { lerp, smoothstep } from '../render/math';
 import { Renderer, RendererError, TIERS, type Params } from '../render/renderer';
 import { buildWorld, type World } from '../world/build';
-import { buildCamera, OrbitCamera } from './camera';
+import { buildCamera, OrbitCamera, orbitFromPose } from './camera';
 import { $, ago, el, fmt, fmtDate, reducedMotion, setText } from './dom';
+import { Story } from './story';
 import { drawTreemap, honestyLines, renderSummary, renderTable } from './table';
 
-type Mode = 'hero' | 'loading' | 'city';
+type Mode = 'hero' | 'loading' | 'story' | 'city';
 const DEMO_URL = '/demo/fastapi-fastapi.json';
 const FOG = 0.0072;
 
@@ -47,7 +48,7 @@ export class App {
   private result: Result | null = null;
   private demo = true;
   private readonly cam = new OrbitCamera();
-  private readonly P: Params = { t: 1, fog: FOG, hot: 0.5, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.035 };
+  private readonly P: Params = { t: 1, fog: FOG, hot: 0.5, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.035, ca: 1 };
   private time = 0;
   private last = 0;
   private tierIdx = 2;
@@ -65,6 +66,12 @@ export class App {
   private pickBusy = false;
   private pickChain: Promise<unknown> = Promise.resolve(); // one GPU readback in flight at a time
   private abort: AbortController | null = null;
+  private readonly story = new Story(() => this.enterCity());
+  private lastVP: Float32Array | null = null;
+  private pointer = { x: 0, y: 0 };
+  /** Time-based blend used only for mode changes (outside the scrubbed story range). */
+  private blend: { pos: [number, number, number]; tgt: [number, number, number]; fov: number; k: number } | null = null;
+  private fov = 50;
   private readonly canvas = $('#gl') as HTMLCanvasElement;
   private readonly body = document.body;
 
@@ -148,14 +155,45 @@ export class App {
   // ---------- flow ----------
   private setMode(m: Mode): void {
     this.mode = m;
-    this.body.classList.remove('mode-hero', 'mode-loading', 'mode-city');
+    this.body.classList.remove('mode-hero', 'mode-loading', 'mode-story', 'mode-city');
     this.body.classList.add(`mode-${m}`);
     $('#hero').hidden = m !== 'hero';
     $('#loading').hidden = m !== 'loading';
     $('#city').hidden = m !== 'city';
     $('#btnNew').hidden = m === 'hero';
+    $('#btnCity').hidden = m !== 'story';
+    $('#btnStory').hidden = m !== 'city' || this.demo || !this.renderer;
+    if (m !== 'story' && this.story.active) this.story.exit();
     this.hideTip();
   }
+
+  /** Scroll story for the loaded result (A4). Reduced motion gets the static-card path inside Story. */
+  private enterStory(fromCity = false): void {
+    if (!this.result || !this.world || this.demo) return;
+    if (fromCity) this.startBlend();
+    this.setMode('story');
+    this.story.enter(this.result, this.world);
+  }
+
+  /** Hand over to the orbit camera exactly where the story camera is, so nothing pops. */
+  private enterCity(): void {
+    const { pos, tgt } = this.currentPose();
+    this.cam.goal = orbitFromPose(pos, tgt);
+    this.cam.snap();
+    this.fov = 50;
+    this.setMode('city');
+    history.replaceState(null, '', '#explore');
+  }
+
+  private startBlend(): void {
+    const { pos, tgt } = this.currentPose();
+    this.blend = { pos: [...pos], tgt: [...tgt], fov: this.fov, k: 0 };
+  }
+
+  private currentPose(): { pos: [number, number, number]; tgt: [number, number, number] } {
+    return this.lastPose ?? this.cam.pose();
+  }
+  private lastPose: { pos: [number, number, number]; tgt: [number, number, number] } | null = null;
 
   private async analyse(raw: string): Promise<void> {
     const cleaned = raw.trim().replace(/^https?:\/\/(www\.)?github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '');
@@ -210,9 +248,17 @@ export class App {
       bar.style.width = '100%';
       this.demo = false;
       this.show(r);
-      this.setMode('city');
       this.announce(`Loaded ${r.meta.repo}: ${fmt(r.meta.files)} files.`);
-      if (!this.renderer) this.openTable(true);
+      if (!this.renderer) {
+        this.setMode('city');
+        this.openTable(true);
+      } else if (location.hash === '#explore') {
+        this.cam.frame(this.world!.radius);
+        this.cam.snap();
+        this.setMode('city');
+      } else {
+        this.enterStory();
+      }
     } catch (e) {
       if (abort.signal.aborted) return;
       const code = e instanceof ApiError ? e.code : 'unavailable';
@@ -257,6 +303,12 @@ export class App {
         void this.analyse(b.dataset['repo'] ?? '');
       });
     }
+    $('#btnCity').addEventListener('click', () => this.enterCity());
+    $('#btnStory').addEventListener('click', () => this.enterStory(true));
+    addEventListener('pointermove', (e) => {
+      this.pointer.x = (e.clientX / innerWidth) * 2 - 1;
+      this.pointer.y = (e.clientY / innerHeight) * 2 - 1;
+    }, { passive: true });
     $('#btnCancel').addEventListener('click', () => {
       this.abort?.abort();
       this.setMode(this.result && !this.demo ? 'city' : 'hero');
@@ -402,7 +454,7 @@ export class App {
     const rows: [string, string][] = [
       ['changes, last 12 months', fmt(f.changes_12m)],
       ['changes, all time', fmt(f.changes)],
-      ['authors', fmt(f.authors)],
+      ['authors, all time', fmt(f.authors)],
       ['lines', r.meta.truncated.sizes && f.loc === 0 ? 'n/a' : fmt(f.loc)],
       ['last change', ago(f.last, r.meta.span[1])],
     ];
@@ -465,10 +517,10 @@ export class App {
     }
   }
 
-  private cameraNow() {
-    const { pos, tgt } = this.cam.pose();
+  private cameraNow(pos?: [number, number, number], tgt?: [number, number, number], fov = this.fov) {
+    const pose = pos && tgt ? { pos, tgt } : (this.lastPose ?? this.cam.pose());
     const far = Math.max(1200, (this.world?.radius ?? 100) * 6);
-    return buildCamera(pos, tgt, this.canvas.clientWidth, this.canvas.clientHeight, far);
+    return buildCamera(pose.pos, pose.tgt, this.canvas.clientWidth, this.canvas.clientHeight, far, fov);
   }
 
   private readonly frame = (now: number): void => {
@@ -485,14 +537,61 @@ export class App {
     if (this.mode === 'city') {
       P.hot = 1;
       P.fog = FOG;
-    } else {
+    } else if (this.mode !== 'story') {
       P.hot = 0.5;
       P.fog = FOG * 1.15;
+      P.t = 1;
+      P.exposure = 1;
       if (!reduced) this.cam.goal.yaw += dt * 0.03; // slow drift behind the hero and loading log
+    } else {
+      P.fog = FOG;
     }
-    P.focusAmt += (this.focusGoal - P.focusAmt) * (1 - Math.exp(-dt * 5));
     this.cam.update(dt, reduced);
-    const C = this.cameraNow();
+    let pos: [number, number, number];
+    let tgt: [number, number, number];
+    let fov = 50;
+    P.ca = 1;
+    const sf = this.mode === 'story' ? this.story.frame(now, this.lastVP, this.canvas.clientWidth, this.canvas.clientHeight) : null;
+    if (sf) {
+      const ps = sf.pose;
+      pos = [...ps.pos];
+      tgt = [...ps.tgt];
+      fov = ps.fov + 3.5 * sf.velocity; // FOV kick with scroll speed, clamped by velocity in [0,1]
+      P.t = ps.t;
+      P.hot = ps.hot;
+      P.exposure = ps.exposure;
+      P.focus = ps.focus;
+      this.focusGoal = ps.focus >= 0 ? 0.55 : 0;
+      P.ca = 1 + 5 * sf.velocity;
+      P.fade *= sf.fade;
+      if (!reduced) {
+        // Handheld micro-motion and a small, damped pointer parallax; additive, so the rig stays a pure function of p.
+        const r = this.cameraNow(pos, tgt, fov).right;
+        pos[0] += Math.sin(this.time * 0.13) * 0.4 + r[0] * this.pointer.x * 1.1;
+        pos[1] += Math.sin(this.time * 0.17) * 0.25 - this.pointer.y * 0.5;
+        pos[2] += Math.cos(this.time * 0.11) * 0.4 + r[2] * this.pointer.x * 1.1;
+      }
+    } else {
+      ({ pos, tgt } = this.cam.pose());
+      if (this.mode === 'city') {
+        P.t = 1;
+        P.exposure = 1;
+      }
+    }
+    if (this.blend) {
+      const b = this.blend;
+      b.k = Math.min(1, b.k + dt / 0.9);
+      const e = reduced ? 1 : b.k < 0.5 ? 4 * b.k ** 3 : 1 - (-2 * b.k + 2) ** 3 / 2;
+      pos = [lerp(b.pos[0], pos[0], e), lerp(b.pos[1], pos[1], e), lerp(b.pos[2], pos[2], e)];
+      tgt = [lerp(b.tgt[0], tgt[0], e), lerp(b.tgt[1], tgt[1], e), lerp(b.tgt[2], tgt[2], e)];
+      fov = lerp(b.fov, fov, e);
+      if (b.k >= 1) this.blend = null;
+    }
+    this.fov = fov;
+    this.lastPose = { pos, tgt };
+    P.focusAmt += (this.focusGoal - P.focusAmt) * (1 - Math.exp(-dt * 5));
+    const C = this.cameraNow(pos, tgt, fov);
+    this.lastVP = C.vp;
 
     const w = this.world;
     if (w && this.lanterns) {

@@ -102,11 +102,11 @@ export function renderSummary(r: Result, root: HTMLElement): void {
   );
   for (const line of honestyLines(r)) parts.push(el('p', line));
 
-  parts.push(el('h3', 'Hotspots: changed often, by few people, in the last 12 months'));
+  parts.push(el('h3', 'Hotspots: changed at least five times in the last 12 months by three people or fewer'));
   const hot = el('ol');
   for (const i of r.insights.hotspots.slice(0, 10)) {
     const f = r.files[i];
-    if (f) hot.append(el('li', `${f.path}: ${fmt(f.changes_12m)} changes by ${fmt(f.authors)} author${f.authors === 1 ? '' : 's'}`));
+    if (f) hot.append(el('li', `${f.path}: ${fmt(f.changes_12m)} changes in the last 12 months`));
   }
   parts.push(hot.childElementCount ? hot : el('p', 'None found.'));
 
