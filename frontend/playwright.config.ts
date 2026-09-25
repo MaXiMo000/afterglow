@@ -5,6 +5,9 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: 'tests/e2e',
   fullyParallel: true,
+  // Each page renders a 3k-building city, on a software GPU in CI: keep contention low.
+  workers: process.env['CI'] ? 2 : 3,
+  expect: { timeout: 15_000 },
   forbidOnly: !!process.env['CI'],
   retries: 0,
   reporter: process.env['CI'] ? 'line' : 'list',
