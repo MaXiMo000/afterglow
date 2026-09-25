@@ -14,7 +14,7 @@ from typing import Annotated, Self
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
-ANALYSER_VERSION = 1
+ANALYSER_VERSION = 2  # 2: files at HEAD come from HEAD's tree (A5 fix)
 MAX_PATH = 512
 MAX_FILES = 50_000
 MAX_DIRS = 2_000
