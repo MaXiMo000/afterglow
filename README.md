@@ -8,8 +8,8 @@ Scroll through the story, then fly the city and scrub through time.
 history, then explore the city with the full toolset: zoom toward the cursor, inertia, presets, search (/),
 inspector, insights, timeline playback, compare two dates, mini-map, share links, photo mode with PNG export, and a
 keyboard map (?). The effects pass (A6) adds depth of field, lens flare and god rays, birth ripples, commit-flow
-pulses, hover lift, lantern trails and a loading scene driven by real progress. Accessibility and device performance
-hardening are next (A7). The hero background is a real, dated analysis of fastapi/fastapi.
+pulses, hover lift, lantern trails and a loading scene driven by real progress. A7 made accessibility and budgets CI gates (axe,
+focus order, reduced motion, draw calls, CLS 0); security verification and launch are next (A8). The hero background is a real, dated analysis of fastapi/fastapi.
 Afterglow is **not** yet claimed to be secure: see `docs/SECURITY.md` section 8.
 
 | Milestone | Status |
@@ -21,8 +21,8 @@ Afterglow is **not** yet claimed to be secure: see `docs/SECURITY.md` section 8.
 | A4 Scroll story | done |
 | A5 Explore | done |
 | A6 Effects + UI polish | done |
-| A7 Accessibility + performance hardening | next |
-| A8 | planned (`docs/PLAN.md` section 5) |
+| A7 Accessibility + performance hardening | done (real-device profiling outstanding: `docs/PERF-LOG.md`) |
+| A8 Security verification + launch | next |
 
 | Path | What |
 | --- | --- |

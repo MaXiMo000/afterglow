@@ -7,6 +7,7 @@ import { parseRepo, type RepoRef } from '../lib/repo';
 import { validateResult, type Result } from '../lib/result';
 import { decodeView, encodeView, type View } from '../lib/share';
 import { clamp, lerp, smoothstep } from '../render/math';
+import { DynRes } from '../render/dynres';
 import { Renderer, RendererError, TIERS, type Params } from '../render/renderer';
 import { buildWorld, type World } from '../world/build';
 import { buildCamera, OrbitCamera, orbitFromPose, rayThrough, type Preset } from './camera';
@@ -65,9 +66,7 @@ export class App {
   private last = 0;
   private tierIdx = 2;
   private scale = 1; // dynamic resolution factor, 0.6..1
-  private frameMs = 16;
-  private slowFor = 0;
-  private fastFor = 0;
+  private dyn = new DynRes(2);
   private lanterns: Float32Array | null = null;
   private selected = -1;
   private focusGoal = 0;
@@ -114,6 +113,7 @@ export class App {
     const q = new URLSearchParams(location.search).get('quality');
     const pinned = TIERS.findIndex((t) => t.name === q);
     if (pinned >= 0) this.tierIdx = pinned;
+    this.dyn.tier = this.tierIdx;
     try {
       this.renderer = new Renderer(this.canvas);
     } catch {
@@ -896,29 +896,11 @@ export class App {
     }
   }
 
-  /** Dynamic resolution (EXPERIENCE section 9): nudge the render scale to hold ~16.6 ms; step tiers only on sustained misses. */
   private adapt(rawMs: number): void {
-    if (rawMs > 250) return; // tab switch or debugger pause, not a real frame
-    this.frameMs = lerp(this.frameMs, rawMs, 0.08);
-    if (this.frameMs > 18.5) {
-      this.slowFor++;
-      this.fastFor = 0;
-    } else if (this.frameMs < 14.5) {
-      this.fastFor++;
-      this.slowFor = 0;
-    } else {
-      this.slowFor = this.fastFor = 0;
-    }
-    if (this.slowFor > 20) {
-      this.slowFor = 0;
-      if (this.scale > 0.62) this.scale = Math.max(0.6, this.scale - 0.08);
-      else if (this.tierIdx > 0) (this.tierIdx--, (this.scale = 0.85));
-      this.resize(true);
-    } else if (this.fastFor > 180 && this.scale < 1) {
-      this.fastFor = 0; // hysteresis: recover slowly
-      this.scale = Math.min(1, this.scale + 0.05);
-      this.resize(true);
-    }
+    if (!this.dyn.frame(rawMs)) return;
+    this.tierIdx = this.dyn.tier;
+    this.scale = this.dyn.scale;
+    this.resize(true);
   }
 
   private cameraNow(pos?: Vec, tgt?: Vec, fov = this.fov) {
