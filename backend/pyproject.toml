@@ -8,7 +8,7 @@ dependencies = [
   "fastapi>=0.141.1",
   "uvicorn>=0.38",
   "psycopg[binary]>=3.3",
-  "psycopg-pool>=3.3",
+  "psycopg-pool>=3.3.2",
 ]
 
 [project.optional-dependencies]
