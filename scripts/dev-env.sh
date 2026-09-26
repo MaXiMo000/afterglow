@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 out=deploy/.env
 [ -e "$out" ] && { echo "$out exists; delete it first to rotate secrets" >&2; exit 1; }
-rand() { python -c 'import secrets; print(secrets.token_hex(32))'; }
+rand() { openssl rand -hex 32; }
 umask 077
 cat > "$out" <<EOF
 POSTGRES_PASSWORD=$(rand)
