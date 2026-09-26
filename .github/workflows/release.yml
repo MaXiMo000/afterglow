@@ -77,7 +77,6 @@ jobs:
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/dist-release:/out" "$TRIVY" \
               image --format cyclonedx --output "/out/afterglow-$svc-$TAG.sbom.cdx.json" "$ref:$TAG"
           done
-          docker logout ghcr.io
           cat dist-release/images.txt
 
       - name: SBOMs are not empty
@@ -134,3 +133,8 @@ jobs:
             echo "SBOMs are CycloneDX JSON. Security evidence: docs/SECURITY-EVIDENCE.md."
           } > notes.md
           gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md dist-release/*
+
+      - name: Log out of the registry
+        # Only after the image attestations, which push to ghcr.io with this login.
+        if: always()
+        run: docker logout ghcr.io
