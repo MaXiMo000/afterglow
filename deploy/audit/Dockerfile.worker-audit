@@ -1,0 +1,9 @@
+# SECURITY section 8 sandbox audit only; never deployed. The real worker image plus strace and pytest (hash-pinned),
+# so the hostile-repo suite runs with the worker's own git, Python, user and filesystem layout.
+FROM afterglow-worker:latest
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends strace && rm -rf /var/lib/apt/lists/*
+COPY audit/pytest.lock /tmp/pytest.lock
+RUN pip install --require-hashes --no-deps -r /tmp/pytest.lock && rm /tmp/pytest.lock
+USER 10002:10002
+ENTRYPOINT []

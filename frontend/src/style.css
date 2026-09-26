@@ -213,7 +213,7 @@ dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
 #help dl { display: grid; grid-template-columns: 170px 1fr; gap: 4px 16px; margin: 0; font-size: var(--size-sm); }
 #help dt { font-family: var(--font-mono); color: var(--color-amber); }
 #help dd { margin: 0; }
-#help form { margin-top: 18px; text-align: right; }
+#help .help-close { margin-top: 18px; text-align: right; }
 
 /* tooltip */
 #tip { position: fixed; left: 0; top: 0; z-index: var(--z-toast); width: 250px; padding: 11px 13px; pointer-events: none;

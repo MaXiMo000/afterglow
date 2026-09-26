@@ -4,6 +4,8 @@
 	admin off
 	skip_install_trust
 	auto_https disable_redirects
+	# Clients that send no SNI (Java skips it for dot-less names such as localhost) still get this site's cert.
+	default_sni {$AFTERGLOW_SITE:localhost}
 }
 
 {$AFTERGLOW_SITE:localhost}:{$AFTERGLOW_PORT:8443} {

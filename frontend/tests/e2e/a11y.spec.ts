@@ -123,7 +123,12 @@ test('dialogs return focus to what opened them', async ({ page }) => {
     await page.keyboard.press('Escape');
     await expect(page.locator(dlg)).toBeHidden();
     await expect(page.locator(btn)).toBeFocused();
-  }
+  }  // The Close button works too, and also hands focus back.
+  await page.locator('#btnHelp').focus();
+  await page.keyboard.press('Enter');
+  await page.locator('#btnHelpClose').click();
+  await expect(page.locator('#help')).toBeHidden();
+  await expect(page.locator('#btnHelp')).toBeFocused();
 });
 
 test('the screen-reader summary carries the real numbers', async ({ page }) => {

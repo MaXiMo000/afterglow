@@ -180,6 +180,18 @@ def test_rate_limit(client: TestClient) -> None:
     assert codes[10:] == [429, 429]
 
 
+def test_database_restart_does_not_surface_as_500(client: TestClient) -> None:
+    # Found by the A8 ZAP scan: after Postgres restarted, the pool handed out a dead connection (AdminShutdown -> 500).
+    assert post(client, {"repo": "acme/one"})[0] == 202
+    user = psycopg.conninfo.conninfo_to_dict(API)["user"]
+    with psycopg.connect(ADMIN, autocommit=True) as conn:
+        n = conn.execute(
+            "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE usename = %s", (user,)
+        ).fetchone()
+    assert n and n[0] >= 1  # the pool's idle connection is gone, as after a restart
+    assert post(client, {"repo": "acme/two"})[0] == 202
+
+
 def test_unknown_and_malformed_ids(client: TestClient) -> None:
     for jid in (uuid.uuid4().hex, "0" * 32, "../../etc/passwd", "A" * 32, "x", uuid.uuid4().hex + "0"):
         r = client.get(f"/api/v1/analyses/{jid}")
