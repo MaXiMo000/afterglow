@@ -34,10 +34,10 @@ Browser --https--> Caddy (TLS, strict CSP, static files) --/api--> FastAPI --> P
 
 ## Run it locally
 
-Needs Docker, Node 24 and Python 3 (for the secret generator).
+Needs Docker and Node 24 (on Windows, run the commands in Git Bash).
 
 ```bash
-scripts/dev-env.sh                                  # writes deploy/.env with random secrets
+scripts/dev-env.sh                  # writes deploy/.env with random secrets
 (cd frontend && npm ci --ignore-scripts && npm run build)
 docker compose -f deploy/compose.yaml --profile worker up -d --build --wait
 ```
@@ -47,21 +47,8 @@ Open https://localhost:8443 (a local certificate, so the browser warns once). De
 
 ## Deploy
 
-Afterglow runs as the same Docker Compose stack on any Linux server with Docker (a small VPS is enough: 2 vCPU,
-2-4 GB RAM). The stack relies on private Docker networks and a locked-down worker container, so use a host where you
-control Docker.
-
-1. Point a DNS `A`/`AAAA` record at the server and open port 443.
-2. Clone the repository, run `scripts/dev-env.sh`, then add to `deploy/.env`:
-   ```
-   AFTERGLOW_SITE=afterglow.example.com
-   AFTERGLOW_PUBLIC_ORIGIN=https://afterglow.example.com
-   AFTERGLOW_PORT=443
-   AFTERGLOW_BIND=0.0.0.0
-   AFTERGLOW_TLS=you@example.com
-   ```
-   With an email in `AFTERGLOW_TLS`, Caddy gets and renews a Let's Encrypt certificate.
-3. Build the frontend and start the stack as above; check with `bash deploy/check-headers.sh https://afterglow.example.com`.
+On any Linux server with Docker and a domain name: point DNS at the server, add five lines to `deploy/.env`, and
+start the same stack; Caddy gets the HTTPS certificate on its own. Step by step: [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 Release images are published to GHCR with build provenance; pin them by digest from the
 [release notes](https://github.com/MaXiMo000/afterglow/releases) and check them with
@@ -77,6 +64,7 @@ Please report vulnerabilities privately through GitHub's "Report a vulnerability
 
 | Doc | Contents |
 | --- | --- |
+| [`docs/DEPLOY.md`](docs/DEPLOY.md) | Running it on your own server, operations, troubleshooting |
 | [`docs/PLAN.md`](docs/PLAN.md) | Product, architecture, decisions, API, performance budgets |
 | [`docs/EXPERIENCE.md`](docs/EXPERIENCE.md) | Scroll, camera, input, motion and UI specification |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Threats, controls and the launch checklist |
