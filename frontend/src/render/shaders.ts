@@ -1,4 +1,4 @@
-/* GLSL ported from prototype/src/gl.js (the reference look). Changes from the prototype are marked PORT. */
+/* GLSL originally ported from the design prototype. Changes from it are marked PORT. */
 /* eslint-disable */
 
 export const H='#version 300 es\nprecision highp float;\n';

@@ -1,13 +1,12 @@
 # Experience spec: scroll, camera, input, animation, UI
 
 Goal: the site should feel like a short film you can steer. Every interaction has weight, inertia and feedback.
-The prototype (`prototype/`) is the look reference; this document lists what must be **better** than it.
-Screenshots: `docs/reference/`.
+The original design prototype set the look; this document lists what the product must do better than it.
 
 ## 1. Scroll engine (`ScrollEngine`)
 - Inertial smooth scroll (Lenis or equivalent, bundled). Tuned so it is **fast and responsive**, not floaty:
   wheel multiplier ~1.0-1.3, lerp ~0.12-0.16, touch handled natively with momentum. Expose these as config and tune by feel on a trackpad, a mouse wheel and a phone.
-- Story length ~450-550vh (prototype is 820vh: too long). Each chapter has a scroll window; windows overlap slightly for cross-fades.
+- Story length ~450-550vh (the prototype's 820vh was too long). Each chapter has a scroll window; windows overlap slightly for cross-fades.
 - **Scroll velocity is an input** to the render: FOV kick (+2-4 degrees at speed), chromatic aberration and streak/motion-blur scale with velocity, beams lean, lanterns stretch.
   Clamp and smooth so it never causes nausea. Disabled under `prefers-reduced-motion`.
 - Optional soft snap to chapter centres when the user stops (off while dragging the scrollbar; off with reduced motion).
@@ -63,7 +62,7 @@ Add:
 - **Camera shake** (very small) when passing hotspot beams; heartbeat pulse on the hottest beam; all off under reduced motion.
 - **Hover lift**: the hovered building rises slightly and its windows brighten; selection ring on the pad; neighbours dim.
 - Lantern **trails** that fade; lanterns cluster visibly around low-bus-factor districts.
-- TAA-lite or MSAA where affordable; filtered water normals so glints never shimmer into noise (fix from prototype).
+- TAA-lite or MSAA where affordable; filtered water normals so glints never shimmer into noise (a prototype bug).
 - Silky transitions between modes (hero -> loading -> story -> explore -> photo): shared elements morph, panels slide with springs, nothing pops.
 - **Loading is a scene, not a spinner**: real SSE progress drives the city un-building/rebuilding with truthful log lines.
 - Micro-interactions on every control (press, hover, focus, success); spring-based, 120-220 ms, interruptible.

@@ -1,7 +1,7 @@
 /**
- * WebGL2 renderer, ported from prototype/src/gl.js (see docs/PLAN.md section 3 for why raw WebGL2, not Three.js).
+ * WebGL2 renderer, originally ported from the design prototype (see docs/PLAN.md section 3 for why raw WebGL2, not Three.js).
  *
- * Additions over the prototype (EXPERIENCE section 9): shaders compile in parallel (KHR_parallel_shader_compile)
+ * Additions over that prototype (EXPERIENCE section 9): shaders compile in parallel (KHR_parallel_shader_compile)
  * and are polled instead of blocking; dynamic resolution holds the frame budget; hover/click use a GPU ID pass read
  * back asynchronously through a pixel-pack buffer; instance counts come from validated data only (SECURITY T21).
  */

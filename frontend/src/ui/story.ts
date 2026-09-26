@@ -243,7 +243,8 @@ export class Story {
       box.style.opacity = '0';
       return;
     }
-    setText(box.querySelector('.name') as HTMLElement, c.name);
+    // A zero-width space after each slash lets long paths wrap at directory boundaries first (still plain text).
+    setText(box.querySelector('.name') as HTMLElement, c.name.replaceAll('/', '/\u200b'));
     setText(box.querySelector('.meta') as HTMLElement, c.meta);
     box.classList.toggle('hot', c.hot);
     // Line-trace draws in as the chapter settles (a function of p, so it undraws symmetrically).
