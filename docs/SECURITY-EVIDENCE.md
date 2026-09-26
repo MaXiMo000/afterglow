@@ -13,7 +13,7 @@ and can be rerun; raw ZAP reports are regenerated in `deploy/audit/zap/out/` (no
 | 5 | ZAP baseline + API scan: no medium or higher | **done** | See [5](#5-zap) |
 | 6 | k6: rate limits, memory flat, backpressure, SSE cap | **done** | See [6](#6-k6) |
 | 7 | pip-audit, npm audit, Trivy, Semgrep, CodeQL, gitleaks clean | **done** | See [7](#7-audits) |
-| 8 | SBOM + provenance on the release; images pinned by digest | **ready, not yet run** | `.github/workflows/release.yml` runs on the first `v*` tag. See [8](#8-release-supply-chain) |
+| 8 | SBOM + provenance on the release; images pinned by digest | **done** | [v0.1.0](https://github.com/MaXiMo000/afterglow/releases/tag/v0.1.0). See [8](#8-release-supply-chain) |
 | 9 | Independent review | **not done** | Needs another person or a paid pentest (owner decision). Suggested scope in [9](#9-independent-review) |
 | 10 | Privacy note published; no emails in responses, logs or cache | **done** | See [10](#10-privacy) |
 
@@ -108,8 +108,12 @@ code-scanning, 0 secret-scanning and 0 Dependabot alerts on 2026-09-26.
 - build provenance (`actions/attest-build-provenance`, Sigstore) for every release file and each image digest,
   pushed to the registry; `SHA256SUMS`.
 
-Not verified until the first tag runs: the workflow itself (it cannot run on a PR), GHCR package visibility (new
-packages may start private; the owner makes them public), and `gh attestation verify` on the outputs.
+**v0.1.0** (2026-09-26, commit `82877d2`, [release](https://github.com/MaXiMo000/afterglow/releases/tag/v0.1.0)):
+SBOMs with 106 (api), 89 (egress), 18 (backend lock) and 4 (frontend) components, plus the worker image SBOM;
+`SHA256SUMS` checks out; `gh attestation verify` passes for the frontend tarball and for
+`ghcr.io/maximo000/afterglow-api@sha256:84d237d7...` (provenance v1, signer `release.yml@refs/tags/v0.1.0`); all
+three images pull anonymously by digest. The first run failed at the image attestations (the job logged out of
+ghcr.io too early, fixed in #24); no release had been created, so the tag was moved to the fixed commit.
 
 ## 9. Independent review
 
