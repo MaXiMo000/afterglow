@@ -69,6 +69,7 @@ main > section { position: fixed; z-index: var(--z-panel); }
 .go:active { transform: translateY(0); }
 .form-error { font: var(--size-xs) var(--font-mono); color: var(--color-coral); min-height: 1.4em; margin: -8px 0 0; }
 .hint { font-size: var(--size-sm); color: var(--color-dim); max-width: 34rem; margin: 0; }
+.hint a { color: var(--color-amber); text-underline-offset: 3px; }
 .samples { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font: var(--size-xs) var(--font-mono); color: var(--color-faint); }
 .samples button { background: none; border: 0; border-bottom: 1px dashed var(--color-faint); color: var(--color-dim); padding: 0 0 1px; font: inherit; }
 .samples button:hover { color: var(--color-amber); border-color: var(--color-amber); }
@@ -213,7 +214,7 @@ dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
 #help dl { display: grid; grid-template-columns: 170px 1fr; gap: 4px 16px; margin: 0; font-size: var(--size-sm); }
 #help dt { font-family: var(--font-mono); color: var(--color-amber); }
 #help dd { margin: 0; }
-#help form { margin-top: 18px; text-align: right; }
+#help .help-close { margin-top: 18px; text-align: right; }
 
 /* tooltip */
 #tip { position: fixed; left: 0; top: 0; z-index: var(--z-toast); width: 250px; padding: 11px 13px; pointer-events: none;

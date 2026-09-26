@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="What Afterglow stores, for how long, and what it never collects." />
+    <title>Privacy - Afterglow</title>
+    <script type="module" src="/src/privacy.ts"></script>
+  </head>
+  <body>
+    <main>
+      <p class="meta"><a href="/">Afterglow</a></p>
+      <h1>Privacy</h1>
+      <p class="meta">Last changed 26 September 2026. This describes what the code in this repository does.</p>
+
+      <h2>What you send</h2>
+      <ul>
+        <li>The public repository name you type (<code>owner/name</code>).</li>
+        <li>Your IP address, as part of every web request. It is used only to compute a keyed pseudonym (an HMAC with a
+          server secret) for rate limits. The raw IP is never stored or logged.</li>
+      </ul>
+
+      <h2>What is stored, and for how long</h2>
+      <ul>
+        <li><strong>Analysis results</strong>, built only from the repository's public git history: file paths, dates,
+          change counts, line counts and co-change pairs. Contributors appear as <code>Contributor 1</code>,
+          <code>Contributor 2</code> and so on. No names, no email addresses, no file contents. Results are cached for
+          reuse by anyone who asks for the same repository and commit, and are kept until the analyser version changes
+          or the operator clears the cache; there is no automatic expiry yet.</li>
+        <li><strong>Job records</strong>: repository name, commit, status, time, and the IP pseudonym above. The
+          pseudonym is kept only while the job is queued or running (it enforces two active jobs per client); when the
+          job finishes or fails it is overwritten with zeros.</li>
+        <li><strong>Service logs</strong>: job ids, <code>owner/name</code> and outcome codes. No IP addresses, no
+          request headers or bodies. At most 30 MB per service is kept, oldest first out.</li>
+      </ul>
+
+      <h2>What we never do</h2>
+      <ul>
+        <li>No accounts, no cookies, no analytics, no tracking, and no requests to any third party from your browser.</li>
+        <li>No private repositories: only public GitHub repositories can be analysed.</li>
+        <li>Nothing is stored in your browser except the scroll position of the story, for this tab only.</li>
+      </ul>
+
+      <h2>Share links</h2>
+      <p>A share link carries the repository name, camera position and point in time after the <code>#</code>. Browsers
+        do not send that part of a URL to the server.</p>
+
+      <h2>Questions</h2>
+      <p>Open an issue on the project's GitHub repository. The code, including these controls and their tests, is
+        public.</p>
+    </main>
+  </body>
+</html>

@@ -10,6 +10,10 @@ const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 
 async function axe(page: Page): Promise<void> {
   await page.evaluate(() => document.fonts.ready);
+  // Measure the settled UI: mid-fade text is partly transparent and would read as low contrast.
+  await page.waitForFunction(() =>
+    document.getAnimations().every((a) => a.playState !== 'running' || a.effect?.getComputedTiming().iterations === Infinity),
+  ); // looping decoration (the scroll hint) never finishes, and does not carry text
   const { violations } = await new AxeBuilder({ page }).withTags(TAGS).analyze();
   expect(violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
 }
@@ -92,7 +96,7 @@ test('axe: table view and the no-WebGL fallback', async ({ page }) => {
 test('hero tab order is logical and every stop shows focus', async ({ page }) => {
   await page.goto('/?quality=simple');
   const stops: string[] = [];
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 8; i++) {
     await page.keyboard.press('Tab');
     const s = await page.evaluate(() => {
       const a = document.activeElement as HTMLElement;
@@ -107,6 +111,7 @@ test('hero tab order is logical and every stop shows focus', async ({ page }) =>
     'btnTable',
     'repoInput',
     'Build the city',
+    'Privacy',
     'fastapi/typer',
     'pallets/flask',
     'tiangolo/sqlmodel',
@@ -123,7 +128,12 @@ test('dialogs return focus to what opened them', async ({ page }) => {
     await page.keyboard.press('Escape');
     await expect(page.locator(dlg)).toBeHidden();
     await expect(page.locator(btn)).toBeFocused();
-  }
+  }  // The Close button works too, and also hands focus back.
+  await page.locator('#btnHelp').focus();
+  await page.keyboard.press('Enter');
+  await page.locator('#btnHelpClose').click();
+  await expect(page.locator('#help')).toBeHidden();
+  await expect(page.locator('#btnHelp')).toBeFocused();
 });
 
 test('the screen-reader summary carries the real numbers', async ({ page }) => {
@@ -151,4 +161,11 @@ test('reduced motion: the cinematic view holds still (no auto-orbit)', async ({ 
   await page.waitForTimeout(1500);
   await page.keyboard.press('s');
   expect(page.url()).toBe(first); // the share link encodes the camera, so any drift would change it
+});
+
+test('axe: the privacy note, reached from the hero', async ({ page }) => {
+  await page.goto('/?quality=simple');
+  await page.getByRole('link', { name: 'Privacy' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Privacy');
+  await axe(page);
 });

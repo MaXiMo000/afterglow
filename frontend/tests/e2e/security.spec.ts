@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { mock } from './fixture';
 
 // SECURITY T8 / T20: the page runs with zero CSP or Trusted Types violations and talks only to its own origin.
 // The "controls are live" tests prove the policy is actually enforced, so removing a directive fails CI.
@@ -44,6 +45,63 @@ test('only same-origin requests are made', async ({ page, baseURL }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   expect(foreign).toEqual([]);
+});
+
+test('full walkthrough: no CSP/TT violations, same-origin only, nothing sensitive stored (T8, T20)', async ({ page, baseURL, context }) => {
+  test.slow();
+  const origin = new URL(baseURL ?? '').origin;
+  const foreign: string[] = [];
+  const errors: string[] = [];
+  page.on('request', (r) => {
+    const url = new URL(r.url());
+    if (url.protocol !== 'data:' && url.protocol !== 'blob:' && url.origin !== origin) foreign.push(r.url());
+  });
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  const violations = await collectViolations(page);
+  await mock(page, 'c'.repeat(32));
+
+  await page.goto('/');
+  await page.fill('#repoInput', 'acme/orbit');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('body')).toHaveClass(/mode-story/);
+  for (let i = 0; i < 3; i++) await page.keyboard.press('j');
+  await page.locator('#btnCity').click();
+  await expect(page.locator('body')).toHaveClass(/mode-city/);
+  for (const k of ['/', 'Escape', 'i', 'm', 'c', 'Escape', 'Space', 'Space', 's', '5', '1']) await page.keyboard.press(k);
+  await page.keyboard.press('p');
+  await expect(page.locator('#photoBar')).toBeVisible();
+  const download = page.waitForEvent('download');
+  await page.keyboard.press('Enter');
+  await download;
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('v');
+  await expect(page.locator('#tableView')).toBeVisible();
+  await page.waitForLoadState('networkidle');
+
+  expect(await violations()).toEqual([]);
+  expect(errors).toEqual([]);
+  expect(foreign).toEqual([]);
+  // Browser storage: no cookies, nothing in localStorage, and sessionStorage holds only numeric UI state.
+  expect(await context.cookies()).toEqual([]);
+  const stored = await page.evaluate(() => ({
+    local: Object.keys(localStorage),
+    session: Object.entries(sessionStorage),
+  }));
+  expect(stored.local).toEqual([]);
+  for (const [, v] of stored.session) expect(v).toMatch(/^\d+(\.\d+)?$/);
+});
+
+test('privacy page: full header set, no CSP/TT violations, no console errors', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  const violations = await collectViolations(page);
+  const res = await page.goto('/privacy.html');
+  expect(res?.headers()['content-security-policy']).toContain("require-trusted-types-for 'script'");
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Privacy');
+  await page.waitForLoadState('networkidle');
+  expect(await violations()).toEqual([]);
+  expect(errors).toEqual([]);
 });
 
 test('CSP is live: inline script does not execute', async ({ page }) => {

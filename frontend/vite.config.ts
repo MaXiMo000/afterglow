@@ -22,6 +22,8 @@ export default defineConfig({
     assetsInlineLimit: 0,
     sourcemap: false,
     reportCompressedSize: true,
+    // Two pages: the app and the static privacy note.
+    rollupOptions: { input: { main: 'index.html', privacy: 'privacy.html' } },
   },
   server: {
     // Dev only: forward the API to the local Caddy stack (the production build is served by Caddy itself).

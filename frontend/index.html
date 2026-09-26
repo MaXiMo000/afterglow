@@ -47,7 +47,7 @@
           <button class="go" type="submit">Build the city</button>
         </form>
         <p id="formErr" class="form-error" role="alert"></p>
-        <p id="formHint" class="hint">Public repositories only. We read commit history (paths, times, pseudonymous authors), never file contents beyond line counts, and store no emails.</p>
+        <p id="formHint" class="hint">Public repositories only. We read commit history (paths, times, pseudonymous authors), never file contents beyond line counts, and store no emails. <a href="/privacy.html">Privacy</a></p>
         <div class="samples"><span>Try</span>
           <button type="button" data-repo="fastapi/typer">fastapi/typer</button>
           <button type="button" data-repo="pallets/flask">pallets/flask</button>
@@ -134,7 +134,7 @@
     <dialog id="help" aria-labelledby="helpTitle">
       <h2 id="helpTitle">Keyboard</h2>
       <div class="help-body"></div>
-      <form method="dialog"><button class="chip" type="submit">Close (Esc)</button></form>
+      <div class="help-close"><button class="chip" id="btnHelpClose" type="button">Close (Esc)</button></div>
     </dialog>
     <div id="scroller" aria-hidden="true" hidden></div>
     <aside id="tip" role="tooltip" hidden></aside>

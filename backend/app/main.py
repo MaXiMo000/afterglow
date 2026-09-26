@@ -30,8 +30,16 @@ _REASONS = {
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     cfg = settings or load_settings()
+    # check: validate on checkout, so a DB restart or failover costs a reconnect, not a 500.
     pool = (
-        AsyncConnectionPool(cfg.database_url, min_size=1, max_size=20, open=False, timeout=5)
+        AsyncConnectionPool(
+            cfg.database_url,
+            min_size=1,
+            max_size=20,
+            open=False,
+            timeout=5,
+            check=AsyncConnectionPool.check_connection,
+        )
         if cfg.database_url
         else None
     )

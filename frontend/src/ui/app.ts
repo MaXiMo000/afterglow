@@ -120,6 +120,7 @@ export class App {
       this.renderer = null; // no WebGL2: the table is the whole UI
     }
     renderHelp($('#help .help-body'));
+    $('#btnHelpClose').addEventListener('click', () => ($('#help') as HTMLDialogElement).close());
     this.palette.setSource(() => this.paletteItems());
     this.bindUi();
     this.bindCanvas();

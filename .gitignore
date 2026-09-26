@@ -41,3 +41,4 @@ backend/store/
 
 # local screenshots
 frontend/shots/
+deploy/audit/zap/out/
