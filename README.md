@@ -2,6 +2,8 @@
 
 Paste a public GitHub repository and its whole history grows into a night city you can scroll through and fly.
 
+**Live: https://afterglow.name**
+
 ![The pallets/flask city: districts are top-level folders, beams mark hotspots](docs/screenshots/city.webp)
 
 | What you see | What it means |

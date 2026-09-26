@@ -8,7 +8,7 @@ and can be rerun; raw ZAP reports are regenerated in `deploy/audit/zap/out/` (no
 | --- | --- | --- | --- |
 | 1 | T1-T21 tests exist and pass; removing a control fails a test | **done, with one exception** | See [1](#1-controls-and-mutation-spot-check). T19 (local CLI) was never built, so it has no control to test |
 | 2 | Hostile repos cannot exceed caps or leave the sandbox | **done** | See [2](#2-sandbox-audit) |
-| 3 | Full header set, no `Server` header; securityheaders.com / Observatory A+ | **partial** | Headers: `deploy/check-headers.sh` (CI). External graders need a public deployment: **not done** |
+| 3 | Full header set, no `Server` header; securityheaders.com / Observatory A+ | **done** | See [3](#3-live-deployment) |
 | 4 | Zero CSP / Trusted Types violations over a full walkthrough; same-origin only | **done** | See [4](#4-browser-walkthrough) |
 | 5 | ZAP baseline + API scan: no medium or higher | **done** | See [5](#5-zap) |
 | 6 | k6: rate limits, memory flat, backpressure, SSE cap | **done** | See [6](#6-k6) |
@@ -55,6 +55,18 @@ bad trace: it flags a hook exec, any other shell command, an `AF_INET` connect a
 
 Not covered here: the egress proxy path over the real network (tested separately in `tests/test_egress.py`), and
 a custom seccomp profile / gVisor (T4 residual risk).
+
+## 3. Live deployment
+
+https://afterglow.name (Hostinger KVM 1, Ubuntu 24.04, the compose stack from `docs/DEPLOY.md`), 2026-09-26:
+- Let's Encrypt certificate obtained by Caddy over TLS-ALPN on 443 (port 80 stays closed);
+- `bash deploy/check-headers.sh https://afterglow.name`: full header set, no `Server` / `X-Powered-By` / `Via`;
+- Mozilla Observatory: **A+**, score 150, 12/12 tests; securityheaders.com: **A+**;
+- a real analysis of pallets/flask through the live API and worker (egress proxy to github.com): 236 files,
+  5,557 commits, 14 hotspots.
+
+Found on this first deployment and fixed in #29: the API health check sent `Host: localhost`, which a real
+domain's allowed-hosts list does not include, so the container never became healthy.
 
 ## 4. Browser walkthrough
 

@@ -61,7 +61,7 @@ or alter schema (tested in `tests/test_api.py`). Config only via environment/sec
 ## 8. Pre-launch checklist (tick with evidence, link the output)
 - [x] All T1-T21 tests exist and pass; removing a control makes a test fail (spot-check 5 at random) (evidence: `docs/SECURITY-EVIDENCE.md` 1; T19 not built)
 - [x] Hostile-repo fixtures cannot exceed caps or leave the sandbox (verify with `strace`/audit log of the worker) (evidence: `docs/SECURITY-EVIDENCE.md` 2)
-- [ ] `curl -I` shows the full header set; securityheaders.com / Mozilla Observatory grade A+; no `Server` header (headers: done in CI; external grades need a public deployment)
+- [x] `curl -I` shows the full header set; securityheaders.com / Mozilla Observatory grade A+; no `Server` header (https://afterglow.name: both A+; evidence: `docs/SECURITY-EVIDENCE.md` 3)
 - [x] Browser console has zero CSP or Trusted Types violations across a full walkthrough; network tab shows only same-origin requests (evidence: `docs/SECURITY-EVIDENCE.md` 4)
 - [x] ZAP baseline + authenticated-free API scan: no medium or higher (evidence: `docs/SECURITY-EVIDENCE.md` 5)
 - [x] k6: rate limits hold, memory flat, queue backpressure works, SSE cap works (evidence: `docs/SECURITY-EVIDENCE.md` 6)
