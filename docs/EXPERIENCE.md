@@ -59,7 +59,7 @@ Add:
 - **Commit-flow pulses**: light packets travelling along coupling arcs at a rate proportional to real co-change strength.
 - **Depth of field** driven by focus distance (bokeh on high tier, cheap blur on medium, off on low).
 - **Lens flare + god-rays** from the moon; **wet-glass/rain** optional chapter effect on quiet zones (off on low).
-- **Camera shake** (very small) when passing hotspot beams; heartbeat pulse on the hottest beam; all off under reduced motion.
+- Heartbeat pulse on the hottest beam; off under reduced motion. No camera shake: on a real city the camera is almost always near a beam, so it read as constant jitter.
 - **Hover lift**: the hovered building rises slightly and its windows brighten; selection ring on the pad; neighbours dim.
 - Lantern **trails** that fade; lanterns cluster visibly around low-bus-factor districts.
 - TAA-lite or MSAA where affordable; filtered water normals so glints never shimmer into noise (a prototype bug).

@@ -1001,19 +1001,6 @@ export class App {
     P.sel = this.mode === 'city' ? this.selected : -1;
     const liftGoal = this.mode === 'city' && P.hover >= 0 && !reduced ? 1 : 0;
     P.lift += (liftGoal - P.lift) * (1 - Math.exp(-dt * 10));
-    // Camera shake: very small, only close to hotspot beams, never with reduced motion.
-    if (!reduced && w0 && w0.hot.length && (this.mode === 'city' || this.mode === 'story')) {
-      let near = Infinity;
-      for (const fi of w0.hot) near = Math.min(near, Math.hypot(pos[0] - w0.pos[fi * 3]!, pos[2] - w0.pos[fi * 3 + 2]!));
-      const amp = 0.09 * smoothstep(42, 12, near) * P.hot;
-      if (amp > 1e-3) {
-        const t = this.time;
-        const sx = Math.sin(t * 23.1) * 0.6 + Math.sin(t * 37.7) * 0.4;
-        const sy = Math.sin(t * 29.3) * 0.6 + Math.sin(t * 17.9) * 0.4;
-        pos = [pos[0] + sx * amp, pos[1] + sy * amp, pos[2]];
-        tgt = [tgt[0] + sx * amp * 0.5, tgt[1] + sy * amp * 0.5, tgt[2]];
-      }
-    }
     this.fov = fov;
     this.lastPose = { pos, tgt };
     P.focusAmt += (this.focusGoal - P.focusAmt) * (1 - Math.exp(-dt * 5));
