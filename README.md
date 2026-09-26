@@ -1,54 +1,88 @@
 # Afterglow
 
-Paste a public GitHub repository. Its history grows into a cinematic night city: buildings are files,
-lit windows are recent work, red beacons are hotspots, dark fog is code nobody touches, lanterns are people.
-Scroll through the story, then fly the city and scrub through time.
+Paste a public GitHub repository and its whole history grows into a night city you can scroll through and fly.
 
-**Status:** A0-A5 done: paste a public repo, watch real analysis progress, scroll a short film built from its
-history, then explore the city with the full toolset: zoom toward the cursor, inertia, presets, search (/),
-inspector, insights, timeline playback, compare two dates, mini-map, share links, photo mode with PNG export, and a
-keyboard map (?). The effects pass (A6) adds depth of field, lens flare and god rays, birth ripples, commit-flow
-pulses, hover lift, lantern trails and a loading scene driven by real progress. A7 made accessibility and budgets CI gates (axe,
-focus order, reduced motion, draw calls, CLS 0); security verification and launch are next (A8). The hero background is a real, dated analysis of fastapi/fastapi.
-Afterglow is **not** yet claimed to be secure: see `docs/SECURITY.md` section 8.
+![The pallets/flask city: districts are top-level folders, beams mark hotspots](docs/screenshots/city.webp)
 
-| Milestone | Status |
+| What you see | What it means |
 | --- | --- |
-| A0 Bootstrap | done |
-| A1 Analysis core | done |
-| A2 API + SSE + limits | done |
-| A3 Frontend foundation | done |
-| A4 Scroll story | done |
-| A5 Explore | done |
-| A6 Effects + UI polish | done |
-| A7 Accessibility + performance hardening | done (real-device profiling outstanding: `docs/PERF-LOG.md`) |
-| A8 Security verification + launch | done: [v0.1.0](https://github.com/MaXiMo000/afterglow/releases/tag/v0.1.0) (`docs/SECURITY-EVIDENCE.md`) |
+| Building | A file; height is its size in lines |
+| Lit windows | Recent activity |
+| Red beam | Hotspot: changed often in the last year by three people or fewer |
+| Dark, fogged district | Untouched for over two years |
+| Lanterns | Contributors (pseudonymous), roaming the files they work on |
+| Arcs | Folders whose files change together |
 
-| Path | What |
-| --- | --- |
-| `PROMPT.md` | The prompt to paste into Claude Code |
-| `CLAUDE.md` | Rules Claude Code must follow every session |
-| `docs/PLAN.md` | Product, architecture, milestones with acceptance gates |
-| `docs/EXPERIENCE.md` | Scroll, camera, input, animation, UI spec (the "make it feel amazing" brief) |
-| `docs/SECURITY.md` | Threat model and controls, end to end |
-| `docs/PROTOTYPE.md` | What the reference prototype does, what is wrong with it, how to port it |
-| `prototype/` | Reference implementation (single-file WebGL2, simulated data). Open `prototype/dist/afterglow.html` |
-| `docs/reference/` | Screenshots of the prototype |
-| `backend/` | FastAPI API (`app/`) and analysis worker (`worker/`), hash-pinned lockfiles |
-| `frontend/` | Vite + TypeScript strict SPA, vitest, Playwright e2e |
-| `deploy/` | Caddyfile (TLS, CSP, headers), compose stack, header checks |
-| `docs/PERF-LOG.md` | Measured performance numbers |
-| `scripts/` | `publish.sh` (create public repo + harden it), `harden-repo.sh` |
+A short scroll story walks through the findings, then the city opens for free exploration: search (`/`), an insights
+panel (hotspots, bus factor, quiet areas, coupling), a timeline to replay history, compare two dates, share links,
+photo mode, and a full keyboard map (`?`). Everything also works as a plain table, with or without WebGL.
 
-## Develop
+![Story chapter: hotspots, with the hottest file called out](docs/screenshots/story.webp)
 
-Needs Python 3.12, Node 24 and Docker. Exact commands are in `CLAUDE.md`. Short version:
+## How it works
 
-```bash
-scripts/dev-env.sh
-cd frontend && npm ci --ignore-scripts && npm run build && cd ..
-docker compose -f deploy/compose.yaml --profile worker up -d --build --wait
-bash deploy/check-headers.sh
+```
+Browser --https--> Caddy (TLS, strict CSP, static files) --/api--> FastAPI --> Postgres (queue + results)
+                                                                                 ^
+                                            sandboxed worker (git) --egress proxy (github.com only)--+
 ```
 
-Then open https://localhost:8443 (Caddy's local CA, so the browser will warn once).
+- The worker makes a bare, blobless clone and reads `git log` metadata: paths, dates, change counts and line counts.
+  It never checks out files, never reads email addresses, and shows contributors as `Contributor 1, 2, ...`.
+- Results are cached per commit and validated against a strict schema on both server and client.
+- Public repositories only. What is stored and for how long: [privacy note](frontend/privacy.html).
+
+## Run it locally
+
+Needs Docker, Node 24 and Python 3 (for the secret generator).
+
+```bash
+scripts/dev-env.sh                                  # writes deploy/.env with random secrets
+(cd frontend && npm ci --ignore-scripts && npm run build)
+docker compose -f deploy/compose.yaml --profile worker up -d --build --wait
+```
+
+Open https://localhost:8443 (a local certificate, so the browser warns once). Development and test commands are in
+[`CLAUDE.md`](CLAUDE.md).
+
+## Deploy
+
+Afterglow runs as the same Docker Compose stack on any Linux server with Docker (a small VPS is enough: 2 vCPU,
+2-4 GB RAM). The stack relies on private Docker networks and a locked-down worker container, so use a host where you
+control Docker.
+
+1. Point a DNS `A`/`AAAA` record at the server and open port 443.
+2. Clone the repository, run `scripts/dev-env.sh`, then add to `deploy/.env`:
+   ```
+   AFTERGLOW_SITE=afterglow.example.com
+   AFTERGLOW_PUBLIC_ORIGIN=https://afterglow.example.com
+   AFTERGLOW_PORT=443
+   AFTERGLOW_BIND=0.0.0.0
+   AFTERGLOW_TLS=you@example.com
+   ```
+   With an email in `AFTERGLOW_TLS`, Caddy gets and renews a Let's Encrypt certificate.
+3. Build the frontend and start the stack as above; check with `bash deploy/check-headers.sh https://afterglow.example.com`.
+
+Release images are published to GHCR with build provenance; pin them by digest from the
+[release notes](https://github.com/MaXiMo000/afterglow/releases) and check them with
+`gh attestation verify oci://<image@digest> --repo MaXiMo000/afterglow`.
+
+## Security and quality
+
+Every pull request runs typed checks, unit and end-to-end tests (including accessibility, CSP and performance
+budgets), CodeQL, Semgrep, Trivy, gitleaks and dependency audits. The threat model is in
+[`docs/SECURITY.md`](docs/SECURITY.md); reproducible evidence (sandbox trace, ZAP, load tests) is in
+[`docs/SECURITY-EVIDENCE.md`](docs/SECURITY-EVIDENCE.md). An independent review has not been done yet.
+Please report vulnerabilities privately through GitHub's "Report a vulnerability".
+
+| Doc | Contents |
+| --- | --- |
+| [`docs/PLAN.md`](docs/PLAN.md) | Product, architecture, decisions, API, performance budgets |
+| [`docs/EXPERIENCE.md`](docs/EXPERIENCE.md) | Scroll, camera, input, motion and UI specification |
+| [`docs/SECURITY.md`](docs/SECURITY.md) | Threats, controls and the launch checklist |
+| [`docs/SECURITY-EVIDENCE.md`](docs/SECURITY-EVIDENCE.md) | How each security claim was verified |
+| [`docs/PERF-LOG.md`](docs/PERF-LOG.md) | Measured performance |
+
+## License
+
+[MIT](LICENSE)

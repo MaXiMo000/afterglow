@@ -1,4 +1,4 @@
-/** Minimal column-major 4x4 matrix and vec3 helpers (ported from prototype/src/util.js). */
+/** Minimal column-major 4x4 matrix and vec3 helpers (originally ported from the design prototype). */
 export type V3 = [number, number, number];
 export type M4 = Float32Array;
 
