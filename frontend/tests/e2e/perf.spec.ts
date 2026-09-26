@@ -91,6 +91,7 @@ test('a hidden tab draws nothing', async ({ page }) => {
   });
   await page.goto('/?quality=simple');
   await page.waitForFunction(() => window.__draws.some((n) => n > 0), null, { timeout: 30_000 }); // renderer is up
+  await expect(page.locator('#honesty')).toContainText('Background'); // demo city loaded: no warm-up draws pending
   await page.evaluate(() => (window as unknown as { __hide: (h: boolean) => void }).__hide(true));
   expect(await maxDraws(page, 30)).toBe(0);
 });

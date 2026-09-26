@@ -35,6 +35,17 @@ CREATE UNIQUE INDEX jobs_one_active_per_repo ON jobs (repo) WHERE status IN ('qu
 CREATE INDEX jobs_queue ON jobs (created) WHERE status = 'queued';
 CREATE INDEX jobs_client_active ON jobs (client) WHERE status IN ('queued', 'running');
 
+-- Privacy (SECURITY T6, frontend/privacy.html): the client pseudonym exists only for the per-client cap on active jobs.
+-- Once a job is done or failed it is replaced with zeros, on every path (worker, reaper, cache-hit insert).
+CREATE FUNCTION jobs_forget_client() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.status IN ('done', 'failed') THEN
+    NEW.client := repeat('0', 32);
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER jobs_forget_client BEFORE INSERT OR UPDATE ON jobs FOR EACH ROW EXECUTE FUNCTION jobs_forget_client();
+
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 

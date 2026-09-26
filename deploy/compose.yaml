@@ -9,6 +9,8 @@ x-hardening: &hardening
   security_opt: ["no-new-privileges:true"]
   pids_limit: 128
   restart: unless-stopped
+  # Bounded logs (frontend/privacy.html): at most 3 x 10 MB per service, oldest dropped first.
+  logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
 
 services:
   caddy:

@@ -22,7 +22,7 @@ Afterglow is **not** yet claimed to be secure: see `docs/SECURITY.md` section 8.
 | A5 Explore | done |
 | A6 Effects + UI polish | done |
 | A7 Accessibility + performance hardening | done (real-device profiling outstanding: `docs/PERF-LOG.md`) |
-| A8 Security verification + launch | next |
+| A8 Security verification + launch | verified; release pending (`docs/SECURITY-EVIDENCE.md`) |
 
 | Path | What |
 | --- | --- |

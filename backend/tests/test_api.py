@@ -192,6 +192,23 @@ def test_database_restart_does_not_surface_as_500(client: TestClient) -> None:
     assert post(client, {"repo": "acme/two"})[0] == 202
 
 
+def test_finished_jobs_forget_the_client(client: TestClient, tmp_path: Path) -> None:
+    # T6 / privacy note: the client pseudonym is kept only while a job is active (for the per-client cap).
+    assert post(client, {"repo": "acme/orbit"})[0] == 202
+    work(tmp_path)  # done by the worker
+    assert post(client, {"repo": "acme/orbit"}, ip="198.51.100.1")[0] == 200  # cache hit, inserted as done
+    assert post(client, {"repo": "does/not-exist"}, ip="198.51.100.2")[0] == 202
+    with psycopg.connect(WORKER, autocommit=True) as conn:
+        claimed = queue.claim(conn)
+        assert claimed is not None
+        queue.finish_failed(conn, claimed[0], "not_found")
+    assert post(client, {"repo": "acme/queued"}, ip="198.51.100.3")[0] == 202  # still active
+    with psycopg.connect(ADMIN) as conn:
+        rows = conn.execute("SELECT status, client FROM jobs").fetchall()
+    assert sorted(c for s, c in rows if s in ("done", "failed")) == ["0" * 32] * 3
+    assert [c for s, c in rows if s == "queued"] != ["0" * 32]
+
+
 def test_unknown_and_malformed_ids(client: TestClient) -> None:
     for jid in (uuid.uuid4().hex, "0" * 32, "../../etc/passwd", "A" * 32, "x", uuid.uuid4().hex + "0"):
         r = client.get(f"/api/v1/analyses/{jid}")

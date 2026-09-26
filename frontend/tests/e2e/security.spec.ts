@@ -92,6 +92,18 @@ test('full walkthrough: no CSP/TT violations, same-origin only, nothing sensitiv
   for (const [, v] of stored.session) expect(v).toMatch(/^\d+(\.\d+)?$/);
 });
 
+test('privacy page: full header set, no CSP/TT violations, no console errors', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  const violations = await collectViolations(page);
+  const res = await page.goto('/privacy.html');
+  expect(res?.headers()['content-security-policy']).toContain("require-trusted-types-for 'script'");
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Privacy');
+  await page.waitForLoadState('networkidle');
+  expect(await violations()).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 test('CSP is live: inline script does not execute', async ({ page }) => {
   await page.goto('/');
   const ran = await page.evaluate(() => {
