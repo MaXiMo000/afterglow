@@ -13,6 +13,7 @@ COPY app ./app
 
 USER 10001:10001
 EXPOSE 8000
+# Host "api" is always in AFTERGLOW_ALLOWED_HOSTS (deploy/compose.yaml); the public site name varies per deployment.
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
-  CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/healthz', headers={'Host': 'localhost'}), timeout=2).status == 200 else 1)"]
+  CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/healthz', headers={'Host': 'api'}), timeout=2).status == 200 else 1)"]
 CMD ["uvicorn", "app.asgi:app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header", "--no-date-header", "--no-access-log"]
