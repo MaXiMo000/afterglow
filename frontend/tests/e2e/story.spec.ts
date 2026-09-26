@@ -70,7 +70,7 @@ test('rail click, skip to the city, and back to the same place', async ({ page }
   await load(page);
   await page.click('#rail button:nth-child(3)');
   await expect(current(page)).toHaveAttribute('aria-label', 'Chapter 3: Hot streets');
-  await page.waitForTimeout(900); // let the eased flight and soft snap settle
+  await page.waitForTimeout(900); // let the eased flight settle
   await page.click('#btnCity');
   await expect(page.locator('body')).toHaveClass(/mode-city/);
   await expect(page).toHaveURL(/#explore$/);

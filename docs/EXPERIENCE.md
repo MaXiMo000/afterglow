@@ -9,7 +9,7 @@ The original design prototype set the look; this document lists what the product
 - Story length ~450-550vh (the prototype's 820vh was too long). Each chapter has a scroll window; windows overlap slightly for cross-fades.
 - **Scroll velocity is an input** to the render: FOV kick (+2-4 degrees at speed), chromatic aberration and streak/motion-blur scale with velocity, beams lean, lanterns stretch.
   Clamp and smooth so it never causes nausea. Disabled under `prefers-reduced-motion`.
-- Optional soft snap to chapter centres when the user stops (off while dragging the scrollbar; off with reduced motion).
+- No automatic snapping: the page moves only when the user scrolls or presses a chapter key (a soft snap pulled users back to the previous chapter).
 - Keys in story: `Space`/`PageDown`/`J` next chapter, `Shift+Space`/`PageUp`/`K` previous, `Home`/`End`, `1-6` jump. Chapter rail is clickable and animates with an eased scroll (600-900 ms, cancellable by any wheel/touch).
 - Reverse scroll must be perfectly symmetric: the whole story is a pure function of scroll position (no time-based one-shots inside the scrubbed range).
 - Scroll position restores on reload and on returning from explore. Deep links: `#chapter-3`, `#explore` (only bare tokens; see share link in section 5).
@@ -17,7 +17,7 @@ The original design prototype set the look; this document lists what the product
 
 ## 2. Story camera rig
 - Camera path = Catmull-Rom (or better: centripetal) spline with per-key FOV, roll, focus distance and easing, authored in data, not code.
-- Handheld micro-motion (low-frequency noise), parallax from pointer/gyro (small, damped), cursor-driven look-around within limits.
+- The camera is a pure function of scroll position: no handheld sway or pointer parallax, so the view and callouts hold still when the user does.
 - Chapters are **data-driven from the real analysis**: first commit, biggest growth spurt, top hotspot, longest-dormant district, lowest bus factor. If a repo lacks one, skip or substitute; never fabricate a chapter.
 - Cinematic beats: focus pulls (DOF) onto the subject, subtle light changes per chapter (warm at first light, colder in quiet zones, hot red near hotspots), callouts that draw in with a line-trace animation and track the 3D anchor without jitter.
 

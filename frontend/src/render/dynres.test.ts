@@ -35,4 +35,12 @@ describe('DynRes', () => {
     expect(d.frame(1200)).toBe(false);
     expect(run(d, 16.7, 100)).toBe(0);
   });
+
+  it('ignores the slow frames right after hold() (loading), so it does not step down or reallocate', () => {
+    const d = new DynRes(2);
+    d.hold(90);
+    expect(run(d, 60, 90)).toBe(0);
+    expect(d.scale).toBe(1);
+    expect(run(d, 60, 40)).toBeGreaterThan(0); // after the grace period, sustained slowness still counts
+  });
 });

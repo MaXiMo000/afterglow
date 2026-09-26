@@ -11,12 +11,14 @@ export class DynRes {
   private ms = 16.7;
   private slow = 0;
   private fast = 0;
+  private grace = 0;
 
   constructor(public tier: number) {}
 
   /** Feed one frame interval; returns true when scale or tier changed (the caller reallocates render targets). */
   frame(rawMs: number): boolean {
     if (rawMs > 250) return false; // tab switch or debugger pause, not a real frame
+    if (this.grace > 0) return (this.grace--, false);
     this.ms = lerp(this.ms, rawMs, 0.08);
     if (this.ms > 18.5) (this.slow++, (this.fast = 0));
     else if (this.ms < 17.4) (this.fast++, (this.slow = 0));
@@ -32,6 +34,16 @@ export class DynRes {
       return this.reset(true);
     }
     return false;
+  }
+
+  /**
+   * Ignore the next `frames` frames (default ~1.5 s at 60 Hz): loading, building a world and switching modes cause a
+   * burst of slow frames that say nothing about steady-state cost. Each wrong step down reallocated the canvas, and
+   * repeated steps during load showed as blinks.
+   */
+  hold(frames = 90): void {
+    this.grace = frames;
+    this.reset(false);
   }
 
   /** Start measuring afresh, so the reallocation hitch itself does not trigger the next step down. */

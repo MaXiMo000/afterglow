@@ -1,5 +1,6 @@
 /**
- * Scroll story UI (A4): chapter cards, rail, callout, progress, skip, keys, deep links, scroll restore, soft snap.
+ * Scroll story UI (A4): chapter cards, rail, callout, progress, skip, keys, deep links, scroll restore.
+ * The page only scrolls when the user scrolls (or presses a chapter key): no automatic snapping.
  * Everything visual is computed from scroll progress p, never from elapsed time, so reverse scroll is symmetric.
  */
 import type { Result } from '../lib/result';
@@ -11,7 +12,6 @@ import type { World } from '../world/build';
 import { $, el, fmt, reducedMotion, setText } from './dom';
 
 const VH_PER_CHAPTER = 90;
-const SNAP_IDLE_MS = 220;
 
 export type StoryFrame = { pose: Pose; velocity: number; fade: number };
 
@@ -23,9 +23,6 @@ export class Story {
   private statEls: { el: HTMLElement; value: number; chapter: number }[] = [];
   private key = '';
   private current = -1;
-  private lastInput = 0;
-  private scrollbarDrag = false;
-  private snapping = false;
   private vel = 0;
   private readonly onExplore: () => void;
   private readonly offs: (() => void)[] = [];
@@ -148,18 +145,6 @@ export class Story {
       addEventListener(type, fn, opts);
       this.offs.push(() => removeEventListener(type, fn, opts));
     };
-    const input = (): void => {
-      this.lastInput = performance.now();
-      this.snapping = false;
-    };
-    on('wheel', input, { passive: true });
-    on('touchmove', input, { passive: true });
-    on('pointerdown', (e) => {
-      // A press right of the document is on the native scrollbar: never snap under the user's thumb.
-      this.scrollbarDrag = e.clientX >= document.documentElement.clientWidth;
-      input();
-    });
-    on('pointerup', () => (this.scrollbarDrag = false));
     on('pagehide', () => this.save());
     on('keydown', (e) => {
       if (/^(INPUT|TEXTAREA|BUTTON)$/.test((document.activeElement as HTMLElement | null)?.tagName ?? '') && e.key === ' ') return;
@@ -174,7 +159,6 @@ export class Story {
       else if (/^[1-9]$/.test(e.key) && Number(e.key) <= n) target = Number(e.key) - 1;
       if (target === null) return;
       e.preventDefault();
-      input();
       this.goTo(target);
     });
   }
@@ -217,16 +201,6 @@ export class Story {
     ($('#progress i') as HTMLElement).style.transform = `scaleX(${p.toFixed(4)})`;
     this.callout(ps, p, vp, width, height);
 
-    // Soft snap to the nearest chapter centre once the user stops (never while dragging the scrollbar).
-    if (!reduced && !this.scrollbarDrag && !this.snapping && now - this.lastInput > SNAP_IDLE_MS && Math.abs(eng.velocity()) < 0.2) {
-      const c = centers(this.ch.length);
-      const target = c[ps.chapter]!;
-      const half = this.ch.length > 1 ? (c[1]! - c[0]!) / 2 : 0.5;
-      if (Math.abs(p - target) > 0.004 && Math.abs(p - target) < half * 0.7) {
-        this.snapping = true;
-        eng.scrollToProgress(target, { duration: 0.6 });
-      }
-    }
     return { pose: ps, velocity: reduced ? 0 : this.vel, fade };
   }
 

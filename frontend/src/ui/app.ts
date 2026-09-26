@@ -79,7 +79,6 @@ export class App {
   private abort: AbortController | null = null;
   private readonly story = new Story(() => this.enterCity());
   private lastVP: Float32Array | null = null;
-  private pointer = { x: 0, y: 0 };
   /** Time-based blend used only for mode changes (outside the scrubbed story range). */
   private blend: { pos: Vec; tgt: Vec; fov: number; k: number } | null = null;
   private fov = 50;
@@ -124,7 +123,7 @@ export class App {
     this.palette.setSource(() => this.paletteItems());
     this.bindUi();
     this.bindCanvas();
-    addEventListener('resize', () => this.resize(true));
+    addEventListener('resize', () => (this.dyn.hold(), this.resize(true)));
     this.canvas.addEventListener('webglcontextlost', () => this.fallback('The 3D view stopped (graphics context lost).'));
     const shared = decodeView(location.hash);
     if (shared) {
@@ -155,6 +154,7 @@ export class App {
   }
 
   private show(r: Result): void {
+    this.dyn.hold(); // building the world and first frames are slow: not a reason to lower quality
     this.result = r;
     this.world = buildWorld(r);
     this.lanterns = new Float32Array(this.world.lanterns.length * 3);
@@ -201,6 +201,7 @@ export class App {
 
   // ---------- flow ----------
   private setMode(m: Mode): void {
+    this.dyn.hold();
     this.mode = m;
     this.body.classList.remove('mode-hero', 'mode-loading', 'mode-story', 'mode-city');
     this.body.classList.add(`mode-${m}`);
@@ -649,14 +650,6 @@ export class App {
         this.scrub(clamp(this.tT + (k === 'ArrowRight' ? 0.02 : -0.02), 0, 1));
       }
     });
-    addEventListener(
-      'pointermove',
-      (e) => {
-        this.pointer.x = (e.clientX / innerWidth) * 2 - 1;
-        this.pointer.y = (e.clientY / innerHeight) * 2 - 1;
-      },
-      { passive: true },
-    );
     $('#btnRetry').addEventListener('click', () => void this.analyse(this.lastRepo));
     $('#btnBack').addEventListener('click', () => {
       this.setMode(this.result && !this.demo ? 'city' : 'hero');
@@ -890,11 +883,13 @@ export class App {
     const dpr = Math.min(devicePixelRatio || 1, tier.dpr) * this.scale;
     const w = Math.max(2, Math.round(this.canvas.clientWidth * dpr));
     const h = Math.max(2, Math.round(this.canvas.clientHeight * dpr));
-    if (force || this.canvas.width !== w || this.canvas.height !== h) {
+    const resized = this.canvas.width !== w || this.canvas.height !== h;
+    // Assigning the canvas size clears it (even to the same value), which showed as a black blink when a city loaded.
+    if (resized) {
       this.canvas.width = w;
       this.canvas.height = h;
-      this.renderer.alloc(w, h, tier);
     }
+    if (force || resized) this.renderer.alloc(w, h, tier);
   }
 
   private adapt(rawMs: number): void {
@@ -965,13 +960,6 @@ export class App {
       this.focusGoal = ps.focus >= 0 ? 0.55 : 0;
       P.ca = 1 + 5 * sf.velocity;
       P.fade *= sf.fade;
-      if (!reduced) {
-        // Handheld micro-motion and a small, damped pointer parallax; additive, so the rig stays a pure function of p.
-        const r = this.cameraNow(pos, tgt, fov).right;
-        pos[0] += Math.sin(this.time * 0.13) * 0.4 + r[0] * this.pointer.x * 1.1;
-        pos[1] += Math.sin(this.time * 0.17) * 0.25 - this.pointer.y * 0.5;
-        pos[2] += Math.cos(this.time * 0.11) * 0.4 + r[2] * this.pointer.x * 1.1;
-      }
     } else {
       ({ pos, tgt } = this.cam.pose());
     }
@@ -1048,11 +1036,12 @@ export class App {
         this.canvas.style.cursor = i >= 0 ? 'pointer' : '';
       });
     }
+    // Resize before drawing: resizing the canvas clears it, so doing it after the draw showed one black frame.
+    this.adapt(rawMs);
     R.render(C, P, this.time, this.lanterns);
     if (this.exportNext) {
       this.exportNext = false;
       this.exportPng(); // same task as the render: the drawing buffer is still intact
     }
-    this.adapt(rawMs);
   };
 }
