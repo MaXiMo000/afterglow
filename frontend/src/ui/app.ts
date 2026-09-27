@@ -4,7 +4,7 @@
  */
 import { ApiError, fetchResult, followProgress, startAnalysis, type Progress } from '../lib/api';
 import { beforeWindow } from '../lib/history';
-import { parseRepo, type RepoRef } from '../lib/repo';
+import { parseRepo, repoFromPath, repoPath, type RepoRef } from '../lib/repo';
 import { validateResult, type Result } from '../lib/result';
 import { decodeView, encodeView, type View } from '../lib/share';
 import { clamp, lerp, smoothstep } from '../render/math';
@@ -155,11 +155,15 @@ export class App {
     }
     this.canvas.addEventListener('webglcontextlost', () => this.fallback('The 3D view stopped (graphics context lost).'));
     const shared = decodeView(location.hash);
+    const linked = repoFromPath(location.pathname);
     if (shared) {
       // A share link names a repo: analyse it (rate-limited like any request) and restore the view afterwards.
       this.pendingView = shared;
       void this.analyse(`${shared.repo.owner}/${shared.repo.name}`);
+    } else if (linked) {
+      void this.analyse(`${linked.owner}/${linked.name}`); // a clean link (/owner/name) opens the story directly
     } else {
+      if (location.pathname !== '/') history.replaceState(history.state, '', `/${location.search}${location.hash}`);
       void this.loadDemo();
     }
     requestAnimationFrame((t) => {
@@ -264,7 +268,7 @@ export class App {
     // Browser history mirrors the screens (start page -> story -> city), so Back steps out one level.
     if (push && !fromCity) {
       const deep = /^#chapter-[1-9]$/.test(location.hash) ? location.hash : '#chapter-1'; // keep a deep link
-      history.pushState({ v: 'story', back: true }, '', deep);
+      history.pushState({ v: 'story', back: true }, '', this.here(deep));
     }
     this.setMode('story');
     this.story.enter(this.result, this.world);
@@ -280,8 +284,8 @@ export class App {
     // From the story's close-up, glide out to the whole city (arriving from chapter 1 used to stay on one island).
     if (this.world) this.cam.flyTo(this.cam.home(this.world.radius), 1.2, reducedMotion());
     this.setMode('city');
-    if (push) history.pushState({ v: 'city', back: true }, '', '#explore');
-    else history.replaceState({ ...history.state, v: 'city' }, '', '#explore');
+    if (push) history.pushState({ v: 'city', back: true }, '', this.here('#explore'));
+    else history.replaceState({ ...history.state, v: 'city' }, '', this.here('#explore'));
   }
 
   /** Cinematic on desktops, balanced on phones and low-core machines; dynamic resolution and tier steps handle the rest. */
@@ -313,12 +317,18 @@ export class App {
     this.toast(`Graphics: ${i >= 0 ? (['Fast', 'Balanced', 'Cinematic'][i] ?? v) : 'Auto'}`);
   }
 
+  /** URL for the loaded repository's screens: its clean path (N1), or the start page for the demo. */
+  private here(hash = ''): string {
+    const repo = this.result && !this.demo ? parseRepo(this.result.meta.repo) : null;
+    return `${repo ? repoPath(repo) : '/'}${location.search}${hash}`;
+  }
+
   /** One level back (city -> story -> start page): through browser history when we added the entry. */
   private back(): void {
     if (history.state?.back) return history.back(); // popstate applies the screen
     if (this.mode === 'city' && this.result && !this.demo && this.renderer) {
       this.enterStory(true, false);
-      history.replaceState({ v: 'story' }, '', location.pathname + location.search);
+      history.replaceState({ v: 'story' }, '', this.here());
     } else if (this.mode !== 'hero') this.goHome(false);
   }
 
@@ -326,7 +336,8 @@ export class App {
     this.abort?.abort();
     this.openTable(false);
     this.setMode('hero');
-    if (push) history.pushState({ v: 'hero' }, '', location.pathname + location.search);
+    if (push) history.pushState({ v: 'hero' }, '', `/${location.search}`);
+    else if (location.pathname !== '/') history.replaceState(history.state, '', `/${location.search}${location.hash}`);
     ($('#repoInput') as HTMLInputElement).focus();
   }
 
@@ -609,8 +620,8 @@ export class App {
     if (!repo) return;
     const g = this.cam.goal;
     const hash = encodeView({ repo: repo as RepoRef, cam: { yaw: g.yaw, pitch: g.pitch, dist: g.dist, x: g.x, z: g.z }, t: this.tT });
-    const url = `${location.origin}${location.pathname}${hash}`;
-    history.replaceState(history.state, '', hash);
+    const url = `${location.origin}${repoPath(repo)}${hash}`;
+    history.replaceState(history.state, '', `${repoPath(repo)}${location.search}${hash}`);
     try {
       await navigator.clipboard.writeText(url);
       this.toast('Link to this view copied');
@@ -750,11 +761,13 @@ export class App {
     $('#btnRetry').addEventListener('click', () => void this.analyse(this.lastRepo));
     $('#btnBack').addEventListener('click', () => {
       this.setMode(this.result && !this.demo ? 'city' : 'hero');
+      history.replaceState(history.state, '', this.here(this.mode === 'city' ? '#explore' : ''));
       if (this.mode === 'hero') ($('#repoInput') as HTMLInputElement).focus();
     });
     $('#btnCancel').addEventListener('click', () => {
       this.abort?.abort();
       this.setMode(this.result && !this.demo ? 'city' : 'hero');
+      history.replaceState(history.state, '', this.here(this.mode === 'city' ? '#explore' : ''));
     });
     $('#btnNew').addEventListener('click', () => this.goHome());
     $('#btnShare').addEventListener('click', () => this.run('share'));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseRepo } from './repo';
+import { parseRepo, repoFromPath } from './repo';
 
 describe('parseRepo', () => {
   it('accepts owner/name', () => {
@@ -26,4 +26,15 @@ describe('parseRepo', () => {
   ])('rejects %j', (input) => {
     expect(parseRepo(input)).toBeNull();
   });
+});
+
+describe('repoFromPath', () => {
+  it('reads /owner/name', () => {
+    expect(repoFromPath('/pallets/flask')).toEqual({ owner: 'pallets', name: 'flask' });
+    expect(repoFromPath('/pallets/flask/')).toEqual({ owner: 'pallets', name: 'flask' });
+  });
+  it.each(['/', '/pallets', '/a/b/c', '/assets/index.js', '/demo/x.json', '/api/v1', '/a/..', '/a/b%2Fc', '/a/%3Cscript%3E', '//b', '/privacy.html'])(
+    'ignores %s',
+    (p) => expect(repoFromPath(p)).toBeNull(),
+  );
 });

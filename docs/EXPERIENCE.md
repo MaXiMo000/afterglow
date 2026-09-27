@@ -57,6 +57,7 @@ Gamepad not required. All controls need visible focus states and tooltips with t
 - **Compare mode**: two dates -> show added / removed / heated / cooled buildings with a legend and counts. Removed files are counted (by month) but not drawn: they have no place in the city at HEAD.
 - **Trend**: a file whose latest four quarters have at least three changes and twice the four before is "heating up"; the mirror image is "cooling down" (inspector badge, hotspot list, screen-reader summary).
 - **Mini-map** with district labels and camera frustum; click to fly.
+- **Clean link**: `/owner/name` opens that repository's story directly, and the address bar shows it once a repository is loaded (`/owner/name#chapter-2`, `/owner/name#explore`). Share links use the same path.
 - **Share link**: URL hash encodes repo + camera + time as strictly validated numbers/enums (never free text). Loading a link re-validates everything.
 - **Export**: PNG poster from photo mode (client-side canvas, includes repo name and a "simulated/sampled" note if applicable). No upload.
 - **Palette v2**: fuzzy search files, districts, people (pseudonyms), actions, and recent items; keyboard-only; ARIA combobox pattern.

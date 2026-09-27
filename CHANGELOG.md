@@ -24,6 +24,8 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
   - Changes per quarter for the last two years, shown as a sparkline in the file inspector, with a "heating up" /
     "cooling down" trend there, in the hotspot list and in the screen-reader summary.
   - Compare mode counts removed files. Result size grows ~14% (measured, `docs/PERF-LOG.md`), within budget.
+- Clean links: `afterglow.example/owner/name` opens that repository's story, and the address bar follows the loaded
+  repository, so a copied URL is shareable as is.
 - Release: images are scanned before they are pushed.
 - Worker: all clones of a job share one 512 MB scratch budget and line counts are streamed, so a large repository can
   no longer exhaust the worker's memory; a heartbeat during git calls lets a dead worker's job fail after 90 s
