@@ -16,7 +16,10 @@ a hostile repository contained (docs/SECURITY.md T4).
 ## 1. DNS
 Create an `A` record (and `AAAA` if the server has IPv6) for your hostname, e.g. `afterglow.example.com`, pointing at
 the server. Do **not** put it behind a CDN proxy (e.g. Cloudflare's orange cloud): the rate limits key on the client
-IP, and behind a proxy every visitor would share one. Wait until it resolves:
+IP, and behind a proxy every visitor would share one. The same applies to IPv6: unless Docker gives the stack's
+`edge` network IPv6 (Docker 27+ with `enable_ipv6: true` on that network, e.g. in a `compose.override.yaml`), Docker's
+port proxy forwards every IPv6 visitor from one internal address, so they all share one rate limit. If you have not
+set that up, leave the `AAAA` record out. Wait until it resolves:
 ```bash
 dig +short afterglow.example.com
 ```

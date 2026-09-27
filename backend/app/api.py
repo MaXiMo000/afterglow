@@ -5,16 +5,19 @@ schema-validated result; request data is never echoed back (SECURITY T14).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import threading
 import time
 import uuid
+from collections import OrderedDict
 from collections.abc import AsyncIterator
-from functools import lru_cache
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from psycopg_pool import AsyncConnectionPool
 from pydantic import ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from app import db
 from app.limits import Gate, RateLimiter, client_id
@@ -35,11 +38,30 @@ def _err(code: str, status: int, retry_after: float | None = None) -> JSONRespon
     return JSONResponse({"error": code}, status_code=status, headers=headers)
 
 
-@lru_cache(maxsize=16)
-def _validated(body: bytes) -> bytes:
-    """Re-validate a stored result before serving it (SECURITY T12). Cached: results are immutable."""
-    Result.model_validate_json(body)
-    return body
+class ValidatedBodies:
+    """Re-validate a stored result before serving it (SECURITY T12).
+
+    Remembers the SHA-256 of bodies that passed, not the bodies (a 50k-file result is ~10 MB), so a changed
+    body is always validated again. Run it in a worker thread: validating a result at the file cap takes
+    ~0.2 s, which would stall every other request and progress stream on the event loop.
+    """
+
+    def __init__(self, max_entries: int = 512) -> None:
+        self.max_entries = max_entries
+        self._seen: OrderedDict[bytes, None] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def check(self, body: bytes) -> None:
+        digest = hashlib.sha256(body).digest()
+        with self._lock:
+            if digest in self._seen:
+                self._seen.move_to_end(digest)
+                return
+        Result.model_validate_json(body)  # raises ValidationError
+        with self._lock:
+            self._seen[digest] = None
+            if len(self._seen) > self.max_entries:
+                self._seen.popitem(last=False)
 
 
 def build_router(settings: Settings, pool: AsyncConnectionPool | None) -> APIRouter:
@@ -47,7 +69,8 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None) -> APIRou
     post_limit = RateLimiter(rate=10, per=60)  # per client
     post_global = RateLimiter(rate=300, per=60)
     read_limit = RateLimiter(rate=240, per=60)
-    streams = Gate(per_key=4, total=200)
+    streams = Gate(per_key=4, total=200, max_age=SSE_MAX_S + 30)
+    validated = ValidatedBodies()
 
     def client_of(request: Request) -> str:
         # Caddy overwrites X-Real-IP with the TCP peer; the API is reachable only via Caddy (internal net).
@@ -128,7 +151,7 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None) -> APIRou
         if body is None:
             return _err("not_found", 404)
         try:
-            body = _validated(body)
+            await run_in_threadpool(validated.check, body)
         except ValidationError:
             return _err("internal", 500)
         return Response(

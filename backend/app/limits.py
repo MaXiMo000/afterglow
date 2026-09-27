@@ -8,14 +8,30 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 
 
+def client_network(ip: str) -> str:
+    """The unit one client controls: an IPv4 address, or an IPv6 /64. One home or phone usually gets a whole
+    /64, so keying by the full IPv6 address would let a single client rotate past every limit."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if isinstance(addr, ipaddress.IPv6Address):
+        if addr.ipv4_mapped is not None:
+            return str(addr.ipv4_mapped)
+        return f"{ipaddress.IPv6Network((addr, 64), strict=False).network_address}/64"
+    return str(addr)
+
+
 def client_id(ip_key: bytes, ip: str) -> str:
-    """Stable pseudonym for a client IP. The raw IP is never stored or logged (SECURITY T6)."""
-    return hmac.new(ip_key, ip.encode(), hashlib.sha256).hexdigest()[:32]
+    """Stable pseudonym for a client network. The raw IP is never stored or logged (SECURITY T6)."""
+    return hmac.new(ip_key, client_network(ip).encode(), hashlib.sha256).hexdigest()[:32]
 
 
 @dataclass(slots=True)
@@ -47,21 +63,38 @@ class RateLimiter:
 
 
 class Gate:
-    """Concurrent-use cap per key and overall (open SSE streams)."""
+    """Concurrent-use cap per key and overall (open SSE streams).
 
-    def __init__(self, per_key: int, total: int) -> None:
-        self.per_key, self.total = per_key, total
-        self._open: dict[str, int] = {}
+    A slot expires after `max_age` seconds even if `leave` never runs (a stream cancelled before its generator
+    started skips its `finally`), so a leaked slot cannot lock a client, or everyone, out for good.
+    """
+
+    def __init__(
+        self, per_key: int, total: int, max_age: float, clock: Callable[[], float] = time.monotonic
+    ) -> None:
+        self.per_key, self.total, self.max_age, self.clock = per_key, total, max_age, clock
+        self._open: dict[str, list[float]] = {}  # key -> start times of open slots, oldest first
+
+    def _prune(self, now: float) -> None:
+        for key in [k for k, starts in self._open.items() if starts[0] <= now - self.max_age]:
+            live = [t for t in self._open[key] if t > now - self.max_age]
+            if live:
+                self._open[key] = live
+            else:
+                del self._open[key]
 
     def enter(self, key: str) -> bool:
-        if sum(self._open.values()) >= self.total or self._open.get(key, 0) >= self.per_key:
+        now = self.clock()
+        self._prune(now)
+        if sum(map(len, self._open.values())) >= self.total or len(self._open.get(key, ())) >= self.per_key:
             return False
-        self._open[key] = self._open.get(key, 0) + 1
+        self._open.setdefault(key, []).append(now)
         return True
 
     def leave(self, key: str) -> None:
-        n = self._open.get(key, 0) - 1
-        if n > 0:
-            self._open[key] = n
-        else:
-            self._open.pop(key, None)
+        starts = self._open.get(key)
+        if not starts:
+            return  # already expired
+        starts.pop(0)
+        if not starts:
+            del self._open[key]

@@ -238,6 +238,7 @@ def test_client_ip_is_never_stored(client: TestClient) -> None:
 def test_tampered_result_is_not_served(client: TestClient, tmp_path: Path) -> None:
     _, body = post(client, {"repo": "acme/orbit"})
     work(tmp_path)
+    assert client.get(f"/api/v1/analyses/{body['id']}").status_code == 200  # validated once and remembered
     with psycopg.connect(ADMIN, autocommit=True) as conn:
         conn.execute("""UPDATE results SET body = convert_to('{"meta": {}}', 'UTF8')""")
     r = client.get(f"/api/v1/analyses/{body['id']}")
@@ -281,7 +282,7 @@ def test_limiter_and_gate_units() -> None:
     assert rl.check("k") == 0 and rl.check("k") == 0
     assert rl.check("k") > 0
     assert rl.check("other") == 0
-    g = Gate(per_key=1, total=2)
+    g = Gate(per_key=1, total=2, max_age=60)
     assert g.enter("a") and not g.enter("a")
     assert g.enter("b") and not g.enter("c")
     g.leave("a")
