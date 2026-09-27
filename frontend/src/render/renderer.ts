@@ -21,8 +21,9 @@ export type Params = { t: number; fog: number; hot: number; focus: number; focus
   /** Explore toggles (A5): coupling arcs, lanterns, and compare mode [on, fromT, toT] in normalised history time. */
   arcs: number; lanterns: number; cmp: [number, number, number];
   /** Effects (A6): hover lift 0..1, selected file (-1 none), focus distance for depth of field (0 off), DOF amount,
-   *  motion 0/1 (reduced motion turns off ripples, heartbeat and trails). */
-  lift: number; sel: number; focusDist: number; dof: number; motion: number };
+   *  motion 0/1 (reduced motion turns off ripples, heartbeat and trails), flow 0..1 = how fast history time is
+   *  moving (growth glow, birth rings and half-grown heights only show while it moves). */
+  lift: number; sel: number; focusDist: number; dof: number; motion: number; flow: number };
 
 const FOG_COL: V3 = [0.075, 0.17, 0.19];
 const MOON: V3 = [-0.42, 0.36, -0.83];
@@ -472,6 +473,7 @@ export class Renderer {
     gl.uniform1f(u['uFog']!, P.fog);
     gl.uniform3fv(u['uFogCol']!, FOG_COL);
     gl.uniform3fv(u['uRim']!, RIM);
+    gl.uniform1f(u['uFlow']!, P.flow);
     gl.bindVertexArray(this.vaos.pad!);
     gl.drawArrays(gl.TRIANGLES, 0, this.padCount);
 
@@ -487,6 +489,7 @@ export class Renderer {
     gl.uniform1f(u['uFocusAmt']!, P.focusAmt);
     gl.uniform1f(u['uHover']!, refl ? -1 : P.hover);
     gl.uniform1f(u['uLift']!, refl ? 0 : P.lift);
+    gl.uniform1f(u['uFlow']!, P.flow);
     gl.uniform3fv(u['uPal']!, PAL);
     gl.uniform3fv(u['uCmp']!, refl ? [0, 0, 0] : P.cmp);
     gl.bindVertexArray(this.vaos.bld!);
@@ -502,6 +505,7 @@ export class Renderer {
     gl.uniform1f(u['uSel']!, P.sel);
     gl.uniform1f(u['uTime']!, time);
     gl.uniform1f(u['uMotion']!, P.motion);
+    gl.uniform1f(u['uFlow']!, P.flow);
     gl.bindVertexArray(this.vaos.ripple!);
     gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.n);
     u = this.use('line');
@@ -750,6 +754,7 @@ export class Renderer {
     const u = this.use('pick');
     gl.uniformMatrix4fv(u['uVP']!, false, vp);
     gl.uniform1f(u['uT']!, P.t);
+    gl.uniform1f(u['uFlow']!, P.flow);
     gl.bindVertexArray(this.vaos.bld!);
     gl.drawElementsInstanced(gl.TRIANGLES, 30, gl.UNSIGNED_SHORT, 0, this.n);
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, ps.pbo);

@@ -12,8 +12,18 @@ function tokensCss(): Plugin {
   };
 }
 
+/**
+ * Fills %SITE_URL% in the HTML (link previews need absolute image URLs). Set AFTERGLOW_SITE_URL when building for
+ * another domain; no trailing slash.
+ */
+function siteUrl(): Plugin {
+  const url = (process.env['AFTERGLOW_SITE_URL'] ?? 'https://afterglow.name').replace(/\/+$/, '');
+  if (!/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(url)) throw new Error(`AFTERGLOW_SITE_URL must be https://host, got ${url}`);
+  return { name: 'afterglow-site-url', transformIndexHtml: (html) => html.replaceAll('%SITE_URL%', url) };
+}
+
 export default defineConfig({
-  plugins: [tokensCss()],
+  plugins: [tokensCss(), siteUrl()],
   build: {
     target: 'es2022',
     // The preload polyfill would be the only non-module script; modern targets do not need it.

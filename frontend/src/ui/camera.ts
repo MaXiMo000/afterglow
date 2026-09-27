@@ -29,8 +29,11 @@ export class OrbitCamera {
     this.goal = this.home(radius);
   }
 
+  /** Pull-back for narrow (portrait) screens, set by the app from the canvas aspect: 1 on landscape. */
+  fit = 1;
+
   home(radius: number): Orbit {
-    return { yaw: 0.6, pitch: 0.55, dist: clamp(radius * 1.55, 40, this.maxDist), x: 0, y: 4, z: 0 };
+    return { yaw: 0.6, pitch: 0.55, dist: clamp(radius * 1.55 * this.fit, 40, this.maxDist), x: 0, y: 4, z: 0 };
   }
 
   preset(p: Preset, radius: number): Orbit {

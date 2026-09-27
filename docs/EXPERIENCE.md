@@ -3,6 +3,10 @@
 Goal: the site should feel like a short film you can steer. Every interaction has weight, inertia and feedback.
 The original design prototype set the look; this document lists what the product must do better than it.
 
+Navigation: browser history mirrors the screens (start page -> story -> city), so Back, Esc and Backspace step out
+one level and the logo returns to the start page. Growth glow, birth rings and half-grown buildings appear only while
+history is moving; a frozen moment (a story chapter, the city at rest) shows finished buildings.
+
 ## 1. Scroll engine (`ScrollEngine`)
 - Inertial smooth scroll (Lenis or equivalent, bundled). Tuned so it is **fast and responsive**, not floaty:
   wheel multiplier ~1.0-1.3, lerp ~0.12-0.16, touch handled natively with momentum. Expose these as config and tune by feel on a trackpad, a mouse wheel and a phone.

@@ -60,7 +60,7 @@ export class App {
   private readonly cam = new OrbitCamera();
   private readonly P: Params = {
     t: 1, fog: FOG, hot: 0.5, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.035, ca: 1,
-    arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1,
+    arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0,
   }; // prettier-ignore
   private time = 0;
   private last = 0;
@@ -91,6 +91,7 @@ export class App {
   private photo = false;
   private exportNext = false;
   private pendingView: View | null = null;
+  private prevT = 1;
   private loadFrac = 0; // real analysis progress 0..1, drives the city un-building during loading (A6)
   private lastRepo = '';
   private readonly held = new Set<string>();
@@ -106,13 +107,15 @@ export class App {
   private readonly body = document.body;
 
   start(): void {
-    const coarse = matchMedia('(pointer: coarse)').matches || innerWidth < 760 || (navigator.hardwareConcurrency || 8) <= 4;
-    this.tierIdx = coarse ? 1 : 2;
-    // ?quality=simple|balanced|cinematic pins a tier (testing, and users who prefer battery over looks). Enum only.
-    const q = new URLSearchParams(location.search).get('quality');
+    this.tierIdx = this.autoTier();
+    // ?quality=simple|balanced|cinematic pins a tier (testing); otherwise the Graphics setting in the help panel.
+    const q = new URLSearchParams(location.search).get('quality') ?? this.savedQuality();
     const pinned = TIERS.findIndex((t) => t.name === q);
     if (pinned >= 0) this.tierIdx = pinned;
     this.dyn.tier = this.tierIdx;
+    const sel = $('#quality') as HTMLSelectElement;
+    sel.value = pinned >= 0 ? TIERS[pinned]!.name : 'auto';
+    sel.addEventListener('change', () => this.setQuality(sel.value));
     try {
       this.renderer = new Renderer(this.canvas);
     } catch {
@@ -124,6 +127,13 @@ export class App {
     this.bindUi();
     this.bindCanvas();
     addEventListener('resize', () => (this.dyn.hold(), this.resize(true)));
+    // Stack the city's bottom UI on the measured data line and timeline heights (they wrap differently per width).
+    const root = document.documentElement.style;
+    new ResizeObserver(() => {
+      root.setProperty('--foot-h', `${$('#honesty').offsetHeight}px`);
+      root.setProperty('--tl-h', `${this.timeline.root.offsetHeight}px`);
+    }).observe($('#honesty'));
+    new ResizeObserver(() => root.setProperty('--tl-h', `${this.timeline.root.offsetHeight}px`)).observe(this.timeline.root);
     this.canvas.addEventListener('webglcontextlost', () => this.fallback('The 3D view stopped (graphics context lost).'));
     const shared = decodeView(location.hash);
     if (shared) {
@@ -180,6 +190,7 @@ export class App {
     this.renderHonesty();
     if (!this.demo) {
       setText($('#hudRepo'), r.meta.repo);
+      $('#hudRepo').title = r.meta.repo; // full name on hover when the slot truncates it
       renderTable(r, $('#files tbody'), $('#filesCaption'), $('#tableNote'));
       if (!$('#tableView').hidden) drawTreemap(r, $('#treemap') as HTMLCanvasElement);
     }
@@ -212,7 +223,7 @@ export class App {
     $('#btnCity').hidden = m !== 'story';
     const explore = m === 'city' && !this.demo;
     $('#btnStory').hidden = !explore || !this.renderer;
-    for (const id of ['#btnSearch', '#btnInsights', '#btnPhoto', '#btnHelp']) $(id).hidden = !explore;
+    for (const id of ['#btnSearch', '#btnInsights', '#btnShare', '#btnPhoto', '#btnHelp']) $(id).hidden = !explore;
     this.timeline.root.hidden = !explore;
     if (!explore) {
       this.insights.toggle(this.result!, false);
@@ -227,22 +238,85 @@ export class App {
   }
 
   /** Scroll story for the loaded result (A4). Reduced motion gets the static-card path inside Story. */
-  private enterStory(fromCity = false): void {
+  private enterStory(fromCity = false, push = true): void {
     if (!this.result || !this.world || this.demo) return;
     if (fromCity) this.startBlend();
+    // Browser history mirrors the screens (start page -> story -> city), so Back steps out one level.
+    if (push && !fromCity) {
+      const deep = /^#chapter-[1-9]$/.test(location.hash) ? location.hash : '#chapter-1'; // keep a deep link
+      history.pushState({ v: 'story', back: true }, '', deep);
+    }
     this.setMode('story');
     this.story.enter(this.result, this.world);
   }
 
   /** Hand over to the orbit camera exactly where the story camera is, so nothing pops. */
-  private enterCity(): void {
+  private enterCity(push = true): void {
     const { pos, tgt } = this.currentPose();
     this.cam.goal = orbitFromPose(pos, tgt);
     this.cam.snap();
     this.fov = 50;
     this.tT = this.P.t = 1;
+    // From the story's close-up, glide out to the whole city (arriving from chapter 1 used to stay on one island).
+    if (this.world) this.cam.flyTo(this.cam.home(this.world.radius), 1.2, reducedMotion());
     this.setMode('city');
-    history.replaceState(null, '', '#explore');
+    if (push) history.pushState({ v: 'city', back: true }, '', '#explore');
+    else history.replaceState({ ...history.state, v: 'city' }, '', '#explore');
+  }
+
+  /** Balanced on desktops, simple on phones and low-core machines: cinematic (1.75x resolution, MSAA, DOF, rays) is opt-in. */
+  private autoTier(): number {
+    const low = matchMedia('(pointer: coarse)').matches || innerWidth < 760 || (navigator.hardwareConcurrency || 8) <= 4;
+    return low ? 0 : 1;
+  }
+
+  private savedQuality(): string | null {
+    try {
+      return localStorage.getItem('afterglow:quality'); // UI preference only (SECURITY T20 allows UI prefs)
+    } catch {
+      return null;
+    }
+  }
+
+  private setQuality(v: string): void {
+    const i = TIERS.findIndex((t) => t.name === v);
+    try {
+      if (i >= 0) localStorage.setItem('afterglow:quality', v);
+      else localStorage.removeItem('afterglow:quality');
+    } catch {
+      /* storage blocked: applies to this visit only */
+    }
+    this.tierIdx = this.dyn.tier = i >= 0 ? i : this.autoTier();
+    this.scale = this.dyn.scale = 1;
+    this.dyn.hold();
+    this.resize(true);
+    this.toast(`Graphics: ${i >= 0 ? (['Fast', 'Balanced', 'Cinematic'][i] ?? v) : 'Auto'}`);
+  }
+
+  /** One level back (city -> story -> start page): through browser history when we added the entry. */
+  private back(): void {
+    if (history.state?.back) return history.back(); // popstate applies the screen
+    if (this.mode === 'city' && this.result && !this.demo && this.renderer) {
+      this.enterStory(true, false);
+      history.replaceState({ v: 'story' }, '', location.pathname + location.search);
+    } else if (this.mode !== 'hero') this.goHome(false);
+  }
+
+  private goHome(push = true): void {
+    this.abort?.abort();
+    this.openTable(false);
+    this.setMode('hero');
+    if (push) history.pushState({ v: 'hero' }, '', location.pathname + location.search);
+    ($('#repoInput') as HTMLInputElement).focus();
+  }
+
+  /** Browser Back/Forward: show the screen the history entry names, without adding entries. */
+  private onPop(state: { v?: string } | null): void {
+    const v = state?.v ?? 'hero';
+    const loaded = !!this.result && !this.demo;
+    if (v === 'city' && loaded) this.enterCity(false);
+    else if (v === 'story' && loaded) this.enterStory(this.mode === 'city', false);
+    else this.goHome(false);
   }
 
   private startBlend(): void {
@@ -464,7 +538,7 @@ export class App {
         void this.share();
         break;
       case 'story':
-        this.enterStory(true);
+        this.back();
         break;
     }
   }
@@ -513,7 +587,7 @@ export class App {
     const g = this.cam.goal;
     const hash = encodeView({ repo: repo as RepoRef, cam: { yaw: g.yaw, pitch: g.pitch, dist: g.dist, x: g.x, z: g.z }, t: this.tT });
     const url = `${location.origin}${location.pathname}${hash}`;
-    history.replaceState(null, '', hash);
+    history.replaceState(history.state, '', hash);
     try {
       await navigator.clipboard.writeText(url);
       this.toast('Link to this view copied');
@@ -634,7 +708,7 @@ export class App {
       });
     }
     $('#btnCity').addEventListener('click', () => this.enterCity());
-    $('#btnStory').addEventListener('click', () => this.enterStory(true));
+    $('#btnStory').addEventListener('click', () => this.back());
     $('#btnSearch').addEventListener('click', () => this.run('palette'));
     $('#btnInsights').addEventListener('click', () => this.run('insights'));
     $('#btnPhoto').addEventListener('click', () => this.run('photo'));
@@ -659,13 +733,14 @@ export class App {
       this.abort?.abort();
       this.setMode(this.result && !this.demo ? 'city' : 'hero');
     });
-    $('#btnNew').addEventListener('click', () => {
-      this.abort?.abort();
-      this.openTable(false);
-      this.setMode('hero');
-      history.replaceState(null, '', location.pathname + location.search);
-      ($('#repoInput') as HTMLInputElement).focus();
+    $('#btnNew').addEventListener('click', () => this.goHome());
+    $('#btnShare').addEventListener('click', () => this.run('share'));
+    $('#brandHome').addEventListener('click', (e) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return; // let the browser open a new tab
+      e.preventDefault();
+      if (this.mode !== 'hero') this.goHome();
     });
+    addEventListener('popstate', (e) => this.onPop(e.state as { v?: string } | null));
     $('#btnTable').addEventListener('click', () => this.openTable($('#tableView').hasAttribute('hidden')));
     addEventListener('keyup', (e) => this.held.delete(e.key.toLowerCase()));
     addEventListener('blur', () => this.held.clear());
@@ -674,14 +749,17 @@ export class App {
       // An input inside a just-closed dialog can stay activeElement until the browser's focus fixup runs.
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(active?.tagName ?? '') && !active?.closest('dialog:not([open])');
       if (document.querySelector('dialog[open]')) return; // dialogs handle their own keys (Esc closes)
-      if (e.key === 'Escape') {
-        // Back out one level: photo -> table -> panels/selection/compare -> story.
+      if (e.key === 'Escape' || (e.key === 'Backspace' && !typing)) {
+        // Back out one level: photo -> table -> panels/selection/compare -> story -> start page.
         if (this.photo) return this.togglePhoto();
         if (!$('#tableView').hidden) return this.openTable(false);
         if (this.compare) return this.setCompare(null);
         if (this.selected >= 0 || this.P.focus >= 0) return this.select(-1);
         if (this.insights.open) return this.run('insights');
-        if (this.mode === 'city' && !this.demo && this.renderer) return this.enterStory(true);
+        if ((this.mode === 'city' && !this.demo) || this.mode === 'story') {
+          e.preventDefault();
+          return this.back();
+        }
         return;
       }
       if (this.mode !== 'city' || typing || this.demo) return;
@@ -881,6 +959,8 @@ export class App {
     if (!this.renderer) return;
     const tier = TIERS[this.tierIdx]!;
     const dpr = Math.min(devicePixelRatio || 1, tier.dpr) * this.scale;
+    // Portrait screens see less width at the same vertical field of view: frame the city from further back.
+    this.cam.fit = clamp(1.25 / (this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight)), 1, 2.2);
     const w = Math.max(2, Math.round(this.canvas.clientWidth * dpr));
     const h = Math.max(2, Math.round(this.canvas.clientHeight * dpr));
     const resized = this.canvas.width !== w || this.canvas.height !== h;
@@ -986,6 +1066,10 @@ export class App {
     P.focusDist += (focus - (P.focusDist || focus)) * (1 - Math.exp(-dt * 4)); // focus pulls glide, never snap
     P.dof = this.mode === 'story' ? 1 : this.mode === 'city' ? (this.photo ? 1 : 0.55) : 0.4;
     P.motion = reduced ? 0 : 1;
+    // History flow: 1x playback (1/40 of history per second) or scrolling between chapters reads as 1.
+    const flowGoal = reduced ? 0 : clamp(Math.abs(P.t - this.prevT) / Math.max(dt, 1e-3) / 0.02, 0, 1);
+    this.prevT = P.t;
+    P.flow += (flowGoal - P.flow) * (1 - Math.exp(-dt * 6));
     P.sel = this.mode === 'city' ? this.selected : -1;
     const liftGoal = this.mode === 'city' && P.hover >= 0 && !reduced ? 1 : 0;
     P.lift += (liftGoal - P.lift) * (1 - Math.exp(-dt * 10));

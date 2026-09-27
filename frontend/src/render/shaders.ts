@@ -69,7 +69,7 @@ void main(){
 }`};
 
 const BUILDING_COMMON=`
-uniform mat4 uVP;uniform float uT,uTime,uHover,uLift;
+uniform mat4 uVP;uniform float uT,uTime,uHover,uLift,uFlow;
 `;
 SRC.bld={vs:H+`
 layout(location=0) in vec3 aPos;layout(location=1) in vec3 aNor;
@@ -80,7 +80,7 @@ void main(){
   float g=clamp((uT-iB.y)/.03,0.,1.);
   float ge=1.-pow(1.-g,3.);ge*=1.+.06*sin(g*3.14159);
   if(g<=0.){gl_Position=vec4(2.,2.,2.,1.);return;}
-  float h=iB.x*ge;
+  float h=iB.x*mix(1.,ge,uFlow);/* uFlow: how fast history is moving (0 = frozen: no half-grown buildings) */
   /* A6: hover lift - the hovered building rises a little */
   float lift=step(abs(float(gl_InstanceID)-uHover),.5)*uLift;
   h*=1.+.07*lift;
@@ -90,7 +90,7 @@ void main(){
 }`,
 fs:H+NOISE+`
 in vec3 vW;in vec3 vN;in vec2 vXZ;in vec2 vSize;in vec4 vB;in vec4 vC;in float vG;in float vTop;flat in float vInst;flat in float vDist;
-uniform float uT,uTime,uFog,uHot,uFocus,uFocusAmt,uHover,uLift;uniform vec3 uCam,uFogCol,uCmp;uniform vec3 uPal[5];/* PORT: 5 palette kinds, not 12 districts */
+uniform float uT,uTime,uFog,uHot,uFocus,uFocusAmt,uHover,uLift,uFlow;uniform vec3 uCam,uFogCol,uCmp;uniform vec3 uPal[5];/* PORT: 5 palette kinds, not 12 districts */
 out vec4 o;
 void main(){
   vec3 N=normalize(vN);vec3 tc=uCam-vW;float dist=length(tc);vec3 V=tc/dist;
@@ -119,10 +119,10 @@ void main(){
   emis+=vec3(.30,.62,.75)*step(.988,rnd)*win*vC.w*.5;
   float period=.012+vC.y*.03;
   float k=floor((uT-vB.y)/period);float since=uT-(vB.y+k*period);
-  float flash=(uT<vB.z)?smoothstep(.006,0.,since)*step(.55,h21(vec2(k,vC.y*91.))):0.;
+  float flash=(uT<vB.z)?smoothstep(.006,0.,since)*step(.55,h21(vec2(k,vC.y*91.)))*uFlow:0.;
   emis+=vec3(1.,.9,.72)*flash*win*1.5;col+=vec3(.5,.45,.36)*flash*.35;
   float grow=1.-vG;
-  emis+=vec3(.45,.95,1.)*grow*smoothstep(1.4,0.,vTop-vW.y)*1.6;
+  emis+=vec3(.45,.95,1.)*grow*smoothstep(1.2,0.,vTop-vW.y)*.8*uFlow;/* growth glow only while history plays */
   if(N.y>.5){col*=1.15;emis+=vec3(1.,.28,.18)*vC.z*uHot*.9;}
   float inF=(uFocus<-.5)?1.:step(abs(vDist-uFocus),.5);/* PORT: focus by district index, not palette */
   col*=mix(1.,mix(.32,1.25,inF),uFocusAmt);emis*=mix(1.,mix(.35,1.3,inF),uFocusAmt);
@@ -151,12 +151,13 @@ SRC.pad={vs:H+`
 layout(location=0) in vec3 aPos;layout(location=1) in vec2 aR;layout(location=2) in vec4 aD;
 uniform mat4 uVP;out vec3 vW;out float vRad;out float vD;flat out vec4 vDist;
 void main(){vW=aPos;vRad=aR.x;vD=aR.y;vDist=aD;gl_Position=uVP*vec4(aPos,1.);}`,
-fs:H+`
+fs:H+NOISE+`
 in vec3 vW;in float vRad;in float vD;flat in vec4 vDist;
-uniform float uT,uTime,uFog;uniform vec3 uCam,uFogCol,uRim[5];out vec4 o;
+uniform float uT,uTime,uFog,uFlow;uniform vec3 uCam,uFogCol,uRim[5];out vec4 o;
 void main(){
-  float vis=smoothstep(vDist.x,vDist.x+.05,uT);
-  if(vis<.01)discard;
+  /* A born district shows fully; while history plays it dissolves in (dither), never as a black disc. */
+  float vis=step(vDist.x,uT)*mix(1.,smoothstep(vDist.x,vDist.x+.05,uT),uFlow);
+  if(vis<.01||h21(gl_FragCoord.xy)>vis)discard;
   vec3 c=vec3(.03,.062,.078);
   vec2 g=abs(fract(vW.xz/1.6)-.5);
   float st=smoothstep(.43,.5,max(g.x,g.y));
@@ -166,7 +167,7 @@ void main(){
   c+=uRim[int(vDist.w+.5)]*rim*(.5+.5*sin(uTime*.6+vD*1.7))*.9*mix(.25,1.,alive);
   float dist=length(uCam-vW);float fg=1.-exp(-dist*uFog);
   c=mix(c,uFogCol,fg*.9);
-  o=vec4(c*vis,1.);
+  o=vec4(c,1.);
 }`};
 
 SRC.line={vs:H+`layout(location=0) in vec3 aP;layout(location=1) in float aU;uniform mat4 uVP;out float vU;void main(){vU=aU;gl_Position=uVP*vec4(aP,1.);}`,
@@ -267,11 +268,11 @@ void main(){
 SRC.pick={vs:H+`
 layout(location=0) in vec3 aPos;
 layout(location=2) in vec4 iA;layout(location=3) in vec4 iB;
-uniform mat4 uVP;uniform float uT;flat out int vId;
+uniform mat4 uVP;uniform float uT,uFlow;flat out int vId;
 void main(){
   float g=clamp((uT-iB.y)/.03,0.,1.);
   if(g<=0.){gl_Position=vec4(2.,2.,2.,1.);return;}
-  vec3 w=vec3(iA.x+aPos.x*iA.z,.28+aPos.y*iB.x*g,iA.y+aPos.z*iA.w);
+  vec3 w=vec3(iA.x+aPos.x*iA.z,.28+aPos.y*iB.x*mix(1.,g,uFlow),iA.y+aPos.z*iA.w);
   vId=gl_InstanceID+1;gl_Position=uVP*vec4(w,1.);
 }`,
 fs:H+`flat in int vId;out vec4 o;
@@ -281,11 +282,11 @@ void main(){o=vec4(float(vId&255),float((vId>>8)&255),float((vId>>16)&255),255.)
    backwards too), plus a steady selection ring. Uses the building instance buffer. */
 SRC.ripple={vs:H+`
 layout(location=0) in vec2 aQ;layout(location=2) in vec4 iA;layout(location=3) in vec4 iB;
-uniform mat4 uVP;uniform float uT,uSel,uTime,uMotion;out vec2 vQ;out float vA;flat out float vS;
+uniform mat4 uVP;uniform float uT,uSel,uTime,uMotion,uFlow;out vec2 vQ;out float vA;flat out float vS;
 void main(){
   float sel=step(abs(float(gl_InstanceID)-uSel),.5);
   float age=(uT-iB.y)/.02;
-  float live=step(0.,age)*step(age,1.)*uMotion;
+  float live=step(0.,age)*step(age,1.)*uMotion*step(.05,uFlow);/* a frozen clock would freeze rings in place */
   if(live<.5&&sel<.5){gl_Position=vec4(2.,2.,2.,1.);return;}
   float r=sel>.5?max(iA.z,iA.w)*.75+.55+.06*sin(uTime*3.)*uMotion:.6+age*3.2;
   vQ=aQ;vA=sel>.5?.85:(1.-age)*(1.-age);vS=sel;

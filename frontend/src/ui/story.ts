@@ -77,9 +77,9 @@ export class Story {
       const saved = Number(sessionStorage.getItem(this.key));
       if (Number.isFinite(saved) && saved > 0 && saved <= 1) return saved;
     } catch {
-      /* storage blocked: start at the top */
+      /* storage blocked: start on the first chapter */
     }
-    return 0;
+    return centers(this.ch.length)[0]!; // exactly on chapter 1, so its card is fully visible from the start
   }
 
   private save(): void {
@@ -196,7 +196,7 @@ export class Story {
     if (ps.chapter !== this.current) {
       this.current = ps.chapter;
       this.railBtns.forEach((b, i) => (i === ps.chapter ? b.setAttribute('aria-current', 'step') : b.removeAttribute('aria-current')));
-      history.replaceState(null, '', `#chapter-${ps.chapter + 1}`);
+      history.replaceState(history.state, '', `#chapter-${ps.chapter + 1}`); // keep the history entry's state
     }
     ($('#progress i') as HTMLElement).style.transform = `scaleX(${p.toFixed(4)})`;
     this.callout(ps, p, vp, width, height);
@@ -225,12 +225,17 @@ export class Story {
     const draw = smoothstep(0.25, 0.95, o);
     const dx = at.x > w * 0.62 ? -150 : 70;
     const dy = -70;
-    const len = Math.hypot(dx, dy);
-    const line = box.querySelector('.line') as HTMLElement;
-    line.style.width = `${len}px`;
-    line.style.transform = `rotate(${Math.atan2(dy, dx)}rad) scaleX(${draw.toFixed(3)})`;
+    // Keep the box on screen and below the toolbar (it was cut off on phones), and aim the line at its near corner.
     const body = box.querySelector('.body') as HTMLElement;
-    body.style.transform = `translate(${dx > 0 ? dx : dx - 60}px, ${dy - 44}px)`;
+    const bw = body.offsetWidth || 230;
+    const bx = clamp(at.x + (dx > 0 ? dx : dx - 60), 8, Math.max(8, w - bw - 8)) - at.x;
+    const by = Math.max(at.y + dy - 44, 76) - at.y;
+    const lx = dx > 0 ? bx : bx + bw;
+    const ly = by + 44;
+    const line = box.querySelector('.line') as HTMLElement;
+    line.style.width = `${Math.hypot(lx, ly)}px`;
+    line.style.transform = `rotate(${Math.atan2(ly, lx)}rad) scaleX(${draw.toFixed(3)})`;
+    body.style.transform = `translate(${Math.round(bx)}px, ${Math.round(by)}px)`;
     body.style.opacity = smoothstep(0.6, 1, draw).toFixed(3);
     box.style.opacity = o.toFixed(3);
     box.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px)`;

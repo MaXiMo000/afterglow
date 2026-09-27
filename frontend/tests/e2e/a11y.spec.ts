@@ -96,7 +96,7 @@ test('axe: table view and the no-WebGL fallback', async ({ page }) => {
 test('hero tab order is logical and every stop shows focus', async ({ page }) => {
   await page.goto('/?quality=simple');
   const stops: string[] = [];
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 9; i++) {
     await page.keyboard.press('Tab');
     const s = await page.evaluate(() => {
       const a = document.activeElement as HTMLElement;
@@ -108,6 +108,7 @@ test('hero tab order is logical and every stop shows focus', async ({ page }) =>
   }
   expect(stops).toEqual([
     'Skip to the text summary',
+    'brandHome',
     'btnTable',
     'repoInput',
     'Build the city',
