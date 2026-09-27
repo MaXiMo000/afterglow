@@ -262,3 +262,13 @@ def test_unusable_mailmaps_are_ignored(tmp_path: Path, mailmap: dict[str, object
         C(mailmap, author="Ann Lee", email="ann@example.com", time=T0 + 20),
     ]
     assert run(tmp_path, commits).meta.people == 2  # a usable mailmap would merge them into one
+
+
+def test_files_before_the_window_respect_the_path_cap(tmp_path: Path) -> None:
+    """A huge tree behind a truncated history must not bypass tracked_paths (SECURITY T3: truncate and flag)."""
+    commits = [C({f"old/{i}.py": "x\n" for i in range(50)}, time=T0)]
+    commits += [C({"new.py": f"{i}\n"}, time=T0 + YEAR + i) for i in range(5)]
+    caps = Caps(allow_file_protocol=True, wall_s=60, commits=3, tracked_paths=10)
+    result = run(tmp_path, commits, caps)
+    assert len(result.files) == 10
+    assert result.meta.truncated.files and result.meta.files == 51

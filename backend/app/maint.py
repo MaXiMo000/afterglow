@@ -40,7 +40,8 @@ def prune(conn: Conn) -> tuple[int, int]:
             (JOBS_KEEP,),
         ).rowcount
         results = conn.execute(
-            "DELETE FROM results r WHERE (r.analyser <> %s OR r.created < now() - %s::interval) "
+            # `<`, not `<>`: in a rolling upgrade or rollback, never delete what a newer analyser wrote.
+            "DELETE FROM results r WHERE (r.analyser < %s OR r.created < now() - %s::interval) "
             "AND NOT EXISTS (SELECT 1 FROM jobs j "
             "                WHERE j.repo = r.repo AND j.sha = r.sha AND j.analyser = r.analyser)",
             (ANALYSER_VERSION, RESULTS_KEEP),

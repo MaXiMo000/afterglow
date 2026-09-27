@@ -16,6 +16,7 @@ from core.schema import ANALYSER_VERSION
 Conn = AsyncConnection[TupleRow]
 FRESH_FOR = "1 hour"  # a result younger than this is served without re-analysing
 STALL_AFTER = "5 minutes"
+LIVE_WITHIN = "90 seconds"  # worker.queue.LOST_AFTER: a running job silent for longer has no live worker
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,11 +38,15 @@ async def queue_depth(conn: Conn) -> int:
 
 
 async def queue_stalled(conn: Conn) -> bool:
-    """Queued work older than STALL_AFTER while nothing is running: no worker is taking jobs."""
+    """Queued work older than STALL_AFTER while no job is live: no worker is taking jobs.
+
+    A job left `running` by a crashed worker is not live (its heartbeat stopped), so it cannot hide a dead
+    worker.
+    """
     cur = await conn.execute(
         "SELECT EXISTS (SELECT 1 FROM jobs WHERE status = 'queued' AND created < now() - %s::interval) "
-        "AND NOT EXISTS (SELECT 1 FROM jobs WHERE status = 'running')",
-        (STALL_AFTER,),
+        "AND NOT EXISTS (SELECT 1 FROM jobs WHERE status = 'running' AND updated > now() - %s::interval)",
+        (STALL_AFTER, LIVE_WITHIN),
     )
     row = await cur.fetchone()
     return bool(row and row[0])

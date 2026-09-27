@@ -15,7 +15,7 @@ import psycopg
 
 log = logging.getLogger("afterglow.notify")
 CHANNEL = "job_progress"
-ALL = "*"  # a job entered or left the queue: every queued position may have moved
+ALL = "*"  # a job entered or left the queue: queued positions may have moved (only queued streams listen)
 RECONNECT_S = 2.0
 
 
@@ -25,8 +25,9 @@ class Hub:
     def __init__(self) -> None:
         self._waiting: dict[str, set[asyncio.Event]] = {}
 
-    def subscribe(self, job: str) -> asyncio.Event:
-        ev = asyncio.Event()
+    def subscribe(self, job: str, ev: asyncio.Event | None = None) -> asyncio.Event:
+        """Wake `ev` (a new event unless given) when `job` changes; `job` may be ALL for queue movements."""
+        ev = ev or asyncio.Event()
         self._waiting.setdefault(job, set()).add(ev)
         return ev
 
@@ -38,9 +39,6 @@ class Hub:
                 del self._waiting[job]
 
     def notify(self, job: str) -> None:
-        if job == ALL:
-            self.notify_all()
-            return
         for ev in self._waiting.get(job, ()):
             ev.set()
 
@@ -60,6 +58,6 @@ async def listen(dsn: str, hub: Hub) -> None:
                 hub.notify_all()
                 async for note in conn.notifies():
                     hub.notify(note.payload)
-        except psycopg.Error as exc:
+        except Exception as exc:  # any failure: streams fall back to polling until the listener is back
             log.warning("progress listener: %s", type(exc).__name__)
         await asyncio.sleep(RECONNECT_S)

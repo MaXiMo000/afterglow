@@ -273,6 +273,9 @@ def build_result(repo: RepoRef, sha: str, commits: list[Commit], history_truncat
         window_start = commits[-1].time
         for p in head_paths:
             if p not in stats:
+                if len(stats) >= caps.tracked_paths:  # same memory cap as paths seen in history (SECURITY T3)
+                    paths_truncated = True
+                    break
                 stats[p] = FileStats(last=window_start, birth=window_start, alive=True)
 
     # Files that exist now come from HEAD's tree: "newest change was not a delete" is wrong when

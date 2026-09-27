@@ -33,6 +33,7 @@ adduser --disabled-password --gecos "" afterglow && usermod -aG docker afterglow
 ufw allow OpenSSH && ufw allow 443/tcp && ufw --force enable
 su - afterglow
 docker compose version        # must print v2.x
+docker version -f '{{.Server.Version}}'   # 25 or newer (health checks use start_interval)
 ```
 Only port 443 is published by the stack; Postgres, the API and the worker are on private Docker networks.
 
@@ -84,7 +85,7 @@ headers at https://securityheaders.com and https://developer.mozilla.org/observa
 | Task | Command (from the `afterglow` directory) |
 | --- | --- |
 | Status | `docker compose -f deploy/compose.yaml ps` (the worker reports `unhealthy` if its job loop stops) |
-| Uptime monitor | Point any monitor at `https://<your hostname>/readyz`: `200 {"status":"ok"}`, or `503` with `database` (Postgres unreachable) or `queue_stalled` (jobs waiting over 5 minutes and no worker running) |
+| Uptime monitor | Point any monitor at `https://<your hostname>/readyz`: `200 {"status":"ok"}`, or `503` with `database` (Postgres unreachable) or `queue_stalled` (jobs waiting over 5 minutes and no job with a recent worker heartbeat). The answer is cached for 5 s, so a flood of requests costs one query |
 | Logs | `docker compose -f deploy/compose.yaml logs --tail 100 api worker caddy` |
 | Restart | `docker compose -f deploy/compose.yaml --profile worker restart` |
 | Stop | `docker compose -f deploy/compose.yaml --profile worker down` (data is kept in volumes) |

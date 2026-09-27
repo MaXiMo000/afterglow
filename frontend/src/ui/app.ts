@@ -103,6 +103,8 @@ export class App {
   private photo = false;
   private exportNext = false;
   private pendingView: View | null = null;
+  /** Screen to restore without a new history entry (reload, or Back/Forward onto another repository's entry). */
+  private arrive: 'story' | 'city' | null = null;
   private prevT = 1;
   private loadFrac = 0; // real analysis progress 0..1, drives the city un-building during loading (A6)
   private lastRepo = '';
@@ -156,9 +158,12 @@ export class App {
     this.canvas.addEventListener('webglcontextlost', () => this.fallback('The 3D view stopped (graphics context lost).'));
     const shared = decodeView(location.hash);
     const linked = repoFromPath(location.pathname);
+    const st = (history.state as { v?: string } | null)?.v;
+    if (st === 'story' || st === 'city') this.arrive = st; // a reload: show that screen again, don't add an entry
     if (shared) {
       // A share link names a repo: analyse it (rate-limited like any request) and restore the view afterwards.
       this.pendingView = shared;
+      history.replaceState(history.state, '', `${repoPath(shared.repo)}${location.search}${location.hash}`);
       void this.analyse(`${shared.repo.owner}/${shared.repo.name}`);
     } else if (linked) {
       void this.analyse(`${linked.owner}/${linked.name}`); // a clean link (/owner/name) opens the story directly
@@ -266,10 +271,9 @@ export class App {
     if (!this.result || !this.world || this.demo) return;
     if (fromCity) this.startBlend();
     // Browser history mirrors the screens (start page -> story -> city), so Back steps out one level.
-    if (push && !fromCity) {
-      const deep = /^#chapter-[1-9]$/.test(location.hash) ? location.hash : '#chapter-1'; // keep a deep link
-      history.pushState({ v: 'story', back: true }, '', this.here(deep));
-    }
+    const deep = /^#chapter-[1-9]$/.test(location.hash) ? location.hash : '#chapter-1'; // keep a deep link
+    if (push && !fromCity) history.pushState({ v: 'story', back: true }, '', this.here(deep));
+    else if (!push) history.replaceState(history.state, '', this.here(fromCity ? '' : deep)); // path follows the repo
     this.setMode('story');
     this.story.enter(this.result, this.world);
   }
@@ -334,10 +338,14 @@ export class App {
 
   private goHome(push = true): void {
     this.abort?.abort();
+    this.arrive = null;
     this.openTable(false);
     this.setMode('hero');
+    // Screen hashes (#chapter-N, #explore) would make the next repository skip to that screen: drop them here.
+    // Others stay: the skip link's #summary also arrives here (as a popstate) and must keep its target.
+    const keep = /^#(chapter-[1-9]|explore)$/.test(location.hash) ? '' : location.hash;
     if (push) history.pushState({ v: 'hero' }, '', `/${location.search}`);
-    else if (location.pathname !== '/') history.replaceState(history.state, '', `/${location.search}${location.hash}`);
+    else if (location.pathname !== '/' || !keep) history.replaceState(history.state, '', `/${location.search}${keep}`);
     ($('#repoInput') as HTMLInputElement).focus();
   }
 
@@ -345,6 +353,13 @@ export class App {
   private onPop(state: { v?: string } | null): void {
     const v = state?.v ?? 'hero';
     const loaded = !!this.result && !this.demo;
+    const linked = repoFromPath(location.pathname);
+    if ((v === 'story' || v === 'city') && linked && (!loaded || `${linked.owner}/${linked.name}`.toLowerCase() !== this.result!.meta.repo)) {
+      // This entry belongs to another repository than the one on screen (New repo, then Back): load that one.
+      this.arrive = v;
+      void this.analyse(`${linked.owner}/${linked.name}`);
+      return;
+    }
     if (v === 'city' && loaded) this.enterCity(false);
     else if (v === 'story' && loaded) this.enterStory(this.mode === 'city', false);
     else this.goHome(false);
@@ -426,15 +441,17 @@ export class App {
       if (!this.renderer) {
         this.setMode('city');
         this.openTable(true);
-      } else if (view || location.hash === '#explore') {
+      } else if (view || location.hash === '#explore' || this.arrive === 'city') {
         this.cam.frame(this.world!.radius);
         if (view?.cam) this.cam.goal = { ...view.cam, y: 4 };
         this.cam.snap();
         if (view?.t !== null && view?.t !== undefined) this.tT = this.P.t = view.t;
         this.setMode('city');
+        if (!view) history.replaceState({ ...history.state, v: 'city' }, '', this.here('#explore'));
       } else {
-        this.enterStory();
+        this.enterStory(false, this.arrive !== 'story');
       }
+      this.arrive = null;
     } catch (e) {
       if (abort.signal.aborted) return;
       const code = e instanceof ApiError ? e.code : 'unavailable';
@@ -760,14 +777,15 @@ export class App {
     });
     $('#btnRetry').addEventListener('click', () => void this.analyse(this.lastRepo));
     $('#btnBack').addEventListener('click', () => {
+      this.arrive = null;
       this.setMode(this.result && !this.demo ? 'city' : 'hero');
-      history.replaceState(history.state, '', this.here(this.mode === 'city' ? '#explore' : ''));
+      history.replaceState({ ...history.state, v: this.mode }, '', this.here(this.mode === 'city' ? '#explore' : ''));
       if (this.mode === 'hero') ($('#repoInput') as HTMLInputElement).focus();
     });
     $('#btnCancel').addEventListener('click', () => {
       this.abort?.abort();
       this.setMode(this.result && !this.demo ? 'city' : 'hero');
-      history.replaceState(history.state, '', this.here(this.mode === 'city' ? '#explore' : ''));
+      history.replaceState({ ...history.state, v: this.mode }, '', this.here(this.mode === 'city' ? '#explore' : ''));
     });
     $('#btnNew').addEventListener('click', () => this.goHome());
     $('#btnShare').addEventListener('click', () => this.run('share'));

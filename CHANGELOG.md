@@ -30,7 +30,8 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 - Worker: all clones of a job share one 512 MB scratch budget and line counts are streamed, so a large repository can
   no longer exhaust the worker's memory; a heartbeat during git calls lets a dead worker's job fail after 90 s
   instead of 3 minutes; line counts come from the analysed commit itself (fetched by id), not whatever HEAD is later.
-- Health: the worker container has a health check, and `/readyz` reports a down database or a stalled queue.
+- Health: the worker container has a health check, and `/readyz` reports a down database or a stalled queue (a job
+  left running by a crashed worker does not hide it; the answer is cached for 5 s). Docker Engine 25+ is required.
 - Frontend: the scene renders at 30 fps when nothing but ambient animation moves (full rate on input) and not at all
   behind the table view; fewer per-frame allocations; plain messages for every server error code; no broken "Open on
   GitHub" link for paths that were cleaned up for display.

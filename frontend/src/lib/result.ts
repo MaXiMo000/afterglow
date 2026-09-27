@@ -119,6 +119,9 @@ export function validateResult(raw: unknown): Result {
     truncated: { files: bool(tr['files'], 't.files'), commits: bool(tr['commits'], 't.commits'), sizes: bool(tr['sizes'], 't.sizes') },
   };
 
+  // Analyser 3 always sends quarters and removals; only older results (the bundled demo) may lack them.
+  const v3file = meta.analyser >= 3 ? ['quarters'] : [];
+  const v3month = meta.analyser >= 3 ? ['removed'] : [];
   const dirs = arr(r['dirs'], LIMITS.dirs, 'dirs').map((d, i): Dir => {
     const o = obj(d, `dirs.${i}`);
     keys(o, ['name', 'files', 'loc', 'last', 'bus_factor', 'quiet'], `dirs.${i}`);
@@ -134,7 +137,7 @@ export function validateResult(raw: unknown): Result {
   const nd = dirs.length;
   const files = arr(r['files'], LIMITS.files, 'files').map((f, i): FileRec => {
     const o = obj(f, `files.${i}`);
-    keys(o, ['path', 'dir', 'loc', 'birth', 'last', 'changes', 'changes_12m', 'authors', 'hot', 'dead'], `files.${i}`, ['quarters']);
+    keys(o, ['path', 'dir', 'loc', 'birth', 'last', 'changes', 'changes_12m', 'authors', 'hot', 'dead', ...v3file], `files.${i}`, ['quarters']);
     const changes = int(o['changes'], `files.${i}.changes`);
     const quarters = o['quarters'] === undefined ? [] : arr(o['quarters'], QUARTERS, `files.${i}.quarters`).map((q) => int(q, `files.${i}.q`));
     if ((quarters.length !== 0 && quarters.length !== QUARTERS) || quarters.reduce((a, b) => a + b, 0) > changes) fail(`files.${i}.quarters`);
@@ -175,7 +178,7 @@ export function validateResult(raw: unknown): Result {
   };
   const timeline = arr(r['timeline'], LIMITS.months, 'timeline').map((t, i): Month => {
     const o = obj(t, `timeline.${i}`);
-    keys(o, ['t', 'commits', 'added'], `timeline.${i}`, ['removed']);
+    keys(o, ['t', 'commits', 'added', ...v3month], `timeline.${i}`, ['removed']);
     const m: Month = { t: int(o['t'], 'tl.t'), commits: int(o['commits'], 'tl.c'), added: int(o['added'], 'tl.a') };
     if (o['removed'] !== undefined) m.removed = int(o['removed'], 'tl.r');
     return m;

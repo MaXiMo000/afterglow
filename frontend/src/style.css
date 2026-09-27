@@ -158,6 +158,7 @@ kbd { font: var(--size-xs) var(--font-mono); padding: 0 5px; border: 1px solid v
 @keyframes panel-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
 #inspector { right: var(--gutter); top: calc(env(safe-area-inset-top, 0px) + 70px); width: min(360px, calc(100vw - 2 * var(--gutter))); max-height: calc(100% - 230px); padding: 16px 18px; }
 #inspector .close { position: absolute; right: 14px; top: 10px; }
+#inspector .badges { display: flex; flex-wrap: wrap; gap: 6px; }
 #inspector .path { font: 500 var(--size-md) var(--font-mono); overflow-wrap: anywhere; margin: 4px 0 12px; }
 #inspector dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0 0 14px; font-size: var(--size-sm); }
 #inspector dt { color: var(--color-dim); }
@@ -250,6 +251,7 @@ dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
 .quarters { display: block; width: 100%; max-width: 240px; height: 48px; }
 .quarters .q { fill: var(--color-amber); }
 .quarters .q.zero { fill: var(--color-line); }
+.quarters .q.na { fill: none; stroke: var(--color-line); stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; }
 .quarters-axis { display: flex; justify-content: space-between; max-width: 240px; margin: 2px 0 0; font: var(--size-xs) var(--font-mono); color: var(--color-faint); }
 
 /* honesty strip */

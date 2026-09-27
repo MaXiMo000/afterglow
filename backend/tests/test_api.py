@@ -7,6 +7,7 @@ missing database is an error, not a skip.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -19,10 +20,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import db, maint
+from app import main as app_main
+from app.api import SSE_POLL_S
 from app.limits import Gate, RateLimiter
 from app.main import create_app
+from app.notify import ALL, Hub, listen
 from app.settings import Settings
-from core.schema import Result
+from core.schema import ANALYSER_VERSION, Result
 from worker import queue
 from worker.git import Caps
 
@@ -292,17 +296,29 @@ def test_retention_deletes_old_jobs_and_unused_results(client: TestClient, tmp_p
     work(tmp_path)  # a fresh job and result: both stay
     sha = {"old": "1" * 40, "kept": "2" * 40, "v1": "3" * 40}
     with psycopg.connect(ADMIN, autocommit=True) as conn:
-        for repo, key, analyser in (("a/old", "old", 2), ("a/kept", "kept", 2), ("a/v1", "v1", 1)):
+        v = ANALYSER_VERSION
+        for repo, key, analyser, age in (
+            ("a/old", "old", v, "40 days"),  # too old, nobody asked: deleted
+            ("a/kept", "kept", v, "40 days"),  # too old, but asked for recently: kept
+            ("a/v1", "v1", v - 1, "1 day"),  # recent, but from an older analyser nobody uses: deleted
+            ("a/young", "young", v, "10 days"),  # nobody asked, but under 30 days: kept
+            (
+                "a/next",
+                "next",
+                v + 1,
+                "1 day",
+            ),  # written by a newer analyser (rolling upgrade): never deleted
+        ):
             conn.execute(
                 "INSERT INTO results (repo, sha, analyser, body, created) "
-                "VALUES (%s, %s, %s, '{}', now() - interval '40 days')",
-                (repo, sha[key], analyser),
+                "VALUES (%s, %s, %s, '{}', now() - %s::interval)",
+                (repo, sha.get(key, "4" * 40), analyser, age),
             )
         # Asked for again recently: its job keeps the old result alive.
         conn.execute(
             "INSERT INTO jobs (id, repo, client, status, stage, sha, analyser) "
-            "VALUES (gen_random_uuid(), 'a/kept', repeat('0', 32), 'done', 'done', %s, 2)",
-            (sha["kept"],),
+            "VALUES (gen_random_uuid(), 'a/kept', repeat('0', 32), 'done', 'done', %s, %s)",
+            (sha["kept"], v),
         )
         conn.execute(
             "INSERT INTO jobs (id, repo, client, status, stage, reason, updated) VALUES "
@@ -318,11 +334,12 @@ def test_retention_deletes_old_jobs_and_unused_results(client: TestClient, tmp_p
         jobs = sorted(r[0] for r in conn.execute("SELECT repo FROM jobs"))
         results = sorted(r[0] for r in conn.execute("SELECT repo FROM results"))
     assert jobs == ["a/kept", "a/wait", "acme/orbit"]
-    assert results == ["a/kept", "acme/orbit"]
+    assert results == ["a/kept", "a/next", "a/young", "acme/orbit"]
     assert client.get(f"/api/v1/analyses/{fresh['id']}").status_code == 200
 
 
-def test_readyz_reports_a_stalled_queue(client: TestClient) -> None:
+def test_readyz_reports_a_stalled_queue(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(app_main, "READY_CACHE_S", 0.0)  # every request re-checks (the cache is tested below)
     assert client.get("/readyz").json() == {"status": "ok"}
     with psycopg.connect(ADMIN, autocommit=True) as conn:
         conn.execute(
@@ -331,12 +348,26 @@ def test_readyz_reports_a_stalled_queue(client: TestClient) -> None:
         )
     r = client.get("/readyz")
     assert (r.status_code, r.json()) == (503, {"status": "queue_stalled"})
-    with psycopg.connect(ADMIN, autocommit=True) as conn:  # a worker is busy: the queue is moving
+    with psycopg.connect(ADMIN, autocommit=True) as conn:  # left running by a crashed worker: still stalled
         conn.execute(
-            "INSERT INTO jobs (id, repo, client, status, stage) "
-            "VALUES (gen_random_uuid(), 'c/d', repeat('1', 32), 'running', 'cloning')"
+            "INSERT INTO jobs (id, repo, client, status, stage, updated) "
+            "VALUES (gen_random_uuid(), 'c/d', repeat('1', 32), 'running', 'cloning', now() - interval '5 minutes')"
         )
+    assert client.get("/readyz").json() == {"status": "queue_stalled"}
+    with psycopg.connect(ADMIN, autocommit=True) as conn:  # its heartbeat is recent: a live worker is busy
+        conn.execute("UPDATE jobs SET updated = now() WHERE repo = 'c/d'")
     assert client.get("/readyz").status_code == 200
+
+
+def test_readyz_is_cached(client: TestClient) -> None:
+    """A flood of /readyz requests costs one query per READY_CACHE_S, not one each (SECURITY T11)."""
+    assert client.get("/readyz").json() == {"status": "ok"}
+    with psycopg.connect(ADMIN, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO jobs (id, repo, client, created) "
+            "VALUES (gen_random_uuid(), 'a/b', repeat('1', 32), now() - interval '10 minutes')"
+        )
+    assert client.get("/readyz").json() == {"status": "ok"}  # the answer from a moment ago
 
 
 def test_heartbeat_keeps_a_slow_job_alive(client: TestClient) -> None:
@@ -388,3 +419,31 @@ def test_queue_position(client: TestClient) -> None:
     with psycopg.connect(WORKER, autocommit=True) as conn:
         assert queue.claim(conn) is not None
     assert asyncio.run(ahead()) == [None, 0, 1]
+
+
+def test_listener_wakes_streams_on_job_changes(client: TestClient) -> None:
+    """End to end: a worker's update reaches a waiting stream through NOTIFY, well before the fallback poll."""
+    _, a = post(client, {"repo": "n/one"}, ip="203.0.113.1")
+
+    async def scenario() -> tuple[float, bool, bool]:
+        hub = Hub()
+        task = asyncio.create_task(listen(API, hub))
+        own = hub.subscribe(a["id"])
+        queued = hub.subscribe(ALL)  # what a queued stream also waits on
+        other = hub.subscribe("f" * 32)
+        await asyncio.sleep(0.5)  # LISTEN is up
+        own.clear(), queued.clear(), other.clear()  # connecting wakes everyone once
+        start = asyncio.get_running_loop().time()
+        with psycopg.connect(WORKER, autocommit=True) as conn:
+            assert queue.claim(conn) is not None  # queued -> running: the job's own event and the queue event
+        await asyncio.wait_for(own.wait(), 1.5)
+        took = asyncio.get_running_loop().time() - start
+        await asyncio.sleep(0.2)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        return took, queued.is_set(), other.is_set()
+
+    took, queued, other = asyncio.run(scenario())
+    assert took < SSE_POLL_S
+    assert queued and not other

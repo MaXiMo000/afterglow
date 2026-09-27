@@ -2,7 +2,7 @@
  * Story chapters, derived from the real analysis (EXPERIENCE section 2). A chapter exists only if the data
  * supports it: no hotspots means no "hot streets" chapter, never a fabricated one.
  */
-import { beforeWindow } from '../lib/history';
+import { beforeWindow, dirBeforeWindow } from '../lib/history';
 import type { V3 } from '../render/math';
 import type { Result } from '../lib/result';
 import type { World } from '../world/build';
@@ -123,13 +123,14 @@ export function buildChapters(r: Result, w: World): Chapter[] {
   const qdist = qi === undefined ? undefined : w.dists[qi];
   if (qi !== undefined && qd && qdist) {
     const idle = (r.meta.span[1] - qd.last) / YEAR;
+    const pre = dirBeforeWindow(r, qd); // untouched in the whole analysed window: its idle time is a lower bound
     out.push({
       id: 'quiet',
       eyebrow: 'Quiet quarters',
       title: 'Nothing here has moved in',
       em: idle >= 2 ? `over ${words(Math.floor(idle))} years.` : 'two years.',
-      body: `${qd.name}: ${fmt(qd.files)} files, last changed ${date(qd.last)}. Dark windows, thick fog. Nobody remembers why it works, so nobody dares to touch it.`,
-      callout: { at: [qdist.x, 4, qdist.z], name: `${qd.name}/`, meta: `${fmt(qd.files)} files \u00b7 quiet for ${idle.toFixed(1)} years`, hot: false },
+      body: `${qd.name}: ${fmt(qd.files)} files, last changed ${pre ? `before ${date(qd.last)}, where the analysed history begins` : date(qd.last)}. Dark windows, thick fog. Nobody remembers why it works, so nobody dares to touch it.`,
+      callout: { at: [qdist.x, 4, qdist.z], name: `${qd.name}/`, meta: `${fmt(qd.files)} files \u00b7 quiet for ${pre ? 'over ' : ''}${idle.toFixed(1)} years`, hot: false },
       key: orbitKey([qdist.x, 1.5, qdist.z], Math.max(22, qdist.r * 2.2), 4.6, 0.5, 50),
       t: 1,
       hot: 0.4,

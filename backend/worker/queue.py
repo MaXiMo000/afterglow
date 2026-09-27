@@ -128,7 +128,13 @@ def run_job(
         finish_failed(conn, job, "internal")
         log.exception("job %s %s crashed", job, slug)
         return
-    finish_done(conn, job, slug, result.meta.sha, result.model_dump_json().encode())
+    body = result.model_dump_json().encode()
+    try:
+        finish_done(conn, job, slug, result.meta.sha, body)
+    except psycopg.errors.ForeignKeyViolation:
+        # An old copy of this result blocked our insert (ON CONFLICT DO NOTHING), then retention deleted it
+        # before the job pointed at it. The insert now goes through.
+        finish_done(conn, job, slug, result.meta.sha, body)
     log.info("job %s %s done", job, slug)
 
 

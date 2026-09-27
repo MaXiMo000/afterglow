@@ -2,7 +2,7 @@
  * Explore panels (EXPERIENCE section 5): inspector drawer, insights, help overlay, mini-map, timeline + compare.
  * Every value shown is a field of the result or a count derived from it; nothing is estimated.
  */
-import { beforeWindow, quarterLabel, removedBetween, trend, TREND_TEXT } from '../lib/history';
+import { analysedFrom, beforeWindow, dirBeforeWindow, quarterLabel, removedBetween, shownTrend, trend, TREND_TEXT } from '../lib/history';
 import type { FileRec, Result } from '../lib/result';
 import type { World } from '../world/build';
 import { ago, el, fmt, fmtDate, setText } from './dom';
@@ -38,8 +38,8 @@ export class Inspector {
     const badges = el('p', null, 'badges');
     if (f.hot) badges.append(el('span', 'hotspot', 'pill hot'));
     if (f.dead) badges.append(el('span', 'quiet 2y+', 'pill quiet'));
-    const tr = trend(f.quarters);
-    if (tr && tr.kind !== 'steady') badges.append(el('span', TREND_TEXT[tr.kind], `pill ${tr.kind}`));
+    const tr = trend(r, f);
+    if (shownTrend(tr)) badges.append(el('span', TREND_TEXT[tr.kind], `pill ${tr.kind}`));
     kids.push(badges, el('h2', f.path, 'path'));
     const dl = el('dl');
     const row = (k: string, v: string): void => void dl.append(el('dt', k), el('dd', v));
@@ -112,13 +112,32 @@ function quarterHistory(r: Result, f: FileRec): HTMLElement[] {
   const head = r.meta.span[1];
   if (r.meta.analyser < 3) return []; // older analyses: the closing note says what is missing
   const title = el('h3', 'Changes per quarter, last two years');
-  if (!f.quarters.length) return [title, el('p', 'No changes in the last eight quarters.', 'sub')];
-  const max = Math.max(...f.quarters);
+  const from = analysedFrom(r); // quarters before this were not (fully) read: unknown, not zero
+  const gap = from > 0 ? el('p', `The analysed history starts in ${quarterLabel(head, Math.min(from, 8) - 1)}; earlier quarters are not in it.`, 'sub note') : null;
+  if (!f.quarters.length || from >= 8) {
+    const none = el('p', from > 0 ? 'No changes in the analysed part of the last eight quarters.' : 'No changes in the last eight quarters.', 'sub');
+    return gap ? [title, none, gap] : [title, none];
+  }
+  const max = Math.max(1, ...f.quarters.slice(from));
   const svg = document.createElementNS(SVG, 'svg');
   svg.setAttribute('viewBox', '0 0 160 40');
+  svg.setAttribute('preserveAspectRatio', 'none'); // bars span the same width as the axis labels
   svg.setAttribute('class', 'quarters');
   svg.setAttribute('aria-hidden', 'true');
   f.quarters.forEach((n, i) => {
+    if (i < from) {
+      const na = document.createElementNS(SVG, 'rect');
+      na.setAttribute('x', String(i * 20 + 3));
+      na.setAttribute('y', '4');
+      na.setAttribute('width', '14');
+      na.setAttribute('height', '36');
+      na.setAttribute('class', 'q na');
+      const tip = document.createElementNS(SVG, 'title');
+      tip.textContent = `${quarterLabel(head, i)}: not analysed`;
+      na.append(tip);
+      svg.append(na);
+      return;
+    }
     const h = n ? Math.max(2, (n / max) * 36) : 1;
     const bar = document.createElementNS(SVG, 'rect');
     bar.setAttribute('x', String(i * 20 + 3));
@@ -135,10 +154,18 @@ function quarterHistory(r: Result, f: FileRec): HTMLElement[] {
   axis.append(el('span', quarterLabel(head, 0)), el('span', quarterLabel(head, 7)));
   const figure = el('figure', null, 'quarters-fig');
   figure.append(svg, axis);
-  const t = trend(f.quarters)!;
-  const words = f.quarters.map((n, i) => `${quarterLabel(head, i)} ${fmt(n)}`).join(', ');
-  const summary = el('p', `${TREND_TEXT[t.kind][0]!.toUpperCase()}${TREND_TEXT[t.kind].slice(1)}: ${fmt(t.recent)} changes in the latest four quarters, ${fmt(t.before)} in the four before. ${words}.`, 'sub');
-  return [title, figure, summary];
+  const t = trend(r, f);
+  const words = f.quarters.map((n, i) => `${quarterLabel(head, i)} ${i < from ? 'not analysed' : fmt(n)}`).join(', ');
+  const cap = (s: string): string => `${s[0]!.toUpperCase()}${s.slice(1)}`;
+  const summary = el(
+    'p',
+    t
+      ? `${cap(TREND_TEXT[t.kind])}: ${fmt(t.recent)} changes in the latest four quarters (the current one so far), ${fmt(t.before)} in the four before.`
+      : 'No trend: the analysed history does not cover all eight quarters.',
+    'sub',
+  );
+  summary.append(el('span', ` By quarter: ${words}.`, 'visually-hidden')); // the chart's numbers, for screen readers
+  return gap ? [title, figure, summary, gap] : [title, figure, summary];
 }
 
 export class Insights {
@@ -202,8 +229,8 @@ export class Insights {
     if (this.tab === 'hot')
       for (const i of r.insights.hotspots) {
         const f = r.files[i]!;
-        const t = trend(f.quarters);
-        const heat = t && t.kind !== 'steady' ? ` \u00b7 ${TREND_TEXT[t.kind]}` : '';
+        const t = trend(r, f);
+        const heat = shownTrend(t) ? ` \u00b7 ${TREND_TEXT[t.kind]}` : '';
         add(f.path, `${fmt(f.changes_12m)} / 12 mo`, `${fmt(f.authors)} ${f.authors === 1 ? 'author' : 'authors'} all time \u00b7 last ${ago(f.last, now)}${heat}`, () => this.onFile(i), 'bad');
       }
     if (this.tab === 'bus')
@@ -214,7 +241,8 @@ export class Insights {
     if (this.tab === 'quiet')
       for (const d of r.insights.quiet) {
         const x = r.dirs[d]!;
-        add(x.name, ago(x.last, now), `${fmt(x.files)} files, no change for 2+ years`, () => this.onDistrict(d));
+        const pre = dirBeforeWindow(r, x); // last change is before the analysed history: only a bound is known
+        add(x.name, pre ? `before ${fmtDate(x.last)}` : ago(x.last, now), `${fmt(x.files)} files, no change for 2+ years`, () => this.onDistrict(d));
       }
     if (this.tab === 'coupling')
       for (const ci of r.insights.coupling) {

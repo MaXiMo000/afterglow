@@ -5,11 +5,14 @@
 --   set -a; . deploy/.env; set +a
 --   docker compose -f deploy/compose.yaml exec -T db psql -U postgres -d afterglow -v ON_ERROR_STOP=1 \
 --     -v maint_pw="$AFTERGLOW_DB_MAINT_PASSWORD" < deploy/db/upgrades/0002-retention.sql
+-- Same rule as init.sh: the password must be passed and at least 32 characters (SECURITY T18). Otherwise nothing
+-- changes and psql exits non-zero, so a scripted upgrade cannot look successful.
 \if :{?maint_pw}
+  SELECT length(:'maint_pw') >= 32 AS maint_pw_ok \gset
 \else
-  \echo 'set -v maint_pw=... (AFTERGLOW_DB_MAINT_PASSWORD from deploy/.env)'
-  \quit
+  \set maint_pw_ok false
 \endif
+\if :maint_pw_ok
 BEGIN;
 CREATE ROLE afterglow_maint LOGIN PASSWORD :'maint_pw' CONNECTION LIMIT 2;
 GRANT USAGE ON SCHEMA public TO afterglow_maint;
@@ -37,3 +40,7 @@ BEGIN
 END $$;
 CREATE TRIGGER jobs_notify_progress AFTER INSERT OR UPDATE ON jobs FOR EACH ROW EXECUTE FUNCTION jobs_notify_progress();
 COMMIT;
+\else
+  \echo 'Refusing to upgrade: pass -v maint_pw=... (AFTERGLOW_DB_MAINT_PASSWORD from deploy/.env, 32+ characters).'
+  SELECT 'maint_pw missing or too short'::int;
+\endif

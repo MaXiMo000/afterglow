@@ -22,7 +22,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app import db
 from app.limits import Gate, RateLimiter, client_id
-from app.notify import Hub
+from app.notify import ALL, Hub
 from app.settings import Settings
 from core.repo import InvalidRepoError, parse_repo
 from core.schema import ANALYSER_VERSION, Result
@@ -182,8 +182,11 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
                 while current is not None and time.monotonic() - started < SSE_MAX_S:
                     ahead = None
                     if current.status == "queued":
+                        hub.subscribe(ALL, woken)  # queue movements change this job's position
                         async with pool.connection() as conn:
                             ahead = await db.queue_ahead(conn, current.id)
+                    else:
+                        hub.unsubscribe(ALL, woken)
                     state = (
                         current.status,
                         current.stage,
@@ -216,6 +219,7 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
                         current = await db.get_job(conn, current.id)
             finally:
                 hub.unsubscribe(job.id.hex, woken)
+                hub.unsubscribe(ALL, woken)
                 streams.leave(client)
 
         return StreamingResponse(

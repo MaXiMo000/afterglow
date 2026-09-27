@@ -2,7 +2,7 @@
  * 2D fallback (no WebGL2, context loss, shader failure, or "View as table") and the screen-reader summary
  * (EXPERIENCE section 8). Same data as the city, no 3D required.
  */
-import { beforeWindow, trend, TREND_TEXT } from '../lib/history';
+import { beforeWindow, dirBeforeWindow, shownTrend, trend, TREND_TEXT } from '../lib/history';
 import type { Result } from '../lib/result';
 import { ago, el, fmt, fmtDate } from './dom';
 
@@ -107,8 +107,8 @@ export function renderSummary(r: Result, root: HTMLElement): void {
   const hot = el('ol');
   for (const i of r.insights.hotspots.slice(0, 10)) {
     const f = r.files[i];
-    const t = f ? trend(f.quarters) : null;
-    const heat = t && t.kind !== 'steady' ? `, ${TREND_TEXT[t.kind]}` : '';
+    const t = f ? trend(r, f) : null;
+    const heat = shownTrend(t) ? `, ${TREND_TEXT[t.kind]}` : '';
     if (f) hot.append(el('li', `${f.path}: ${fmt(f.changes_12m)} changes in the last 12 months${heat}`));
   }
   parts.push(hot.childElementCount ? hot : el('p', 'None found.'));
@@ -117,7 +117,7 @@ export function renderSummary(r: Result, root: HTMLElement): void {
   const quiet = el('ul');
   for (const i of r.insights.quiet.slice(0, 10)) {
     const d = r.dirs[i];
-    if (d) quiet.append(el('li', `${d.name}: ${fmt(d.files)} files, last change ${ago(d.last, now)}`));
+    if (d) quiet.append(el('li', `${d.name}: ${fmt(d.files)} files, last change ${dirBeforeWindow(r, d) ? `before ${fmtDate(d.last)}, where the analysed history starts` : ago(d.last, now)}`));
   }
   parts.push(quiet.childElementCount ? quiet : el('p', 'None found.'));
 

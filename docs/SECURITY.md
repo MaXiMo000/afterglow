@@ -50,8 +50,9 @@ Single public origin behind Caddy (automatic TLS). API and worker on private net
 Postgres is reachable only from the API and worker networks. Three login roles with column-level grants: `afterglow_api`
 (insert jobs, read jobs/results) and `afterglow_worker` (update job progress/outcome, insert results) can neither delete
 nor alter schema; `afterglow_maint` (the retention service, its own container) can only read the columns it needs and
-delete, never insert, update or read client pseudonyms or result bodies (tested in `tests/test_api.py`). Every role has a
-statement and idle-transaction timeout. Config only via environment/secret manager. Backups of the result store are optional and contain only public-derived data.
+delete, never insert, update or read client pseudonyms or result bodies (tested in `tests/test_api.py`). Any role can
+`LISTEN job_progress` (Postgres has no per-channel grants); the notifications carry only job ids, which the API and
+worker can read anyway. Every role has a statement and idle-transaction timeout. Config only via environment/secret manager. Backups of the result store are optional and contain only public-derived data.
 
 ## 7. Residual risks we accept (and why)
 - Volumetric DDoS: handled by the CDN/provider, not the app.
