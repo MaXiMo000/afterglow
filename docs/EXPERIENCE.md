@@ -7,6 +7,11 @@ Navigation: browser history mirrors the screens (start page -> story -> city), s
 one level and the logo returns to the start page. Growth glow, birth rings and half-grown buildings appear only while
 history is moving; a frozen moment (a story chapter, the city at rest) shows finished buildings.
 
+Graphics: Auto picks cinematic on desktops and balanced on phones and low-core devices; the Graphics setting in the
+help panel (Auto/Fast/Balanced/Cinematic) overrides it and is remembered as a UI preference. The backdrop is a hazed
+coastline city on the horizon, mirrored in the water; tall towers carry slow red aviation lights, and a few windows
+switch on and off over tens of seconds (a slow glow, never a flicker).
+
 ## 1. Scroll engine (`ScrollEngine`)
 - Inertial smooth scroll (Lenis or equivalent, bundled). Tuned so it is **fast and responsive**, not floaty:
   wheel multiplier ~1.0-1.3, lerp ~0.12-0.16, touch handled natively with momentum. Expose these as config and tune by feel on a trackpad, a mouse wheel and a phone.

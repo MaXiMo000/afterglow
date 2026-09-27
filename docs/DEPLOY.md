@@ -46,7 +46,8 @@ AFTERGLOW_TLS=you@example.com
 EOF
 ```
 `AFTERGLOW_TLS` is the email Let's Encrypt uses for expiry notices; with it set, Caddy obtains and renews the
-certificate on its own. Keep a copy of `deploy/.env` in a password manager and never commit it.
+certificate on its own. `scripts/build-frontend.sh` also reads `AFTERGLOW_PUBLIC_ORIGIN` to fill the link-preview
+(Open Graph) URLs; set `AFTERGLOW_SITE_URL` in the shell to override it. Keep a copy of `deploy/.env` in a password manager and never commit it.
 
 The site sends `Strict-Transport-Security` with `includeSubDomains`: if you deploy on an apex domain
 (`example.com`), every subdomain must also serve HTTPS. A dedicated subdomain avoids that.
