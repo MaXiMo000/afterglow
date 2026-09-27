@@ -56,7 +56,7 @@ async def listen(dsn: str, hub: Hub) -> None:
     while True:
         try:
             async with await psycopg.AsyncConnection.connect(dsn, autocommit=True) as conn:
-                await conn.execute(f"LISTEN {CHANNEL}")
+                await conn.execute("LISTEN job_progress")  # CHANNEL; a literal, never formatted SQL
                 hub.notify_all()
                 async for note in conn.notifies():
                     hub.notify(note.payload)
