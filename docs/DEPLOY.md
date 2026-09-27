@@ -50,7 +50,13 @@ EOF
 ```
 `AFTERGLOW_TLS` is the email Let's Encrypt uses for expiry notices; with it set, Caddy obtains and renews the
 certificate on its own. `scripts/build-frontend.sh` also reads `AFTERGLOW_PUBLIC_ORIGIN` to fill the link-preview
-(Open Graph) URLs; set `AFTERGLOW_SITE_URL` in the shell to override it. Keep a copy of `deploy/.env` in a password manager and never commit it.
+(Open Graph) URLs; set `AFTERGLOW_SITE_URL` in the shell to override it. The preview image
+`frontend/public/og.jpg` (1200x630, baseline JPEG, under 300 KB so WhatsApp shows it) is rendered from the real scene
+by `npm run og-image` against a running local stack; the script checks the size and format. Chat apps cache previews
+by image URL, so bump `?v=` on the `og:image` tags in `frontend/index.html` whenever the image changes. To check a
+deployment, paste the link into WhatsApp or the Facebook Sharing Debugger (both fetch the page themselves).
+
+Keep a copy of `deploy/.env` in a password manager and never commit it.
 
 The site sends `Strict-Transport-Security` with `includeSubDomains`: if you deploy on an apex domain
 (`example.com`), every subdomain must also serve HTTPS. A dedicated subdomain avoids that.

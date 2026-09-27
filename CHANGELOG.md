@@ -14,6 +14,9 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 - Progress: streams are woken by a database notification when their job changes instead of polling three times a
   second, and a queued job shows how many jobs are ahead of it. The notification trigger ships in
   `0002-retention.sql` too.
+- Link previews: a new preview image made for chat apps (words inside the centre square that WhatsApp crops to,
+  baseline JPEG, 91 KB), `og:image:type`/`secure_url`/alt tags, and a cache-busting `?v=` so apps that cached the old
+  image fetch the new one. `npm run og-image` regenerates it; an e2e test guards the tags, size and format.
 - Release: images are scanned before they are pushed.
 - Worker: all clones of a job share one 512 MB scratch budget and line counts are streamed, so a large repository can
   no longer exhaust the worker's memory; a heartbeat during git calls lets a dead worker's job fail after 90 s
