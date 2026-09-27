@@ -15,6 +15,8 @@ from core.schema import ANALYSER_VERSION
 
 Conn = AsyncConnection[TupleRow]
 FRESH_FOR = "1 hour"  # a result younger than this is served without re-analysing
+STALL_AFTER = "5 minutes"
+LIVE_WITHIN = "90 seconds"  # worker.queue.LOST_AFTER: a running job silent for longer has no live worker
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +35,21 @@ async def queue_depth(conn: Conn) -> int:
     cur = await conn.execute("SELECT count(*) FROM jobs WHERE status = 'queued'")
     row = await cur.fetchone()
     return int(row[0]) if row else 0
+
+
+async def queue_stalled(conn: Conn) -> bool:
+    """Queued work older than STALL_AFTER while no job is live: no worker is taking jobs.
+
+    A job left `running` by a crashed worker is not live (its heartbeat stopped), so it cannot hide a dead
+    worker.
+    """
+    cur = await conn.execute(
+        "SELECT EXISTS (SELECT 1 FROM jobs WHERE status = 'queued' AND created < now() - %s::interval) "
+        "AND NOT EXISTS (SELECT 1 FROM jobs WHERE status = 'running' AND updated > now() - %s::interval)",
+        (STALL_AFTER, LIVE_WITHIN),
+    )
+    row = await cur.fetchone()
+    return bool(row and row[0])
 
 
 async def client_active(conn: Conn, client: str) -> int:
@@ -78,6 +95,17 @@ async def create_job(conn: Conn, repo: str, client: str) -> tuple[uuid.UUID, str
     if row is None:  # the active job finished between the two statements; its result is now fresh
         return await create_job(conn, repo, client)
     return row[0], str(row[1])
+
+
+async def queue_ahead(conn: Conn, job_id: uuid.UUID) -> int | None:
+    """Queued jobs the worker will claim before this one (it claims oldest first); None if not queued."""
+    cur = await conn.execute(
+        "SELECT (SELECT count(*) FROM jobs q WHERE q.status = 'queued' AND q.created < j.created) "
+        "FROM jobs j WHERE j.id = %s AND j.status = 'queued'",
+        (job_id,),
+    )
+    row = await cur.fetchone()
+    return int(row[0]) if row else None
 
 
 async def get_job(conn: Conn, job_id: uuid.UUID) -> Job | None:

@@ -31,7 +31,8 @@ Browser --https--> Caddy (TLS, strict CSP, static files) --/api--> FastAPI --> P
 ```
 
 - The worker makes a bare, blobless clone and reads `git log` metadata: paths, dates, change counts and line counts.
-  It never checks out files, never reads email addresses, and shows contributors as `Contributor 1, 2, ...`.
+  Moved files keep their history, and the repository's `.mailmap` merges one person's name spellings. It never
+  checks out files, never reads email addresses, and shows contributors as `Contributor 1, 2, ...`.
 - Results are cached per commit and validated against a strict schema on both server and client.
 - Public repositories only. What is stored and for how long: [privacy note](frontend/privacy.html).
 

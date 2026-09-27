@@ -95,3 +95,17 @@ test('a hidden tab draws nothing', async ({ page }) => {
   await page.evaluate(() => (window as unknown as { __hide: (h: boolean) => void }).__hide(true));
   expect(await maxDraws(page, 30)).toBe(0);
 });
+
+test('an idle scene renders at a low rate (PLAN section 6: Idle)', async ({ page }) => {
+  await countDraws(page);
+  await page.goto('/?quality=simple');
+  await page.waitForFunction(() => window.__draws.some((n) => n > 0), null, { timeout: 30_000 });
+  await expect(page.locator('#honesty')).toContainText('Background');
+  await page.waitForTimeout(2500); // past the post-input window: nothing moves but ambient animation
+  await page.evaluate(() => (window.__draws = []));
+  await page.waitForTimeout(1000);
+  const drawn = await page.evaluate(() => window.__draws.filter((n) => n > 0).length);
+  // At most ~30 frames a second while idle (a slow software GPU may draw fewer, never more).
+  expect(drawn).toBeGreaterThan(0);
+  expect(drawn).toBeLessThanOrEqual(33);
+});

@@ -2,7 +2,8 @@
  * Explore panels (EXPERIENCE section 5): inspector drawer, insights, help overlay, mini-map, timeline + compare.
  * Every value shown is a field of the result or a count derived from it; nothing is estimated.
  */
-import type { Result } from '../lib/result';
+import { analysedFrom, beforeWindow, dirBeforeWindow, quarterLabel, removedBetween, shownTrend, trend, TREND_TEXT } from '../lib/history';
+import type { FileRec, Result } from '../lib/result';
 import type { World } from '../world/build';
 import { ago, el, fmt, fmtDate, setText } from './dom';
 import { KEYMAP, MOVE_KEYS } from './keymap';
@@ -11,9 +12,15 @@ import { KEYMAP, MOVE_KEYS } from './keymap';
 export function githubUrl(r: Result, path: string): string | null {
   const m = /^([a-z0-9-]{1,39})\/([a-z0-9._-]{1,100})$/.exec(r.meta.repo);
   if (!m || !/^[0-9a-f]{40,64}$/.test(r.meta.sha)) return null;
+  if (pathWasCleaned(path)) return null; // not the real path any more: a link would 404
   const segs = path.split('/');
   if (segs.some((s) => s === '' || s === '.' || s === '..')) return null;
   return `https://github.com/${m[1]}/${m[2]}/blob/${r.meta.sha}/${segs.map(encodeURIComponent).join('/')}`;
+}
+
+/** The server replaces control/bidi characters with U+FFFD and ends paths over 512 characters with an ellipsis. */
+export function pathWasCleaned(path: string): boolean {
+  return path.includes('\ufffd') || (path.length >= 512 && path.endsWith('\u2026'));
 }
 
 export class Inspector {
@@ -31,17 +38,27 @@ export class Inspector {
     const badges = el('p', null, 'badges');
     if (f.hot) badges.append(el('span', 'hotspot', 'pill hot'));
     if (f.dead) badges.append(el('span', 'quiet 2y+', 'pill quiet'));
+    const tr = trend(r, f);
+    if (shownTrend(tr)) badges.append(el('span', TREND_TEXT[tr.kind], `pill ${tr.kind}`));
     kids.push(badges, el('h2', f.path, 'path'));
     const dl = el('dl');
     const row = (k: string, v: string): void => void dl.append(el('dt', k), el('dd', v));
     row('district', d ? d.name : '');
     row('lines', r.meta.truncated.sizes && f.loc === 0 ? 'n/a (size caps)' : fmt(f.loc));
-    row('created', fmtDate(f.birth));
-    row('last change', `${fmtDate(f.last)} (${ago(f.last, r.meta.span[1])})`);
+    if (beforeWindow(f)) {
+      row('created', `before ${fmtDate(f.birth)}`);
+      row('last change', `before ${fmtDate(f.last)}`);
+    } else {
+      row('created', fmtDate(f.birth));
+      row('last change', `${fmtDate(f.last)} (${ago(f.last, r.meta.span[1])})`);
+    }
     row('changes, last 12 months', fmt(f.changes_12m));
     row('changes, all time', fmt(f.changes));
     row('authors, all time', fmt(f.authors));
     kids.push(dl);
+    if (beforeWindow(f))
+      kids.push(el('p', `Not changed in the ${fmt(r.meta.commits)} most recent commits, which is all this analysis read; its real dates are earlier.`, 'sub note'));
+    kids.push(...quarterHistory(r, f));
     const coupled = r.coupling
       .filter((c) => c.a === i || c.b === i)
       .sort((a, b) => b.count - a.count)
@@ -67,8 +84,18 @@ export class Inspector {
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
       kids.push(a);
+    } else if (pathWasCleaned(f.path)) {
+      kids.push(el('p', 'This path contains characters that were replaced or shortened for display, so there is no GitHub link.', 'sub note'));
     }
-    kids.push(el('p', 'Per-quarter history and per-author breakdowns are not in this analysis yet.', 'sub note'));
+    kids.push(
+      el(
+        'p',
+        r.meta.analyser < 3
+          ? 'Per-quarter history and per-author breakdowns are not in this analysis yet.'
+          : 'Per-author breakdowns are not part of the analysis: authors are counted, never listed.',
+        'sub note',
+      ),
+    );
     body.replaceChildren(...kids);
     this.root.hidden = false;
   }
@@ -76,6 +103,69 @@ export class Inspector {
   hide(): void {
     this.root.hidden = true;
   }
+}
+
+const SVG = 'http://www.w3.org/2000/svg';
+
+/** Changes per quarter as a small bar chart, with the same numbers as text for screen readers (EXPERIENCE 5). */
+function quarterHistory(r: Result, f: FileRec): HTMLElement[] {
+  const head = r.meta.span[1];
+  if (r.meta.analyser < 3) return []; // older analyses: the closing note says what is missing
+  const title = el('h3', 'Changes per quarter, last two years');
+  const from = analysedFrom(r); // quarters before this were not (fully) read: unknown, not zero
+  const gap = from > 0 ? el('p', `The analysed history starts in ${quarterLabel(head, Math.min(from, 8) - 1)}; earlier quarters are not in it.`, 'sub note') : null;
+  if (!f.quarters.length || from >= 8) {
+    const none = el('p', from > 0 ? 'No changes in the analysed part of the last eight quarters.' : 'No changes in the last eight quarters.', 'sub');
+    return gap ? [title, none, gap] : [title, none];
+  }
+  const max = Math.max(1, ...f.quarters.slice(from));
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', '0 0 160 40');
+  svg.setAttribute('preserveAspectRatio', 'none'); // bars span the same width as the axis labels
+  svg.setAttribute('class', 'quarters');
+  svg.setAttribute('aria-hidden', 'true');
+  f.quarters.forEach((n, i) => {
+    if (i < from) {
+      const na = document.createElementNS(SVG, 'rect');
+      na.setAttribute('x', String(i * 20 + 3));
+      na.setAttribute('y', '4');
+      na.setAttribute('width', '14');
+      na.setAttribute('height', '36');
+      na.setAttribute('class', 'q na');
+      const tip = document.createElementNS(SVG, 'title');
+      tip.textContent = `${quarterLabel(head, i)}: not analysed`;
+      na.append(tip);
+      svg.append(na);
+      return;
+    }
+    const h = n ? Math.max(2, (n / max) * 36) : 1;
+    const bar = document.createElementNS(SVG, 'rect');
+    bar.setAttribute('x', String(i * 20 + 3));
+    bar.setAttribute('y', String(40 - h));
+    bar.setAttribute('width', '14');
+    bar.setAttribute('height', String(h));
+    bar.setAttribute('class', n ? 'q' : 'q zero');
+    const tip = document.createElementNS(SVG, 'title');
+    tip.textContent = `${quarterLabel(head, i)}: ${fmt(n)}`;
+    bar.append(tip);
+    svg.append(bar);
+  });
+  const axis = el('p', null, 'quarters-axis');
+  axis.append(el('span', quarterLabel(head, 0)), el('span', quarterLabel(head, 7)));
+  const figure = el('figure', null, 'quarters-fig');
+  figure.append(svg, axis);
+  const t = trend(r, f);
+  const words = f.quarters.map((n, i) => `${quarterLabel(head, i)} ${i < from ? 'not analysed' : fmt(n)}`).join(', ');
+  const cap = (s: string): string => `${s[0]!.toUpperCase()}${s.slice(1)}`;
+  const summary = el(
+    'p',
+    t
+      ? `${cap(TREND_TEXT[t.kind])}: ${fmt(t.recent)} changes in the latest four quarters (the current one so far), ${fmt(t.before)} in the four before.`
+      : 'No trend: the analysed history does not cover all eight quarters.',
+    'sub',
+  );
+  summary.append(el('span', ` By quarter: ${words}.`, 'visually-hidden')); // the chart's numbers, for screen readers
+  return gap ? [title, figure, summary, gap] : [title, figure, summary];
 }
 
 export class Insights {
@@ -139,7 +229,9 @@ export class Insights {
     if (this.tab === 'hot')
       for (const i of r.insights.hotspots) {
         const f = r.files[i]!;
-        add(f.path, `${fmt(f.changes_12m)} / 12 mo`, `${fmt(f.authors)} ${f.authors === 1 ? 'author' : 'authors'} all time \u00b7 last ${ago(f.last, now)}`, () => this.onFile(i), 'bad');
+        const t = trend(r, f);
+        const heat = shownTrend(t) ? ` \u00b7 ${TREND_TEXT[t.kind]}` : '';
+        add(f.path, `${fmt(f.changes_12m)} / 12 mo`, `${fmt(f.authors)} ${f.authors === 1 ? 'author' : 'authors'} all time \u00b7 last ${ago(f.last, now)}${heat}`, () => this.onFile(i), 'bad');
       }
     if (this.tab === 'bus')
       for (const d of r.insights.bus_factor) {
@@ -149,7 +241,8 @@ export class Insights {
     if (this.tab === 'quiet')
       for (const d of r.insights.quiet) {
         const x = r.dirs[d]!;
-        add(x.name, ago(x.last, now), `${fmt(x.files)} files, no change for 2+ years`, () => this.onDistrict(d));
+        const pre = dirBeforeWindow(r, x); // last change is before the analysed history: only a bound is known
+        add(x.name, pre ? `before ${fmtDate(x.last)}` : ago(x.last, now), `${fmt(x.files)} files, no change for 2+ years`, () => this.onDistrict(d));
       }
     if (this.tab === 'coupling')
       for (const ci of r.insights.coupling) {
@@ -244,8 +337,12 @@ export class MiniMap {
 }
 
 /** Compare categories for two dates, from fields the analysis has (EXPERIENCE section 5). */
-export function compareCounts(r: Result, a: number, b: number): { added: number; lastIn: number; after: number; before: number } {
-  const out = { added: 0, lastIn: 0, after: 0, before: 0 };
+export function compareCounts(
+  r: Result,
+  a: number,
+  b: number,
+): { added: number; lastIn: number; after: number; before: number; removed: number | null } {
+  const out = { added: 0, lastIn: 0, after: 0, before: 0, removed: removedBetween(r, a, b) };
   for (const f of r.files) {
     if (f.birth > a && f.birth <= b) out.added++;
     else if (f.last > a && f.last <= b) out.lastIn++;

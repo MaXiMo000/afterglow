@@ -11,7 +11,8 @@
     "build": "vite build && node scripts/check-bundle.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "og-image": "node scripts/og-image.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

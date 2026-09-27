@@ -6,7 +6,9 @@ One job at a time per process; scale by running more worker containers.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
 import tempfile
 import time
 from pathlib import Path
@@ -23,7 +25,10 @@ log = logging.getLogger("afterglow.worker")
 Conn = psycopg.Connection[TupleRow]
 POLL_S = 1.0
 PROGRESS_EVERY_S = 0.25
-LOST_AFTER = "3 minutes"  # a running job not updated for this long lost its worker (analysis caps at 90 s)
+# A running job not updated for this long lost its worker. Git calls beat a heartbeat every few seconds; the
+# margin covers scoring, the one long step without git.
+LOST_AFTER = "90 seconds"
+ALIVE_FILE = "/scratch/.alive"  # touched while the loop runs; the container health check reads its age
 
 
 def claim(conn: Conn) -> tuple[str, str] | None:
@@ -70,10 +75,26 @@ def cached_sha(conn: Conn, repo: str, sha: str) -> bool:
     return row is not None
 
 
+def touch_alive(path: str | None) -> None:
+    if path:
+        with contextlib.suppress(OSError):  # health reporting must never stop the worker
+            Path(path).touch()
+
+
 def run_job(
-    conn: Conn, job: str, slug: str, caps: Caps, scratch_root: str | None, url: str | None = None
+    conn: Conn,
+    job: str,
+    slug: str,
+    caps: Caps,
+    scratch_root: str | None,
+    url: str | None = None,
+    alive: str | None = None,
 ) -> None:
     last = 0.0
+
+    def heartbeat() -> None:
+        conn.execute("UPDATE jobs SET updated = now() WHERE id = %s", (job,))
+        touch_alive(alive)
 
     def progress(stage: str, n: int, total: int) -> None:
         nonlocal last
@@ -90,12 +111,15 @@ def run_job(
     try:
         with tempfile.TemporaryDirectory(dir=scratch_root) as tmp:
             if url is None:
-                sha = Git(Path(tmp), caps, time.monotonic() + 20).remote_head(repo.clone_url)
+                sha = Git(Path(tmp), caps, time.monotonic() + 20, heartbeat).remote_head(repo.clone_url)
                 if sha and cached_sha(conn, slug, sha):
-                    finish_done(conn, job, slug, sha, None)
-                    log.info("job %s %s cached", job, slug)
-                    return
-            result: Result = analyse(repo, Path(tmp), caps, url=url, progress=progress)
+                    try:
+                        finish_done(conn, job, slug, sha, None)
+                        log.info("job %s %s cached", job, slug)
+                        return
+                    except psycopg.errors.ForeignKeyViolation:
+                        pass  # retention deleted the result between the check and now: analyse again
+            result: Result = analyse(repo, Path(tmp), caps, url=url, progress=progress, heartbeat=heartbeat)
     except AnalysisError as exc:
         finish_failed(conn, job, exc.reason)
         log.info("job %s %s failed %s", job, slug, exc.reason)
@@ -104,15 +128,23 @@ def run_job(
         finish_failed(conn, job, "internal")
         log.exception("job %s %s crashed", job, slug)
         return
-    finish_done(conn, job, slug, result.meta.sha, result.model_dump_json().encode())
+    body = result.model_dump_json().encode()
+    try:
+        finish_done(conn, job, slug, result.meta.sha, body)
+    except psycopg.errors.ForeignKeyViolation:
+        # An old copy of this result blocked our insert (ON CONFLICT DO NOTHING), then retention deleted it
+        # before the job pointed at it. The insert now goes through.
+        finish_done(conn, job, slug, result.meta.sha, body)
     log.info("job %s %s done", job, slug)
 
 
 def serve(dsn: str, caps: Caps, scratch_root: str | None) -> None:
+    alive = os.environ.get("AFTERGLOW_ALIVE_FILE", ALIVE_FILE if scratch_root == "/scratch" else "")
     with psycopg.connect(dsn, autocommit=True) as conn:
         while True:
+            touch_alive(alive)
             claimed = claim(conn)
             if claimed is None:
                 time.sleep(POLL_S)
                 continue
-            run_job(conn, claimed[0], claimed[1], caps, scratch_root)
+            run_job(conn, claimed[0], claimed[1], caps, scratch_root, alive=alive)

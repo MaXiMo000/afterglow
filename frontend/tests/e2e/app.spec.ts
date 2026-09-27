@@ -32,6 +32,7 @@ async function mockApi(page: Page, body: unknown): Promise<void> {
       status: 200,
       headers: { 'content-type': 'text/event-stream' },
       body: [
+        { status: 'queued', stage: 'queued', n: 0, total: 0, ahead: 3 },
         { status: 'running', stage: 'cloning', n: 0, total: 0 },
         { status: 'running', stage: 'parsing', n: 20, total: 46 },
         { status: 'done', stage: 'done', n: 0, total: 0 },
@@ -59,6 +60,7 @@ test('hostile paths render as inert text everywhere (T5)', async ({ page }) => {
   await page.fill('#repoInput', 'acme/orbit');
   await page.click('button.go');
   await expect(page.locator('#log')).toContainText('Reading history: 20 of 46 commits');
+  await expect(page.locator('#log')).toContainText('(3 ahead in the queue)');
   await expect(page.locator('body')).toHaveClass(/mode-story/);
   await page.click('#btnTable');
   await expect(page.locator('#files tbody')).toContainText(`core/${XSS}.py`);

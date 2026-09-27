@@ -1,6 +1,7 @@
 -- Afterglow schema. Applied once by deploy/db/init.sh as the database owner.
 -- Least privilege (SECURITY T4, T7): the API may create jobs and read results; the worker may claim and update
--- jobs and write results. Neither role can delete anything or touch the other's columns.
+-- jobs and write results. Neither role can delete anything or touch the other's columns; only the retention role
+-- (afterglow_maint) deletes, and it can do nothing else.
 
 CREATE TABLE results (
   repo      text    NOT NULL CHECK (repo ~ '^[a-z0-9-]{1,39}/[a-z0-9._-]{1,100}$'),
@@ -46,6 +47,22 @@ BEGIN
 END $$;
 CREATE TRIGGER jobs_forget_client BEFORE INSERT OR UPDATE ON jobs FOR EACH ROW EXECUTE FUNCTION jobs_forget_client();
 
+-- Progress notifications (backend/app/notify.py): open progress streams wait for these instead of polling.
+-- The payload is the job id as 32 hex digits; '*' when a job enters or leaves the queue, which moves every
+-- queued job's position. No data rides on the notification: streams re-read the row with their own grants.
+CREATE FUNCTION jobs_notify_progress() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'INSERT' OR NEW.status IS DISTINCT FROM OLD.status THEN
+    PERFORM pg_notify('job_progress', '*');
+  END IF;
+  IF TG_OP = 'UPDATE' AND (NEW.status, NEW.stage, NEW.progress, NEW.total, NEW.reason)
+      IS DISTINCT FROM (OLD.status, OLD.stage, OLD.progress, OLD.total, OLD.reason) THEN
+    PERFORM pg_notify('job_progress', replace(NEW.id::text, '-', ''));
+  END IF;
+  RETURN NULL;
+END $$;
+CREATE TRIGGER jobs_notify_progress AFTER INSERT OR UPDATE ON jobs FOR EACH ROW EXECUTE FUNCTION jobs_notify_progress();
+
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 
@@ -57,3 +74,16 @@ GRANT SELECT ON results TO afterglow_api;
 GRANT SELECT ON jobs TO afterglow_worker;
 GRANT UPDATE (status, stage, progress, total, reason, sha, analyser, updated) ON jobs TO afterglow_worker;
 GRANT SELECT, INSERT ON results TO afterglow_worker;
+
+-- Retention (backend/app/maint.py): the only role that can delete. It cannot insert or update anything.
+GRANT USAGE ON SCHEMA public TO afterglow_maint;
+GRANT SELECT (repo, sha, analyser, status, updated), DELETE ON jobs TO afterglow_maint;
+GRANT SELECT (repo, sha, analyser, created), DELETE ON results TO afterglow_maint;
+
+-- A stuck statement or an abandoned transaction must not hold connections or locks for long.
+ALTER ROLE afterglow_api SET statement_timeout = '10s';
+ALTER ROLE afterglow_api SET idle_in_transaction_session_timeout = '30s';
+ALTER ROLE afterglow_worker SET statement_timeout = '60s';
+ALTER ROLE afterglow_worker SET idle_in_transaction_session_timeout = '60s';
+ALTER ROLE afterglow_maint SET statement_timeout = '5min';
+ALTER ROLE afterglow_maint SET idle_in_transaction_session_timeout = '60s';

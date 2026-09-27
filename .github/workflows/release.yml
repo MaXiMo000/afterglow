@@ -57,7 +57,24 @@ jobs:
           docker run --rm -v "$PWD:/src" "$TRIVY" fs --format cyclonedx \
             --output "/src/dist-release/afterglow-backend-$TAG.sbom.cdx.json" /src/sbom-py
 
-      - name: Build and push images
+      - name: Build images
+        run: |
+          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          for svc in api worker egress; do
+            docker build -t "ghcr.io/$owner/afterglow-$svc:$TAG" \
+              --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+              --label "org.opencontainers.image.revision=$GITHUB_SHA" -f "backend/Dockerfile.$svc" backend
+          done
+
+      - name: Scan the release images (same gate as CI), before anything is published
+        run: |
+          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          for svc in api worker egress; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY" \
+              image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "ghcr.io/$owner/afterglow-$svc:$TAG"
+          done
+
+      - name: Push images
         id: images
         env:
           GH_TOKEN: ${{ github.token }}
@@ -67,8 +84,6 @@ jobs:
           : > dist-release/images.txt
           for svc in api worker egress; do
             ref="ghcr.io/$owner/afterglow-$svc"
-            docker build -t "$ref:$TAG" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
-              --label "org.opencontainers.image.revision=$GITHUB_SHA" -f "backend/Dockerfile.$svc" backend
             docker push -q "$ref:$TAG"
             digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$ref:$TAG" | cut -d@ -f2)"
             echo "$ref@$digest" >> dist-release/images.txt
@@ -86,13 +101,6 @@ jobs:
             echo "$f: $n components"
             [ "$n" -gt 0 ] || { echo "::error::$f lists no components"; exit 1; }
           done
-
-      - name: Scan the release images (same gate as CI)
-        run: |
-          while read -r img; do
-            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY" \
-              image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$img"
-          done < dist-release/images.txt
 
       - name: Provenance for release files
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2

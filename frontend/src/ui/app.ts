@@ -3,7 +3,8 @@
  * 2D table fallback. The effects pass (A6) builds on this.
  */
 import { ApiError, fetchResult, followProgress, startAnalysis, type Progress } from '../lib/api';
-import { parseRepo, type RepoRef } from '../lib/repo';
+import { beforeWindow } from '../lib/history';
+import { parseRepo, repoFromPath, repoPath, type RepoRef } from '../lib/repo';
 import { validateResult, type Result } from '../lib/result';
 import { decodeView, encodeView, type View } from '../lib/share';
 import { clamp, lerp, smoothstep } from '../render/math';
@@ -48,7 +49,18 @@ const ERROR_TEXT: Record<string, string> = {
   worker_lost: 'The analysis was interrupted. Please try again.',
   unavailable: 'The service is unavailable right now.',
   no_files: 'This repository has no files at its latest commit, so there is no city to draw.',
+  git_failed: 'Git could not read this repository. Trying again sometimes helps; if not, it may be damaged or unusual.',
+  unparseable: 'This repository\u2019s history has a shape we cannot read, so it cannot be drawn.',
+  internal: 'Something failed on our side. Please try again in a minute.',
+  failed: 'The analysis failed. Please try again in a minute.',
+  too_many_streams: 'Too many open analyses in this browser. Close other Afterglow tabs and try again.',
+  not_ready: 'The analysis is not finished yet. Please try again in a moment.',
 };
+const NO_RETRY = ['invalid_repo', 'not_found', 'empty_repo', 'no_files', 'too_large', 'unparseable'];
+const IDLE_FRAME_MS = 1000 / 30; // nothing moving: ambient animation only, at half rate (PLAN section 6, Idle)
+const ACTIVE_FOR_MS = 2000; // input keeps the full frame rate this long after it stops
+
+const dist = (a: Vec, b: Vec): number => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 export class App {
   private mode: Mode = 'hero';
@@ -91,9 +103,14 @@ export class App {
   private photo = false;
   private exportNext = false;
   private pendingView: View | null = null;
+  /** Screen to restore without a new history entry (reload, or Back/Forward onto another repository's entry). */
+  private arrive: 'story' | 'city' | null = null;
   private prevT = 1;
   private loadFrac = 0; // real analysis progress 0..1, drives the city un-building during loading (A6)
   private lastRepo = '';
+  private lastInput = -Infinity; // performance.now() of the latest pointer, wheel, key or scroll input
+  private wasIdle = false;
+  private hotDirs: ReadonlySet<number> = new Set();
   private readonly held = new Set<string>();
   private readonly palette = new Palette();
   private readonly inspector = new Inspector((i) => this.select(i));
@@ -134,13 +151,24 @@ export class App {
       root.setProperty('--tl-h', `${this.timeline.root.offsetHeight}px`);
     }).observe($('#honesty'));
     new ResizeObserver(() => root.setProperty('--tl-h', `${this.timeline.root.offsetHeight}px`)).observe(this.timeline.root);
+    const poke = (): void => void (this.lastInput = performance.now());
+    for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'scroll', 'touchmove']) {
+      addEventListener(type, poke, { capture: true, passive: true });
+    }
     this.canvas.addEventListener('webglcontextlost', () => this.fallback('The 3D view stopped (graphics context lost).'));
     const shared = decodeView(location.hash);
+    const linked = repoFromPath(location.pathname);
+    const st = (history.state as { v?: string } | null)?.v;
+    if (st === 'story' || st === 'city') this.arrive = st; // a reload: show that screen again, don't add an entry
     if (shared) {
       // A share link names a repo: analyse it (rate-limited like any request) and restore the view afterwards.
       this.pendingView = shared;
+      history.replaceState(history.state, '', `${repoPath(shared.repo)}${location.search}${location.hash}`);
       void this.analyse(`${shared.repo.owner}/${shared.repo.name}`);
+    } else if (linked) {
+      void this.analyse(`${linked.owner}/${linked.name}`); // a clean link (/owner/name) opens the story directly
     } else {
+      if (location.pathname !== '/') history.replaceState(history.state, '', `/${location.search}${location.hash}`);
       void this.loadDemo();
     }
     requestAnimationFrame((t) => {
@@ -167,6 +195,7 @@ export class App {
     this.dyn.hold(); // building the world and first frames are slow: not a reason to lower quality
     this.result = r;
     this.world = buildWorld(r);
+    this.hotDirs = new Set(r.insights.hotspots.map((i) => r.files[i]!.dir));
     this.lanterns = new Float32Array(this.world.lanterns.length * 3);
     this.cam.frame(this.world.radius);
     this.cam.snap();
@@ -242,10 +271,9 @@ export class App {
     if (!this.result || !this.world || this.demo) return;
     if (fromCity) this.startBlend();
     // Browser history mirrors the screens (start page -> story -> city), so Back steps out one level.
-    if (push && !fromCity) {
-      const deep = /^#chapter-[1-9]$/.test(location.hash) ? location.hash : '#chapter-1'; // keep a deep link
-      history.pushState({ v: 'story', back: true }, '', deep);
-    }
+    const deep = /^#chapter-[1-9]$/.test(location.hash) ? location.hash : '#chapter-1'; // keep a deep link
+    if (push && !fromCity) history.pushState({ v: 'story', back: true }, '', this.here(deep));
+    else if (!push) history.replaceState(history.state, '', this.here(fromCity ? '' : deep)); // path follows the repo
     this.setMode('story');
     this.story.enter(this.result, this.world);
   }
@@ -260,8 +288,8 @@ export class App {
     // From the story's close-up, glide out to the whole city (arriving from chapter 1 used to stay on one island).
     if (this.world) this.cam.flyTo(this.cam.home(this.world.radius), 1.2, reducedMotion());
     this.setMode('city');
-    if (push) history.pushState({ v: 'city', back: true }, '', '#explore');
-    else history.replaceState({ ...history.state, v: 'city' }, '', '#explore');
+    if (push) history.pushState({ v: 'city', back: true }, '', this.here('#explore'));
+    else history.replaceState({ ...history.state, v: 'city' }, '', this.here('#explore'));
   }
 
   /** Cinematic on desktops, balanced on phones and low-core machines; dynamic resolution and tier steps handle the rest. */
@@ -293,20 +321,31 @@ export class App {
     this.toast(`Graphics: ${i >= 0 ? (['Fast', 'Balanced', 'Cinematic'][i] ?? v) : 'Auto'}`);
   }
 
+  /** URL for the loaded repository's screens: its clean path (N1), or the start page for the demo. */
+  private here(hash = ''): string {
+    const repo = this.result && !this.demo ? parseRepo(this.result.meta.repo) : null;
+    return `${repo ? repoPath(repo) : '/'}${location.search}${hash}`;
+  }
+
   /** One level back (city -> story -> start page): through browser history when we added the entry. */
   private back(): void {
     if (history.state?.back) return history.back(); // popstate applies the screen
     if (this.mode === 'city' && this.result && !this.demo && this.renderer) {
       this.enterStory(true, false);
-      history.replaceState({ v: 'story' }, '', location.pathname + location.search);
+      history.replaceState({ v: 'story' }, '', this.here());
     } else if (this.mode !== 'hero') this.goHome(false);
   }
 
   private goHome(push = true): void {
     this.abort?.abort();
+    this.arrive = null;
     this.openTable(false);
     this.setMode('hero');
-    if (push) history.pushState({ v: 'hero' }, '', location.pathname + location.search);
+    // Screen hashes (#chapter-N, #explore) would make the next repository skip to that screen: drop them here.
+    // Others stay: the skip link's #summary also arrives here (as a popstate) and must keep its target.
+    const keep = /^#(chapter-[1-9]|explore)$/.test(location.hash) ? '' : location.hash;
+    if (push) history.pushState({ v: 'hero' }, '', `/${location.search}`);
+    else if (location.pathname !== '/' || !keep) history.replaceState(history.state, '', `/${location.search}${keep}`);
     ($('#repoInput') as HTMLInputElement).focus();
   }
 
@@ -314,6 +353,13 @@ export class App {
   private onPop(state: { v?: string } | null): void {
     const v = state?.v ?? 'hero';
     const loaded = !!this.result && !this.demo;
+    const linked = repoFromPath(location.pathname);
+    if ((v === 'story' || v === 'city') && linked && (!loaded || `${linked.owner}/${linked.name}`.toLowerCase() !== this.result!.meta.repo)) {
+      // This entry belongs to another repository than the one on screen (New repo, then Back): load that one.
+      this.arrive = v;
+      void this.analyse(`${linked.owner}/${linked.name}`);
+      return;
+    }
     if (v === 'city' && loaded) this.enterCity(false);
     else if (v === 'story' && loaded) this.enterStory(this.mode === 'city', false);
     else this.goHome(false);
@@ -362,12 +408,14 @@ export class App {
         await followProgress(
           id,
           (p: Progress) => {
-            const text = STAGE_TEXT[p.stage] ?? p.stage;
+            let text = STAGE_TEXT[p.stage] ?? p.stage;
+            if (p.stage === 'parsing' && p.total) text = `${text}: ${fmt(p.n)} of ${fmt(p.total)} commits`;
+            else if (p.stage === 'queued' && p.ahead) text = `${text} (${fmt(p.ahead)} ahead in the queue)`;
             if (p.stage !== lastStage) {
               lastStage = p.stage;
-              line(p.stage === 'parsing' && p.total ? `${text}: ${fmt(p.n)} of ${fmt(p.total)} commits` : text);
-            } else if (p.stage === 'parsing' && p.total) {
-              setText(log.lastElementChild as HTMLElement, `${text}: ${fmt(p.n)} of ${fmt(p.total)} commits`);
+              line(text);
+            } else {
+              setText(log.lastElementChild as HTMLElement, text);
             }
             const order = ['queued', 'cloning', 'counting', 'parsing', 'sizing', 'scoring', 'done'];
             const base = Math.max(0, order.indexOf(p.stage)) / (order.length - 1);
@@ -393,15 +441,17 @@ export class App {
       if (!this.renderer) {
         this.setMode('city');
         this.openTable(true);
-      } else if (view || location.hash === '#explore') {
+      } else if (view || location.hash === '#explore' || this.arrive === 'city') {
         this.cam.frame(this.world!.radius);
         if (view?.cam) this.cam.goal = { ...view.cam, y: 4 };
         this.cam.snap();
         if (view?.t !== null && view?.t !== undefined) this.tT = this.P.t = view.t;
         this.setMode('city');
+        if (!view) history.replaceState({ ...history.state, v: 'city' }, '', this.here('#explore'));
       } else {
-        this.enterStory();
+        this.enterStory(false, this.arrive !== 'story');
       }
+      this.arrive = null;
     } catch (e) {
       if (abort.signal.aborted) return;
       const code = e instanceof ApiError ? e.code : 'unavailable';
@@ -410,7 +460,7 @@ export class App {
       line(text, 'fail');
       this.announce(text);
       // Empty/error state (A6): always offer a way forward, never a dead end.
-      const retry = !['invalid_repo', 'not_found', 'empty_repo', 'no_files', 'too_large'].includes(code) || offline;
+      const retry = !NO_RETRY.includes(code) || offline;
       $('#btnRetry').hidden = !retry;
       $('#loadActions').hidden = false;
       $('#btnCancel').hidden = true; // nothing left to cancel; Back covers it
@@ -575,7 +625,8 @@ export class App {
       row('c-last', 'Last changed in this window', n.lastIn),
       row('c-after', 'Still changing after it', n.after),
       row('c-before', 'Untouched since before it', n.before),
-      el('p', 'Deleted files are not in this analysis, so removals are not shown. Use , and . to move the window end, [ ] for speed.', 'sub'),
+      ...(n.removed === null ? [] : [row('c-removed', 'Removed in this window', n.removed)]),
+      el('p', `${n.removed === null ? 'Deleted files are not in this analysis, so removals are not shown.' : 'Removed files are counted by month, not drawn: they have no place in the city at HEAD.'} Use , and . to move the window end, [ ] for speed.`, 'sub'),
     );
     box.hidden = false;
   }
@@ -586,8 +637,8 @@ export class App {
     if (!repo) return;
     const g = this.cam.goal;
     const hash = encodeView({ repo: repo as RepoRef, cam: { yaw: g.yaw, pitch: g.pitch, dist: g.dist, x: g.x, z: g.z }, t: this.tT });
-    const url = `${location.origin}${location.pathname}${hash}`;
-    history.replaceState(history.state, '', hash);
+    const url = `${location.origin}${repoPath(repo)}${hash}`;
+    history.replaceState(history.state, '', `${repoPath(repo)}${location.search}${hash}`);
     try {
       await navigator.clipboard.writeText(url);
       this.toast('Link to this view copied');
@@ -726,12 +777,15 @@ export class App {
     });
     $('#btnRetry').addEventListener('click', () => void this.analyse(this.lastRepo));
     $('#btnBack').addEventListener('click', () => {
+      this.arrive = null;
       this.setMode(this.result && !this.demo ? 'city' : 'hero');
+      history.replaceState({ ...history.state, v: this.mode }, '', this.here(this.mode === 'city' ? '#explore' : ''));
       if (this.mode === 'hero') ($('#repoInput') as HTMLInputElement).focus();
     });
     $('#btnCancel').addEventListener('click', () => {
       this.abort?.abort();
       this.setMode(this.result && !this.demo ? 'city' : 'hero');
+      history.replaceState({ ...history.state, v: this.mode }, '', this.here(this.mode === 'city' ? '#explore' : ''));
     });
     $('#btnNew').addEventListener('click', () => this.goHome());
     $('#btnShare').addEventListener('click', () => this.run('share'));
@@ -932,7 +986,7 @@ export class App {
       ['changes, all time', fmt(f.changes)],
       ['authors, all time', fmt(f.authors)],
       ['lines', r.meta.truncated.sizes && f.loc === 0 ? 'n/a' : fmt(f.loc)],
-      ['last change', ago(f.last, r.meta.span[1])],
+      ['last change', beforeWindow(f) ? `before ${fmtDate(f.last)}` : ago(f.last, r.meta.span[1])],
     ];
     const kids: HTMLElement[] = [];
     if (f.hot) kids.push(el('span', 'hotspot', 'pill hot'));
@@ -985,12 +1039,30 @@ export class App {
     return buildCamera(pose.pos, pose.tgt, this.canvas.clientWidth, this.canvas.clientHeight, far, fov);
   }
 
+  /** Nothing is moving but ambient animation: render at a low rate to save battery (PLAN section 6, Idle). */
+  private isIdle(now: number): boolean {
+    return !(
+      now - this.lastInput < ACTIVE_FOR_MS ||
+      this.playing ||
+      this.blend ||
+      this.cam.flying ||
+      this.exportNext ||
+      this.ptrs.size ||
+      this.held.size
+    );
+  }
+
   private readonly frame = (now: number): void => {
     requestAnimationFrame(this.frame);
+    // Hidden tab, or the opaque full-screen table on top: nothing to draw.
+    if (document.hidden || !$('#tableView').hidden) return void (this.last = now);
+    const idle = this.isIdle(now);
+    if (idle && now - this.last < IDLE_FRAME_MS - 2) return; // skipped: time keeps accumulating into the next dt
+    if (this.wasIdle && !idle) this.dyn.hold(30); // the long idle intervals say nothing about steady-state cost
+    this.wasIdle = idle;
     const rawMs = now - this.last;
     const dt = Math.min(0.05, rawMs / 1000);
     this.last = now;
-    if (document.hidden) return; // nothing to draw for a hidden tab
     this.time += dt;
     const reduced = reducedMotion();
     const P = this.P;
@@ -1055,7 +1127,6 @@ export class App {
     // A6 effects. Depth of field: story pulls focus onto each chapter's subject; the city focuses the selection or
     // the orbit target; the hero stays soft behind the text.
     const w0 = this.world;
-    const dist = (a: Vec, b: Vec): number => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
     let focus = dist(pos, tgt);
     if (sf && w0) {
       const at = this.story.chapters[sf.pose.chapter]?.callout?.at;
@@ -1088,13 +1159,15 @@ export class App {
         const u = reduced ? 0 : smoothstep(0, 1, s - k);
         const a = L.wp[k % L.wp.length]!;
         const b = L.wp[(k + 1) % L.wp.length]!;
-        this.lanterns.set([lerp(a[0], b[0], u), lerp(a[1], b[1], u) + Math.sin(u * Math.PI) * 3.5, lerp(a[2], b[2], u)], i * 3);
+        const o = i * 3; // written in place: no per-frame arrays in the hot path (EXPERIENCE section 9)
+        this.lanterns[o] = lerp(a[0], b[0], u);
+        this.lanterns[o + 1] = lerp(a[1], b[1], u) + Math.sin(u * Math.PI) * 3.5;
+        this.lanterns[o + 2] = lerp(a[2], b[2], u);
       }
     }
     if (w && this.mode === 'city' && !this.demo) {
       this.timeline.update(this.tT, this.playing, SPEEDS[this.speedIdx]!, this.compare, (t) => w.t0 + t * (w.t1 - w.t0));
-      const hotDirs = new Set(this.result!.insights.hotspots.map((i) => this.result!.files[i]!.dir));
-      this.minimap.draw(w, pos, tgt, hotDirs);
+      this.minimap.draw(w, pos, tgt, this.hotDirs);
     }
 
     const R = this.renderer;
@@ -1121,7 +1194,7 @@ export class App {
       });
     }
     // Resize before drawing: resizing the canvas clears it, so doing it after the draw showed one black frame.
-    this.adapt(rawMs);
+    if (!idle) this.adapt(rawMs); // throttled intervals would read as missed frames and lower quality
     R.render(C, P, this.time, this.lanterns);
     if (this.exportNext) {
       this.exportNext = false;

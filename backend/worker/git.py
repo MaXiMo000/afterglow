@@ -4,7 +4,10 @@ Rules enforced here, for every call:
 - argv lists only, never a shell; repository names never reach argv except inside a URL built by core.repo.
 - a scrubbed environment: no system/global/user config, no prompts, no credential helpers, no lazy fetches.
 - hooks off, only https (plus file:// for local test fixtures), no redirects, no submodules.
-- a wall-clock deadline and a directory-size cap; on breach the whole process group is killed.
+- a wall-clock deadline and one size budget for the whole scratch directory (all clones and temp files
+  together); on breach the whole process group is killed.
+- an optional heartbeat, called at most every HEARTBEAT_S while git runs, so a job that is still working is
+  never mistaken for one whose worker died.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ import subprocess  # nosec B404 - argv lists only, see Git._spawn
 import sys
 import tempfile
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
@@ -34,12 +37,14 @@ class AnalysisError(Exception):
 @dataclass(frozen=True, slots=True)
 class Caps:
     wall_s: float = 90.0
-    pack_bytes: int = 512 * 1024**2  # per clone, on-disk size
+    # On-disk size of the whole scratch dir (both clones). Scratch is a tmpfs, whose pages count against the
+    # worker's 1 GB memory limit, so this budget plus git and Python must stay well under it.
+    pack_bytes: int = 512 * 1024**2
     commits: int = 200_000
     files: int = 50_000
     tracked_paths: int = 500_000  # distinct paths remembered while reading history
     blob_bytes: int = 8 * 1024**2  # larger blobs are not line-counted
-    total_blob_bytes: int = 256 * 1024**2  # held in memory while counting; worker mem_limit is 1g
+    total_blob_bytes: int = 256 * 1024**2  # read while counting lines; streamed, never held in memory at once
     log_bytes: int = 1024**3  # raw `git log` output
     proxy: str | None = None  # e.g. http://egress:3128 in the container
     allow_file_protocol: bool = False  # tests only: local fixture repos
@@ -91,11 +96,17 @@ def _dir_size(path: Path) -> int:
     return total
 
 
+HEARTBEAT_S = 5.0
+
+
 class Git:
     """One scratch area per job; all clones live under it and die with it."""
 
-    def __init__(self, scratch: Path, caps: Caps, deadline: float) -> None:
+    def __init__(
+        self, scratch: Path, caps: Caps, deadline: float, heartbeat: Callable[[], None] | None = None
+    ) -> None:
         self.scratch, self.caps, self.deadline = scratch, caps, deadline
+        self._heartbeat, self._beat = heartbeat, time.monotonic()
         self.home = scratch / "home"
         self.home.mkdir(parents=True, exist_ok=True)
         self._git = shutil.which("git") or "git"
@@ -131,31 +142,72 @@ class Git:
         proc.wait()
 
     def _remaining(self) -> float:
-        left = self.deadline - time.monotonic()
+        now = time.monotonic()
+        left = self.deadline - now
         if left <= 0:
             raise AnalysisError("timeout")
+        if self._heartbeat and now - self._beat >= HEARTBEAT_S:
+            self._beat = now
+            self._heartbeat()
         return left
 
-    def clone(self, url: str, dest: str, *extra: str) -> Path:
-        """Bare clone with no working tree, watched for time and size."""
-        self._remaining()
-        target = self.scratch / dest
-        proc = self._spawn(
-            ["clone", "--bare", "--quiet", "--no-tags", "--single-branch", "--no-recurse-submodules",
-             *extra, "--", url, str(target)]
-        )  # fmt: skip
+    def _wait(self, proc: subprocess.Popen[bytes]) -> None:
+        """Wait for a short command within the deadline, beating the heartbeat while it runs."""
+        while proc.poll() is None:
+            self._remaining()
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(timeout=0.05)
+
+    def _watch(self, proc: subprocess.Popen[bytes]) -> None:
+        """Wait for a fetch, killing it on the deadline or when scratch outgrows the budget."""
         try:
             while proc.poll() is None:
                 time.sleep(0.05)
                 self._remaining()
-                if target.exists() and _dir_size(target) > self.caps.pack_bytes:
+                if _dir_size(self.scratch) > self.caps.pack_bytes:
                     raise AnalysisError("too_large")
         finally:
             self._kill(proc)
         if proc.returncode != 0:
             raise AnalysisError("clone_failed")
-        if _dir_size(target) > self.caps.pack_bytes:
+        if _dir_size(self.scratch) > self.caps.pack_bytes:
             raise AnalysisError("too_large")
+
+    def clone(self, url: str, dest: str, *extra: str) -> Path:
+        """Bare clone with no working tree, watched for time and size."""
+        self._remaining()
+        target = self.scratch / dest
+        self._watch(
+            self._spawn(
+                ["clone", "--bare", "--quiet", "--no-tags", "--single-branch", "--no-recurse-submodules",
+                 *extra, "--", url, str(target)]
+            )
+        )  # fmt: skip
+        return target
+
+    def fetch_commit(self, url: str, dest: str, sha: str) -> Path:
+        """Bare repo holding exactly one commit (depth 1) and its tree and blobs, watched like `clone`.
+
+        Fetching by id pins the contents to the commit the history was read at: a separate `clone --depth=1`
+        would take whatever HEAD is by then.
+        """
+        if len(sha) not in (40, 64) or any(c not in "0123456789abcdef" for c in sha):
+            raise AnalysisError("git_failed")
+        self._remaining()
+        target = self.scratch / dest
+        init = self._spawn(["init", "--quiet", "--bare", str(target)])
+        try:
+            self._wait(init)
+        finally:
+            self._kill(init)
+        if init.returncode != 0:
+            raise AnalysisError("git_failed")
+        self._watch(
+            self._spawn(
+                ["--git-dir", str(target), "fetch", "--quiet", "--depth=1", "--no-tags",
+                 "--no-recurse-submodules", "--no-write-fetch-head", "--", url, f"{sha}:refs/heads/pinned"]
+            )
+        )  # fmt: skip
         return target
 
     def run(self, repo: Path, *args: str, stdin: Path | None = None) -> bytes:
@@ -167,9 +219,7 @@ class Git:
                     ["--git-dir", str(repo), *args], stdin=fin or subprocess.DEVNULL, stdout=out
                 )
                 try:
-                    proc.wait(timeout=self._remaining())
-                except subprocess.TimeoutExpired:
-                    raise AnalysisError("timeout") from None
+                    self._wait(proc)
                 finally:
                     self._kill(proc)
             finally:
@@ -182,9 +232,12 @@ class Git:
             out.seek(0)
             return out.read()
 
-    def stream(self, repo: Path, *args: str) -> Iterator[bytes]:
+    def stream(self, repo: Path, *args: str, stdin: Path | None = None) -> Iterator[bytes]:
         """Stream stdout in chunks; the caller may stop early (the process is killed on close)."""
-        proc = self._spawn(["--git-dir", str(repo), *args], stdout=subprocess.PIPE)
+        with open(stdin, "rb") if stdin else contextlib.nullcontext() as fin:
+            proc = self._spawn(
+                ["--git-dir", str(repo), *args], stdin=fin or subprocess.DEVNULL, stdout=subprocess.PIPE
+            )
         assert proc.stdout is not None  # noqa: S101 - set by stdout=PIPE  # nosec B101
         seen = 0
         try:
@@ -194,7 +247,8 @@ class Git:
                     raise AnalysisError("too_large")
                 self._remaining()
                 yield chunk
-            if proc.wait(timeout=self._remaining()) != 0:
+            self._wait(proc)
+            if proc.returncode != 0:
                 raise AnalysisError("git_failed")
         finally:
             self._kill(proc)
@@ -205,9 +259,7 @@ class Git:
         with tempfile.TemporaryFile(dir=self.scratch) as out:
             proc = self._spawn(["ls-remote", "--", url, "HEAD"], stdout=out)
             try:
-                proc.wait(timeout=self._remaining())
-            except subprocess.TimeoutExpired:
-                raise AnalysisError("timeout") from None
+                self._wait(proc)
             finally:
                 self._kill(proc)
             if proc.returncode != 0:

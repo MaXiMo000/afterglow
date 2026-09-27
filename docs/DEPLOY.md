@@ -16,7 +16,10 @@ a hostile repository contained (docs/SECURITY.md T4).
 ## 1. DNS
 Create an `A` record (and `AAAA` if the server has IPv6) for your hostname, e.g. `afterglow.example.com`, pointing at
 the server. Do **not** put it behind a CDN proxy (e.g. Cloudflare's orange cloud): the rate limits key on the client
-IP, and behind a proxy every visitor would share one. Wait until it resolves:
+IP, and behind a proxy every visitor would share one. The same applies to IPv6: unless Docker gives the stack's
+`edge` network IPv6 (Docker 27+ with `enable_ipv6: true` on that network, e.g. in a `compose.override.yaml`), Docker's
+port proxy forwards every IPv6 visitor from one internal address, so they all share one rate limit. If you have not
+set that up, leave the `AAAA` record out. Wait until it resolves:
 ```bash
 dig +short afterglow.example.com
 ```
@@ -30,6 +33,7 @@ adduser --disabled-password --gecos "" afterglow && usermod -aG docker afterglow
 ufw allow OpenSSH && ufw allow 443/tcp && ufw --force enable
 su - afterglow
 docker compose version        # must print v2.x
+docker version -f '{{.Server.Version}}'   # 25 or newer (health checks use start_interval)
 ```
 Only port 443 is published by the stack; Postgres, the API and the worker are on private Docker networks.
 
@@ -47,7 +51,13 @@ EOF
 ```
 `AFTERGLOW_TLS` is the email Let's Encrypt uses for expiry notices; with it set, Caddy obtains and renews the
 certificate on its own. `scripts/build-frontend.sh` also reads `AFTERGLOW_PUBLIC_ORIGIN` to fill the link-preview
-(Open Graph) URLs; set `AFTERGLOW_SITE_URL` in the shell to override it. Keep a copy of `deploy/.env` in a password manager and never commit it.
+(Open Graph) URLs; set `AFTERGLOW_SITE_URL` in the shell to override it. The preview image
+`frontend/public/og.jpg` (1200x630, baseline JPEG, under 300 KB so WhatsApp shows it) is rendered from the real scene
+by `npm run og-image` against a running local stack; the script checks the size and format. Chat apps cache previews
+by image URL, so bump `?v=` on the `og:image` tags in `frontend/index.html` whenever the image changes. To check a
+deployment, paste the link into WhatsApp or the Facebook Sharing Debugger (both fetch the page themselves).
+
+Keep a copy of `deploy/.env` in a password manager and never commit it.
 
 The site sends `Strict-Transport-Security` with `includeSubDomains`: if you deploy on an apex domain
 (`example.com`), every subdomain must also serve HTTPS. A dedicated subdomain avoids that.
@@ -74,7 +84,8 @@ headers at https://securityheaders.com and https://developer.mozilla.org/observa
 
 | Task | Command (from the `afterglow` directory) |
 | --- | --- |
-| Status | `docker compose -f deploy/compose.yaml ps` |
+| Status | `docker compose -f deploy/compose.yaml ps` (the worker reports `unhealthy` if its job loop stops) |
+| Uptime monitor | Point any monitor at `https://<your hostname>/readyz`: `200 {"status":"ok"}`, or `503` with `database` (Postgres unreachable) or `queue_stalled` (jobs waiting over 5 minutes and no job with a recent worker heartbeat). The answer is cached for 5 s, so a flood of requests costs one query |
 | Logs | `docker compose -f deploy/compose.yaml logs --tail 100 api worker caddy` |
 | Restart | `docker compose -f deploy/compose.yaml --profile worker restart` |
 | Stop | `docker compose -f deploy/compose.yaml --profile worker down` (data is kept in volumes) |
@@ -85,8 +96,19 @@ headers at https://securityheaders.com and https://developer.mozilla.org/observa
 - Logs are capped at 3 x 10 MB per service. Nothing personal is stored: see `/privacy.html`.
 - The database only holds job records and cached results derived from public repositories, so backups are optional;
   a lost database just means repositories are analysed again.
-- `deploy/db/schema.sql` runs only when the database is first created. If a release changes it, its notes say what to
-  apply (as the `postgres` user, via `docker compose ... exec db psql -U postgres -d afterglow`).
+- The `maint` service deletes finished job records after 7 days, and cached results once they are over 30 days old and
+  nobody has asked for that commit in the last 7 days. Its log line `pruned jobs=N results=M` appears hourly.
+- `deploy/db/schema.sql` runs only when the database is first created. When a release changes it, it ships an upgrade
+  file in `deploy/db/upgrades/` and the changelog says so. Apply them in order, as below.
+
+### Upgrading a database created before the retention service (also adds the progress trigger)
+```bash
+scripts/dev-env.sh                      # adds AFTERGLOW_DB_MAINT_PASSWORD; existing secrets are kept
+set -a; . deploy/.env; set +a
+docker compose -f deploy/compose.yaml exec -T db psql -U postgres -d afterglow -v ON_ERROR_STOP=1 \
+  -v maint_pw="$AFTERGLOW_DB_MAINT_PASSWORD" < deploy/db/upgrades/0002-retention.sql
+docker compose -f deploy/compose.yaml --profile worker up -d --build --wait
+```
 
 ## Troubleshooting
 

@@ -54,8 +54,10 @@ Gamepad not required. All controls need visible focus states and tooltips with t
 
 ## 5. Features that make it useful
 - **Inspector drawer** for a selected file: path, size, created, last change, changes per quarter sparkline, authors (pseudonymous), coupled files, "open on GitHub" link (validated `https://github.com/<owner>/<repo>/blob/<sha>/<path-encoded>`).
-- **Compare mode**: two dates -> show added / removed / heated / cooled buildings with a legend and counts.
+- **Compare mode**: two dates -> show added / removed / heated / cooled buildings with a legend and counts. Removed files are counted (by month) but not drawn: they have no place in the city at HEAD.
+- **Trend**: a file whose latest four quarters have at least three changes and twice the four before is "heating up"; the mirror image is "cooling down" (inspector badge, hotspot list, screen-reader summary). A file created inside the two years is "new", not heating. When a truncated history starts inside the eight quarters, the unread quarters are drawn as outlines and marked "not analysed", and no trend is claimed.
 - **Mini-map** with district labels and camera frustum; click to fly.
+- **Clean link**: `/owner/name` opens that repository's story directly, and the address bar shows it once a repository is loaded (`/owner/name#chapter-2`, `/owner/name#explore`). Share links use the same path.
 - **Share link**: URL hash encodes repo + camera + time as strictly validated numbers/enums (never free text). Loading a link re-validates everything.
 - **Export**: PNG poster from photo mode (client-side canvas, includes repo name and a "simulated/sampled" note if applicable). No upload.
 - **Palette v2**: fuzzy search files, districts, people (pseudonyms), actions, and recent items; keyboard-only; ARIA combobox pattern.

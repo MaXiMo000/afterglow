@@ -49,3 +49,8 @@ def test_unhandled_error_hides_details(prod_settings: Settings) -> None:
 def test_api_responses_are_not_cached_by_default(client: TestClient) -> None:
     assert client.get("/healthz").headers["cache-control"] == "no-store"
     assert client.get("/nope").headers["cache-control"] == "no-store"
+
+
+def test_readyz_without_database_is_unavailable(client: TestClient) -> None:
+    r = client.get("/readyz")
+    assert (r.status_code, r.json()) == (503, {"status": "unavailable"})

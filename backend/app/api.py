@@ -5,19 +5,24 @@ schema-validated result; request data is never echoed back (SECURITY T14).
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import hashlib
 import json
+import threading
 import time
 import uuid
+from collections import OrderedDict
 from collections.abc import AsyncIterator
-from functools import lru_cache
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from psycopg_pool import AsyncConnectionPool
 from pydantic import ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from app import db
 from app.limits import Gate, RateLimiter, client_id
+from app.notify import ALL, Hub
 from app.settings import Settings
 from core.repo import InvalidRepoError, parse_repo
 from core.schema import ANALYSER_VERSION, Result
@@ -25,7 +30,7 @@ from core.schema import ANALYSER_VERSION, Result
 MAX_BODY = 1024
 MAX_QUEUE = 50  # queued jobs overall before new work is refused with 503
 MAX_ACTIVE_PER_CLIENT = 2
-SSE_POLL_S = 0.3
+SSE_POLL_S = 2.0  # fallback only: NOTIFY wakes a stream as soon as its job changes (app/notify.py)
 SSE_HEARTBEAT_S = 15.0
 SSE_MAX_S = 300.0
 
@@ -35,19 +40,40 @@ def _err(code: str, status: int, retry_after: float | None = None) -> JSONRespon
     return JSONResponse({"error": code}, status_code=status, headers=headers)
 
 
-@lru_cache(maxsize=16)
-def _validated(body: bytes) -> bytes:
-    """Re-validate a stored result before serving it (SECURITY T12). Cached: results are immutable."""
-    Result.model_validate_json(body)
-    return body
+class ValidatedBodies:
+    """Re-validate a stored result before serving it (SECURITY T12).
+
+    Remembers the SHA-256 of bodies that passed, not the bodies (a 50k-file result is ~10 MB), so a changed
+    body is always validated again. Run it in a worker thread: validating a result at the file cap takes
+    ~0.2 s, which would stall every other request and progress stream on the event loop.
+    """
+
+    def __init__(self, max_entries: int = 512) -> None:
+        self.max_entries = max_entries
+        self._seen: OrderedDict[bytes, None] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def check(self, body: bytes) -> None:
+        digest = hashlib.sha256(body).digest()
+        with self._lock:
+            if digest in self._seen:
+                self._seen.move_to_end(digest)
+                return
+        Result.model_validate_json(body)  # raises ValidationError
+        with self._lock:
+            self._seen[digest] = None
+            if len(self._seen) > self.max_entries:
+                self._seen.popitem(last=False)
 
 
-def build_router(settings: Settings, pool: AsyncConnectionPool | None) -> APIRouter:
+def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub | None = None) -> APIRouter:
+    hub = hub or Hub()
     router = APIRouter(prefix="/api/v1")
     post_limit = RateLimiter(rate=10, per=60)  # per client
     post_global = RateLimiter(rate=300, per=60)
     read_limit = RateLimiter(rate=240, per=60)
-    streams = Gate(per_key=4, total=200)
+    streams = Gate(per_key=4, total=200, max_age=SSE_MAX_S + 30)
+    validated = ValidatedBodies()
 
     def client_of(request: Request) -> str:
         # Caddy overwrites X-Real-IP with the TCP peer; the API is reachable only via Caddy (internal net).
@@ -128,7 +154,7 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None) -> APIRou
         if body is None:
             return _err("not_found", 404)
         try:
-            body = _validated(body)
+            await run_in_threadpool(validated.check, body)
         except ValidationError:
             return _err("internal", 500)
         return Response(
@@ -148,18 +174,35 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None) -> APIRou
         assert pool is not None  # noqa: S101  # nosec B101
 
         async def stream() -> AsyncIterator[bytes]:
+            woken = hub.subscribe(job.id.hex)
             try:
                 last: tuple[object, ...] | None = None
                 started = beat = time.monotonic()
                 current: db.Job | None = job
                 while current is not None and time.monotonic() - started < SSE_MAX_S:
-                    state = (current.status, current.stage, current.progress, current.total, current.reason)
+                    ahead = None
+                    if current.status == "queued":
+                        hub.subscribe(ALL, woken)  # queue movements change this job's position
+                        async with pool.connection() as conn:
+                            ahead = await db.queue_ahead(conn, current.id)
+                    else:
+                        hub.unsubscribe(ALL, woken)
+                    state = (
+                        current.status,
+                        current.stage,
+                        current.progress,
+                        current.total,
+                        current.reason,
+                        ahead,
+                    )
                     if state != last:
                         last = state
-                        data = {"status": current.status, "stage": current.stage,
-                                "n": current.progress, "total": current.total}  # fmt: skip
+                        data: dict[str, object] = {"status": current.status, "stage": current.stage,
+                                                   "n": current.progress, "total": current.total}  # fmt: skip
                         if current.reason:
                             data["reason"] = current.reason
+                        if ahead is not None:
+                            data["ahead"] = ahead
                         yield f"event: progress\ndata: {json.dumps(data)}\n\n".encode()
                         beat = time.monotonic()
                     if current.status in ("done", "failed"):
@@ -169,10 +212,14 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None) -> APIRou
                         beat = time.monotonic()
                     if await request.is_disconnected():
                         return
-                    await asyncio.sleep(SSE_POLL_S)
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(woken.wait(), SSE_POLL_S)
+                    woken.clear()
                     async with pool.connection() as conn:
                         current = await db.get_job(conn, current.id)
             finally:
+                hub.unsubscribe(job.id.hex, woken)
+                hub.unsubscribe(ALL, woken)
                 streams.leave(client)
 
         return StreamingResponse(

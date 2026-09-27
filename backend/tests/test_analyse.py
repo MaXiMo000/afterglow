@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import itertools
+import time
 from pathlib import Path
 
 import pytest
 
 from core.repo import RepoRef
 from core.schema import Result
-from worker.analyse import YEAR, analyse, bus_factor
-from worker.git import Caps
+from worker import git as worker_git
+from worker.analyse import YEAR, analyse, bus_factor, line_counts
+from worker.git import Caps, Git
 
 from .gitfixture import C, make_repo
 
@@ -96,7 +98,82 @@ def test_timeline(golden: Result) -> None:
     months = golden.timeline
     assert months[0].t <= T0 - 3 * YEAR < months[1].t
     assert sum(m.commits for m in months) == 11
+    assert sum(m.removed for m in months) == 1  # gone.txt
     assert all(b.t > a.t for a, b in itertools.pairwise(months))
+
+
+def test_quarters(golden: Result) -> None:
+    by = {f.path: f for f in golden.files}
+    assert by["core/app.py"].quarters == [0] * 7 + [8]  # all in HEAD's quarter
+    assert by["legacy/old.py"].quarters == []  # three years old: nothing in the last 8 quarters
+
+
+def test_exact_renames_keep_history(tmp_path: Path) -> None:
+    """A folder move and a later file rename keep birth, change counts and hotspot status (D1)."""
+    commits = [C({"old/a.py": "1\n", "old/b.py": "2\n"}, time=T0)]
+    commits += [C({"old/a.py": f"1\n{i}\n"}, time=T0 + 10 + i) for i in range(5)]
+    commits.append(
+        C({"old/a.py": None, "old/b.py": None, "new/a.py": "1\n4\n", "new/b.py": "2\n"}, time=T0 + 20)
+    )
+    commits.append(C({"new/b.py": None, "new/c.py": "2\n"}, time=T0 + 30))  # b.py -> c.py
+    commits.append(C({"new/a.py": "edited\n"}, time=T0 + 40))
+    result = run(tmp_path, commits)
+    by = {f.path: f for f in result.files}
+    assert set(by) == {"new/a.py", "new/c.py"}
+    a, c = by["new/a.py"], by["new/c.py"]
+    assert (a.birth, a.changes) == (T0, 8)  # created, 5 edits, the move, 1 edit
+    assert a.hot
+    assert (c.birth, c.changes) == (T0, 3)  # created, moved, renamed
+    assert sum(m.removed for m in result.timeline) == 0  # moves are not removals
+    assert sum(m.added for m in result.timeline) == 2
+
+
+def test_rename_back_and_forth(tmp_path: Path) -> None:
+    commits = [
+        C({"a.py": "x\n"}, time=T0),
+        C({"a.py": None, "b.py": "x\n"}, time=T0 + 10),
+        C({"b.py": None, "a.py": "x\n"}, time=T0 + 20),
+    ]
+    (f,) = run(tmp_path, commits).files
+    assert (f.path, f.birth, f.changes) == ("a.py", T0, 3)
+
+
+def test_mailmap_merges_spellings(tmp_path: Path) -> None:
+    """One person committing under two names counts once when the repository's .mailmap says so (D2)."""
+    commits = [
+        C({"a.py": "1\n"}, author="Ann Lee", email="ann@example.com", time=T0),
+        C({"a.py": "2\n"}, author="ann", email="ann@example.com", time=T0 + 10),
+        C({"a.py": "3\n"}, author="A. Lee", email="ann@work.example", time=T0 + 20),
+        C({"b.py": "1\n"}, author="Bo", email="bo@example.com", time=T0 + 30),
+        C({".mailmap": "Ann Lee <ann@example.com>\nAnn Lee <ann@example.com> <ann@work.example>\n"},
+          author="Bo", email="bo@example.com", time=T0 + 40),
+    ]  # fmt: skip
+    result = run(tmp_path, commits)
+    assert result.meta.people == 2
+    assert [p.commits for p in result.people] == [3, 2]
+    assert {f.path: f.authors for f in result.files}["a.py"] == 1
+    assert "Ann" not in result.model_dump_json() and "@" not in result.model_dump_json()
+
+
+def test_without_mailmap_names_stay_apart(tmp_path: Path) -> None:
+    commits = [
+        C({"a.py": "1\n"}, author="Ann Lee", time=T0),
+        C({"a.py": "2\n"}, author="ann", time=T0 + 10),
+    ]
+    assert run(tmp_path, commits).meta.people == 2
+
+
+def test_files_before_a_truncated_window_are_kept(tmp_path: Path) -> None:
+    """Past the commit cap, files at HEAD last touched before the window stay in the city with changes=0 (D4)."""
+    commits = [C({"ancient.py": "1\n2\n"}, time=T0)]
+    commits += [C({"new.py": f"{i}\n"}, time=T0 + YEAR + i) for i in range(5)]
+    result = run(tmp_path, commits, Caps(allow_file_protocol=True, wall_s=60, commits=3))
+    by = {f.path: f for f in result.files}
+    assert set(by) == {"ancient.py", "new.py"}
+    old = by["ancient.py"]
+    assert (old.changes, old.changes_12m, old.quarters, old.loc) == (0, 0, [], 2)
+    assert old.birth == old.last == result.meta.span[0]  # an upper bound: the window's first commit
+    assert result.meta.truncated.commits and not result.meta.truncated.files
 
 
 def test_files_at_head_come_from_the_tree(tmp_path: Path) -> None:
@@ -134,3 +211,64 @@ def test_empty_repo_fails_cleanly(tmp_path: Path) -> None:
     with pytest.raises(AnalysisError) as err:
         analyse(REPO, scratch, CAPS, url=bare.resolve().as_uri())
     assert err.value.reason in ("empty_repo", "clone_failed")
+
+
+def test_line_counts_across_stream_chunks(tmp_path: Path) -> None:
+    # Many blobs and one larger than a 64 KiB read chunk: the streamed cat-file parser must split them exactly.
+    files: dict[str, object] = {f"many/f{i}.txt": "line\n" * (i + 1) for i in range(300)}
+    files["big.txt"] = "x" * 99 + "\n" + "y\n" * 70_000
+    files["no_newline.txt"] = "a\nb"
+    by = {f.path: f.loc for f in run(tmp_path, [C(files)]).files}
+    assert by["many/f0.txt"] == 1 and by["many/f299.txt"] == 300
+    assert by["big.txt"] == 70_001
+    assert by["no_newline.txt"] == 2
+
+
+def test_sizes_come_from_the_analysed_commit(tmp_path: Path) -> None:
+    # A push between reading history and fetching contents must not change the sizes: they are fetched by id.
+    url = make_repo(tmp_path, [C({"a.py": "1\n"}, time=T0), C({"a.py": "1\n2\n3\n"}, time=T0 + 1)])
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    git = Git(scratch, CAPS, time.monotonic() + 30)
+    hist = git.clone(url, "hist.git", "--filter=blob:none")
+    first = git.run(hist, "rev-parse", "HEAD~1").strip().decode()
+    head = git.fetch_commit(url, "head.git", first)
+    loc, complete = line_counts(git, head, CAPS, first)
+    assert (loc, complete) == ({b"a.py": 1}, True)
+
+
+def test_heartbeat_beats_while_git_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(worker_git, "HEARTBEAT_S", 0.0)
+    beats: list[None] = []
+    url = make_repo(tmp_path, [C({"a.py": "1\n"})])
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    analyse(REPO, scratch, CAPS, url=url, heartbeat=lambda: beats.append(None))
+    assert len(beats) >= 3
+
+
+@pytest.mark.parametrize(
+    "mailmap",
+    [
+        {".mailmap/x": "Ann Lee <ann@example.com> <ann@work.example>\n"},  # a directory, not a file
+        {".mailmap": "symlink:/etc/passwd"},  # a symlink: its target text is not a mailmap
+        {".mailmap": "Ann Lee <ann@work.example>\n" + "#" * (2 * 1024**2)},  # over MAILMAP_BYTES
+    ],
+)
+def test_unusable_mailmaps_are_ignored(tmp_path: Path, mailmap: dict[str, object]) -> None:
+    commits = [
+        C({"a.py": "1\n"}, author="Ann Lee", email="ann@example.com", time=T0),
+        C({"a.py": "2\n"}, author="A. Lee", email="ann@work.example", time=T0 + 10),
+        C(mailmap, author="Ann Lee", email="ann@example.com", time=T0 + 20),
+    ]
+    assert run(tmp_path, commits).meta.people == 2  # a usable mailmap would merge them into one
+
+
+def test_files_before_the_window_respect_the_path_cap(tmp_path: Path) -> None:
+    """A huge tree behind a truncated history must not bypass tracked_paths (SECURITY T3: truncate and flag)."""
+    commits = [C({f"old/{i}.py": "x\n" for i in range(50)}, time=T0)]
+    commits += [C({"new.py": f"{i}\n"}, time=T0 + YEAR + i) for i in range(5)]
+    caps = Caps(allow_file_protocol=True, wall_s=60, commits=3, tracked_paths=10)
+    result = run(tmp_path, commits, caps)
+    assert len(result.files) == 10
+    assert result.meta.truncated.files and result.meta.files == 51

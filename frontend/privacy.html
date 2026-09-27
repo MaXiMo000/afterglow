@@ -27,12 +27,13 @@
       <ul>
         <li><strong>Analysis results</strong>, built only from the repository's public git history: file paths, dates,
           change counts, line counts and co-change pairs. Contributors appear as <code>Contributor 1</code>,
-          <code>Contributor 2</code> and so on. No names, no email addresses, no file contents. Results are cached for
-          reuse by anyone who asks for the same repository and commit, and are kept until the analyser version changes
-          or the operator clears the cache; there is no automatic expiry yet.</li>
+          <code>Contributor 2</code> and so on (the repository's own <code>.mailmap</code>, if it has one, is used only to
+          count one person's name spellings once). No names, no email addresses, no file contents. Results are cached for
+          reuse by anyone who asks for the same repository and commit. A result is deleted once it is more than 30 days
+          old and nobody has asked for that repository at that commit in the last 7 days.</li>
         <li><strong>Job records</strong>: repository name, commit, status, time, and the IP pseudonym above. The
           pseudonym is kept only while the job is queued or running (it enforces two active jobs per client); when the
-          job finishes or fails it is overwritten with zeros.</li>
+          job finishes or fails it is overwritten with zeros. Finished job records are deleted after 7 days.</li>
         <li><strong>Service logs</strong>: job ids, <code>owner/name</code> and outcome codes. No IP addresses, no
           request headers or bodies. At most 30 MB per service is kept, oldest first out.</li>
       </ul>
