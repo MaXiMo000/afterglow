@@ -11,9 +11,15 @@ import { KEYMAP, MOVE_KEYS } from './keymap';
 export function githubUrl(r: Result, path: string): string | null {
   const m = /^([a-z0-9-]{1,39})\/([a-z0-9._-]{1,100})$/.exec(r.meta.repo);
   if (!m || !/^[0-9a-f]{40,64}$/.test(r.meta.sha)) return null;
+  if (pathWasCleaned(path)) return null; // not the real path any more: a link would 404
   const segs = path.split('/');
   if (segs.some((s) => s === '' || s === '.' || s === '..')) return null;
   return `https://github.com/${m[1]}/${m[2]}/blob/${r.meta.sha}/${segs.map(encodeURIComponent).join('/')}`;
+}
+
+/** The server replaces control/bidi characters with U+FFFD and ends paths over 512 characters with an ellipsis. */
+export function pathWasCleaned(path: string): boolean {
+  return path.includes('\ufffd') || (path.length >= 512 && path.endsWith('\u2026'));
 }
 
 export class Inspector {
@@ -67,6 +73,8 @@ export class Inspector {
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
       kids.push(a);
+    } else if (pathWasCleaned(f.path)) {
+      kids.push(el('p', 'This path contains characters that were replaced or shortened for display, so there is no GitHub link.', 'sub note'));
     }
     kids.push(el('p', 'Per-quarter history and per-author breakdowns are not in this analysis yet.', 'sub note'));
     body.replaceChildren(...kids);

@@ -48,7 +48,18 @@ const ERROR_TEXT: Record<string, string> = {
   worker_lost: 'The analysis was interrupted. Please try again.',
   unavailable: 'The service is unavailable right now.',
   no_files: 'This repository has no files at its latest commit, so there is no city to draw.',
+  git_failed: 'Git could not read this repository. Trying again sometimes helps; if not, it may be damaged or unusual.',
+  unparseable: 'This repository\u2019s history has a shape we cannot read, so it cannot be drawn.',
+  internal: 'Something failed on our side. Please try again in a minute.',
+  failed: 'The analysis failed. Please try again in a minute.',
+  too_many_streams: 'Too many open analyses in this browser. Close other Afterglow tabs and try again.',
+  not_ready: 'The analysis is not finished yet. Please try again in a moment.',
 };
+const NO_RETRY = ['invalid_repo', 'not_found', 'empty_repo', 'no_files', 'too_large', 'unparseable'];
+const IDLE_FRAME_MS = 1000 / 30; // nothing moving: ambient animation only, at half rate (PLAN section 6, Idle)
+const ACTIVE_FOR_MS = 2000; // input keeps the full frame rate this long after it stops
+
+const dist = (a: Vec, b: Vec): number => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 export class App {
   private mode: Mode = 'hero';
@@ -94,6 +105,9 @@ export class App {
   private prevT = 1;
   private loadFrac = 0; // real analysis progress 0..1, drives the city un-building during loading (A6)
   private lastRepo = '';
+  private lastInput = -Infinity; // performance.now() of the latest pointer, wheel, key or scroll input
+  private wasIdle = false;
+  private hotDirs: ReadonlySet<number> = new Set();
   private readonly held = new Set<string>();
   private readonly palette = new Palette();
   private readonly inspector = new Inspector((i) => this.select(i));
@@ -134,6 +148,10 @@ export class App {
       root.setProperty('--tl-h', `${this.timeline.root.offsetHeight}px`);
     }).observe($('#honesty'));
     new ResizeObserver(() => root.setProperty('--tl-h', `${this.timeline.root.offsetHeight}px`)).observe(this.timeline.root);
+    const poke = (): void => void (this.lastInput = performance.now());
+    for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'scroll', 'touchmove']) {
+      addEventListener(type, poke, { capture: true, passive: true });
+    }
     this.canvas.addEventListener('webglcontextlost', () => this.fallback('The 3D view stopped (graphics context lost).'));
     const shared = decodeView(location.hash);
     if (shared) {
@@ -167,6 +185,7 @@ export class App {
     this.dyn.hold(); // building the world and first frames are slow: not a reason to lower quality
     this.result = r;
     this.world = buildWorld(r);
+    this.hotDirs = new Set(r.insights.hotspots.map((i) => r.files[i]!.dir));
     this.lanterns = new Float32Array(this.world.lanterns.length * 3);
     this.cam.frame(this.world.radius);
     this.cam.snap();
@@ -410,7 +429,7 @@ export class App {
       line(text, 'fail');
       this.announce(text);
       // Empty/error state (A6): always offer a way forward, never a dead end.
-      const retry = !['invalid_repo', 'not_found', 'empty_repo', 'no_files', 'too_large'].includes(code) || offline;
+      const retry = !NO_RETRY.includes(code) || offline;
       $('#btnRetry').hidden = !retry;
       $('#loadActions').hidden = false;
       $('#btnCancel').hidden = true; // nothing left to cancel; Back covers it
@@ -985,12 +1004,30 @@ export class App {
     return buildCamera(pose.pos, pose.tgt, this.canvas.clientWidth, this.canvas.clientHeight, far, fov);
   }
 
+  /** Nothing is moving but ambient animation: render at a low rate to save battery (PLAN section 6, Idle). */
+  private isIdle(now: number): boolean {
+    return !(
+      now - this.lastInput < ACTIVE_FOR_MS ||
+      this.playing ||
+      this.blend ||
+      this.cam.flying ||
+      this.exportNext ||
+      this.ptrs.size ||
+      this.held.size
+    );
+  }
+
   private readonly frame = (now: number): void => {
     requestAnimationFrame(this.frame);
+    // Hidden tab, or the opaque full-screen table on top: nothing to draw.
+    if (document.hidden || !$('#tableView').hidden) return void (this.last = now);
+    const idle = this.isIdle(now);
+    if (idle && now - this.last < IDLE_FRAME_MS - 2) return; // skipped: time keeps accumulating into the next dt
+    if (this.wasIdle && !idle) this.dyn.hold(30); // the long idle intervals say nothing about steady-state cost
+    this.wasIdle = idle;
     const rawMs = now - this.last;
     const dt = Math.min(0.05, rawMs / 1000);
     this.last = now;
-    if (document.hidden) return; // nothing to draw for a hidden tab
     this.time += dt;
     const reduced = reducedMotion();
     const P = this.P;
@@ -1055,7 +1092,6 @@ export class App {
     // A6 effects. Depth of field: story pulls focus onto each chapter's subject; the city focuses the selection or
     // the orbit target; the hero stays soft behind the text.
     const w0 = this.world;
-    const dist = (a: Vec, b: Vec): number => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
     let focus = dist(pos, tgt);
     if (sf && w0) {
       const at = this.story.chapters[sf.pose.chapter]?.callout?.at;
@@ -1088,13 +1124,15 @@ export class App {
         const u = reduced ? 0 : smoothstep(0, 1, s - k);
         const a = L.wp[k % L.wp.length]!;
         const b = L.wp[(k + 1) % L.wp.length]!;
-        this.lanterns.set([lerp(a[0], b[0], u), lerp(a[1], b[1], u) + Math.sin(u * Math.PI) * 3.5, lerp(a[2], b[2], u)], i * 3);
+        const o = i * 3; // written in place: no per-frame arrays in the hot path (EXPERIENCE section 9)
+        this.lanterns[o] = lerp(a[0], b[0], u);
+        this.lanterns[o + 1] = lerp(a[1], b[1], u) + Math.sin(u * Math.PI) * 3.5;
+        this.lanterns[o + 2] = lerp(a[2], b[2], u);
       }
     }
     if (w && this.mode === 'city' && !this.demo) {
       this.timeline.update(this.tT, this.playing, SPEEDS[this.speedIdx]!, this.compare, (t) => w.t0 + t * (w.t1 - w.t0));
-      const hotDirs = new Set(this.result!.insights.hotspots.map((i) => this.result!.files[i]!.dir));
-      this.minimap.draw(w, pos, tgt, hotDirs);
+      this.minimap.draw(w, pos, tgt, this.hotDirs);
     }
 
     const R = this.renderer;
@@ -1121,7 +1159,7 @@ export class App {
       });
     }
     // Resize before drawing: resizing the canvas clears it, so doing it after the draw showed one black frame.
-    this.adapt(rawMs);
+    if (!idle) this.adapt(rawMs); // throttled intervals would read as missed frames and lower quality
     R.render(C, P, this.time, this.lanterns);
     if (this.exportNext) {
       this.exportNext = false;

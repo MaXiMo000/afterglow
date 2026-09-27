@@ -35,6 +35,8 @@ Numbers must come from a named device and tool; anything estimated or not measur
 | 2026-09-26 | A7 | Windows laptop, Chromium (Playwright), real GPU via ANGLE d3d11, 1440x900, cinematic | JS heap after forced GC, 10-minute explore soak | 3.0 MB start, 4.0 MB max; +0.4 MB after 1-minute warm-up (repeat, 5 min: +0.3 MB); DOM nodes and listeners flat | <= 300 MB, no growth | `scripts/profile.mjs soak` | Heap wanders +-0.2 MB minute to minute; a longer soak is needed to prove a plateau. GPU memory not measured |
 | 2026-09-27 | post-v0.1.0 | Windows laptop, Chromium, real GPU, 1440x900 | Frame rate after the coastline city and cinematic desktop default (2697e05) | 60 fps median on every tier; cinematic 3-8% of frames over 16.7 ms | 60 fps desktop | `scripts/profile.mjs frames` (as reported in the commit) | Copied from the commit message, not re-measured here. SwiftShader draw calls not re-checked |
 
+| 2026-09-27 | post-v0.2.0 | headless Chromium (Playwright, local) | Idle frame rate: start page, no input for 2.5 s | <= 33 drawn frames in 1 s (gate) | low rate when nothing moves | `tests/e2e/perf.spec.ts` (CI gate) | New: 30 fps while nothing but ambient animation moves; full rate for 2 s after any input, while flying, playing or blending. Nothing drawn while the table view covers the canvas. Battery effect on phones **not measured** |
+
 Reference low-end device: budget Android class (Mali-G57 / Adreno 610, 4 GB), e.g. Galaxy A14 (PLAN section 6).
 **Not measured yet (no hardware in this environment):** any phone, the reference low-end device, 4G first frame, INP.
 Not measured in A0: frame rate, first frame, input latency, heap (nothing renders yet).
