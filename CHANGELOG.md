@@ -3,7 +3,7 @@
 Release notes with SBOMs and provenance are on the [releases page](https://github.com/MaXiMo000/afterglow/releases).
 Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
-## Unreleased (on `main` since v0.1.0)
+## v0.2.0 (2026-09-27)
 
 - Default graphics: cinematic on desktops, balanced on phones and low-core devices; Graphics setting
   (Auto/Fast/Balanced/Cinematic) in the help panel.
