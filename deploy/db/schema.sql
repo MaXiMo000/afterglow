@@ -47,6 +47,22 @@ BEGIN
 END $$;
 CREATE TRIGGER jobs_forget_client BEFORE INSERT OR UPDATE ON jobs FOR EACH ROW EXECUTE FUNCTION jobs_forget_client();
 
+-- Progress notifications (backend/app/notify.py): open progress streams wait for these instead of polling.
+-- The payload is the job id as 32 hex digits; '*' when a job enters or leaves the queue, which moves every
+-- queued job's position. No data rides on the notification: streams re-read the row with their own grants.
+CREATE FUNCTION jobs_notify_progress() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'INSERT' OR NEW.status IS DISTINCT FROM OLD.status THEN
+    PERFORM pg_notify('job_progress', '*');
+  END IF;
+  IF TG_OP = 'UPDATE' AND (NEW.status, NEW.stage, NEW.progress, NEW.total, NEW.reason)
+      IS DISTINCT FROM (OLD.status, OLD.stage, OLD.progress, OLD.total, OLD.reason) THEN
+    PERFORM pg_notify('job_progress', replace(NEW.id::text, '-', ''));
+  END IF;
+  RETURN NULL;
+END $$;
+CREATE TRIGGER jobs_notify_progress AFTER INSERT OR UPDATE ON jobs FOR EACH ROW EXECUTE FUNCTION jobs_notify_progress();
+
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 

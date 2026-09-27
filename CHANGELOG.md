@@ -11,6 +11,9 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 - Database roles have statement and idle-transaction timeouts.
 - API: results are re-validated off the event loop (a 50k-file result blocked it for ~0.2 s); IPv6 clients are
   rate-limited per /64; progress-stream slots can no longer leak.
+- Progress: streams are woken by a database notification when their job changes instead of polling three times a
+  second, and a queued job shows how many jobs are ahead of it. The notification trigger ships in
+  `0002-retention.sql` too.
 - Release: images are scanned before they are pushed.
 - Worker: all clones of a job share one 512 MB scratch budget and line counts are streamed, so a large repository can
   no longer exhaust the worker's memory; a heartbeat during git calls lets a dead worker's job fail after 90 s

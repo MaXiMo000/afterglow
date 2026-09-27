@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -16,6 +18,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app import db
 from app.api import build_router
+from app.notify import Hub, listen
 from app.settings import Settings, load_settings
 
 log = logging.getLogger("afterglow")
@@ -46,13 +49,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         else None
     )
 
+    hub = Hub()
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        listener = None
         if pool is not None:
             await pool.open()
+            listener = asyncio.create_task(listen(cfg.database_url, hub))
         try:
             yield
         finally:
+            if listener is not None:
+                listener.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await listener
             if pool is not None:
                 await pool.close()
 
@@ -104,5 +115,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return JSONResponse({"status": "queue_stalled"}, status_code=503)
         return JSONResponse({"status": "ok"})
 
-    app.include_router(build_router(cfg, pool))
+    app.include_router(build_router(cfg, pool, hub))
     return app

@@ -94,7 +94,7 @@ headers at https://securityheaders.com and https://developer.mozilla.org/observa
 - `deploy/db/schema.sql` runs only when the database is first created. When a release changes it, it ships an upgrade
   file in `deploy/db/upgrades/` and the changelog says so. Apply them in order, as below.
 
-### Upgrading a database created before the retention service
+### Upgrading a database created before the retention service (also adds the progress trigger)
 ```bash
 scripts/dev-env.sh                      # adds AFTERGLOW_DB_MAINT_PASSWORD; existing secrets are kept
 set -a; . deploy/.env; set +a

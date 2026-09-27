@@ -1,4 +1,5 @@
--- Upgrade an existing database (created before the retention service) to the current schema.sql.
+-- Upgrade an existing database (created before the retention service and progress notifications) to the
+-- current schema.sql.
 -- New databases get all of this from deploy/db/init.sh and schema.sql; do not run it on them.
 -- Usage (repo root, after scripts/dev-env.sh has added AFTERGLOW_DB_MAINT_PASSWORD to deploy/.env):
 --   set -a; . deploy/.env; set +a
@@ -20,4 +21,19 @@ ALTER ROLE afterglow_worker SET statement_timeout = '60s';
 ALTER ROLE afterglow_worker SET idle_in_transaction_session_timeout = '60s';
 ALTER ROLE afterglow_maint SET statement_timeout = '5min';
 ALTER ROLE afterglow_maint SET idle_in_transaction_session_timeout = '60s';
+-- Progress notifications (backend/app/notify.py): open progress streams wait for these instead of polling.
+-- The payload is the job id as 32 hex digits; '*' when a job enters or leaves the queue, which moves every
+-- queued job's position. No data rides on the notification: streams re-read the row with their own grants.
+CREATE FUNCTION jobs_notify_progress() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'INSERT' OR NEW.status IS DISTINCT FROM OLD.status THEN
+    PERFORM pg_notify('job_progress', '*');
+  END IF;
+  IF TG_OP = 'UPDATE' AND (NEW.status, NEW.stage, NEW.progress, NEW.total, NEW.reason)
+      IS DISTINCT FROM (OLD.status, OLD.stage, OLD.progress, OLD.total, OLD.reason) THEN
+    PERFORM pg_notify('job_progress', replace(NEW.id::text, '-', ''));
+  END IF;
+  RETURN NULL;
+END $$;
+CREATE TRIGGER jobs_notify_progress AFTER INSERT OR UPDATE ON jobs FOR EACH ROW EXECUTE FUNCTION jobs_notify_progress();
 COMMIT;

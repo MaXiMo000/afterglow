@@ -3,7 +3,7 @@ import type { RepoRef } from './repo';
 import { validateResult, type Result } from './result';
 
 export type Stage = 'queued' | 'cloning' | 'counting' | 'parsing' | 'sizing' | 'scoring' | 'done' | 'failed';
-export type Progress = { status: 'queued' | 'running' | 'done' | 'failed'; stage: Stage; n: number; total: number; reason?: string };
+export type Progress = { status: 'queued' | 'running' | 'done' | 'failed'; stage: Stage; n: number; total: number; reason?: string; ahead?: number };
 
 const STAGES: readonly Stage[] = ['queued', 'cloning', 'counting', 'parsing', 'sizing', 'scoring', 'done', 'failed'];
 const ID = /^[0-9a-f]{32}$/;
@@ -53,6 +53,8 @@ function parseProgress(data: string): Progress | null {
     if (!Number.isInteger(n) || !Number.isInteger(total)) return null;
     const out: Progress = { status, stage: stage as Stage, n: n as number, total: total as number };
     if (typeof p['reason'] === 'string' && REASON.test(p['reason'])) out.reason = p['reason'];
+    const ahead = p['ahead'];
+    if (Number.isInteger(ahead) && (ahead as number) >= 0) out.ahead = ahead as number;
     return out;
   } catch {
     return null;

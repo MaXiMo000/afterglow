@@ -381,12 +381,14 @@ export class App {
         await followProgress(
           id,
           (p: Progress) => {
-            const text = STAGE_TEXT[p.stage] ?? p.stage;
+            let text = STAGE_TEXT[p.stage] ?? p.stage;
+            if (p.stage === 'parsing' && p.total) text = `${text}: ${fmt(p.n)} of ${fmt(p.total)} commits`;
+            else if (p.stage === 'queued' && p.ahead) text = `${text} (${fmt(p.ahead)} ahead in the queue)`;
             if (p.stage !== lastStage) {
               lastStage = p.stage;
-              line(p.stage === 'parsing' && p.total ? `${text}: ${fmt(p.n)} of ${fmt(p.total)} commits` : text);
-            } else if (p.stage === 'parsing' && p.total) {
-              setText(log.lastElementChild as HTMLElement, `${text}: ${fmt(p.n)} of ${fmt(p.total)} commits`);
+              line(text);
+            } else {
+              setText(log.lastElementChild as HTMLElement, text);
             }
             const order = ['queued', 'cloning', 'counting', 'parsing', 'sizing', 'scoring', 'done'];
             const base = Math.max(0, order.indexOf(p.stage)) / (order.length - 1);

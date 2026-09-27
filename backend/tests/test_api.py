@@ -6,8 +6,10 @@ missing database is an error, not a skip.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import re
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -16,7 +18,7 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-from app import maint
+from app import db, maint
 from app.limits import Gate, RateLimiter
 from app.main import create_app
 from app.settings import Settings
@@ -361,3 +363,28 @@ def test_limiter_and_gate_units() -> None:
     assert g.enter("b") and not g.enter("c")
     g.leave("a")
     assert g.enter("c")
+
+
+def test_job_changes_notify_progress_streams(client: TestClient, tmp_path: Path) -> None:
+    with psycopg.connect(ADMIN, autocommit=True) as listener:
+        listener.execute("LISTEN job_progress")
+        _, a = post(client, {"repo": "a/first"}, ip="203.0.113.1")
+        _, b = post(client, {"repo": "a/second"}, ip="203.0.113.2")
+        work(tmp_path)  # claims the older job, runs it to done
+        payloads = [n.payload for n in listener.notifies(timeout=1.0)]
+    assert payloads.count("*") >= 4  # two enqueued, one started, one finished: queue positions moved
+    assert a["id"] in payloads and b["id"] not in payloads  # only the job whose progress changed
+    assert all(p == "*" or re.fullmatch(r"[0-9a-f]{32}", p) for p in payloads)  # ids only, no data
+
+
+def test_queue_position(client: TestClient) -> None:
+    ids = [uuid.UUID(hex=post(client, {"repo": f"q/r{i}"}, ip=f"203.0.113.{i}")[1]["id"]) for i in range(3)]
+
+    async def ahead() -> list[int | None]:
+        async with await psycopg.AsyncConnection.connect(API) as conn:
+            return [await db.queue_ahead(conn, i) for i in ids]
+
+    assert asyncio.run(ahead()) == [0, 1, 2]
+    with psycopg.connect(WORKER, autocommit=True) as conn:
+        assert queue.claim(conn) is not None
+    assert asyncio.run(ahead()) == [None, 0, 1]

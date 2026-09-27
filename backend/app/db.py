@@ -92,6 +92,17 @@ async def create_job(conn: Conn, repo: str, client: str) -> tuple[uuid.UUID, str
     return row[0], str(row[1])
 
 
+async def queue_ahead(conn: Conn, job_id: uuid.UUID) -> int | None:
+    """Queued jobs the worker will claim before this one (it claims oldest first); None if not queued."""
+    cur = await conn.execute(
+        "SELECT (SELECT count(*) FROM jobs q WHERE q.status = 'queued' AND q.created < j.created) "
+        "FROM jobs j WHERE j.id = %s AND j.status = 'queued'",
+        (job_id,),
+    )
+    row = await cur.fetchone()
+    return int(row[0]) if row else None
+
+
 async def get_job(conn: Conn, job_id: uuid.UUID) -> Job | None:
     cur = await conn.execute(
         "SELECT id, repo, status, stage, progress, total, reason, sha FROM jobs WHERE id = %s", (job_id,)

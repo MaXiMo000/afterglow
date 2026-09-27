@@ -58,8 +58,10 @@ Browser (static SPA) --https--> Caddy (TLS, CSP and headers, static files, body 
   -> `202 {"id","status":"queued"}` (new or deduplicated) or `200 {"id","status":"done"}` if a fresh result exists.
   Errors: `400 invalid_repo`, `403 forbidden`, `413 too_large`, `415`, `429 rate_limited|too_many_jobs`,
   `503 busy` (+ `Retry-After`). Repo regex `^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$`, not `.`/`..`, no URLs.
-- `GET /api/v1/analyses/{id}/events` -> SSE frames `{"status","stage","n","total"[,"reason"]}`; stages
-  `queued, cloning, counting, parsing, sizing, scoring, done, failed`.
+- `GET /api/v1/analyses/{id}/events` -> SSE frames `{"status","stage","n","total"[,"reason"][,"ahead"]}`; stages
+  `queued, cloning, counting, parsing, sizing, scoring, done, failed`; `ahead` (queued only) is how many queued
+  jobs the worker will claim first. Frames are pushed when the job changes (Postgres `NOTIFY job_progress` from a
+  trigger on `jobs`, carrying only the job id), with a 2 s re-check as a fallback.
 - `GET /api/v1/analyses/{id}` -> `200` result, `409 not_ready`, `422 <reason>` for failed jobs, `404` unknown.
   Ids are 32 lower-case hex characters (random UUIDv4).
 - Result schema (strict, `extra=forbid`, bounded): `meta{repo,sha,analyser,generated_at,commits,files,people,span,truncated}`,
