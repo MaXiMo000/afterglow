@@ -264,10 +264,10 @@ export class App {
     else history.replaceState({ ...history.state, v: 'city' }, '', '#explore');
   }
 
-  /** Balanced on desktops, simple on phones and low-core machines: cinematic (1.75x resolution, MSAA, DOF, rays) is opt-in. */
+  /** Cinematic on desktops, balanced on phones and low-core machines; dynamic resolution and tier steps handle the rest. */
   private autoTier(): number {
     const low = matchMedia('(pointer: coarse)').matches || innerWidth < 760 || (navigator.hardwareConcurrency || 8) <= 4;
-    return low ? 0 : 1;
+    return low ? 1 : 2;
   }
 
   private savedQuality(): string | null {

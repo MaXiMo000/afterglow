@@ -16,6 +16,18 @@ vec3 skyColor(vec3 d){
   c=mix(c,deep,smoothstep(.25,.85,e));
   float sun=pow(max(dot(normalize(vec3(d.x,0.,d.z)),normalize(vec3(uSunDir.x,0.,uSunDir.z))),0.),3.);
   c+=hor*sun*exp(-max(e,0.)*7.)*.75;
+  /* A distant coastline city across the water: low hazy silhouettes in clusters, fine twinkling windows, warm glow. */
+  float az=atan(d.z,d.x);
+  float cluster=smoothstep(.42,.72,vnoise(vec2(az*4.5,3.1)));
+  float cell=floor(az*300.);float hb=h21(vec2(cell,1.3));
+  float bh=(hb>.3?.0015+.0075*hb*hb*hb+step(.95,h21(vec2(cell,7.1)))*.005:0.)*cluster;
+  c+=vec3(1.,.55,.36)*exp(-max(e,0.)*70.)*cluster*.1;
+  if(e>0.&&e<bh){
+    vec3 sil=mix(c,vec3(.045,.04,.09),.72);/* hazed: it is far away */
+    float wr=h21(floor(vec2(az*2800.,e*3400.))+cell);
+    float win=step(.92,wr)*step(.55,fract(az*2800.))*step(.45,fract(e*3400.));
+    c=sil+vec3(1.,.74,.46)*win*(.65+.35*sin(uTime*(.2+wr*.5)+wr*50.))*.55;
+  }
   c=mix(c,vec3(.075,.17,.19),smoothstep(.035,-.05,e));
   if(e>.16){vec3 q=floor(d*230.);float r=fract(sin(dot(q,vec3(12.9898,78.233,37.719)))*43758.5453);float st=step(.9968,r)*smoothstep(.16,.6,e);c+=vec3(.9,.9,1.)*st*(.5+.5*sin(uTime*2.+r*60.));}
   float md=dot(d,normalize(uMoonDir));
@@ -104,15 +116,19 @@ void main(){
   col+=vec3(.85,.42,.5)*rim*.38*(.4+.6*max(dot(N,Ld),0.));
   float side=step(abs(N.y),.5);
   float ySt=vW.y-.28;
+  col*=mix(.5,1.,smoothstep(0.,2.2,ySt)*side+(1.-side));/* contact shadow: buildings sit on the ground */
   vec2 uv=abs(N.x)>.5?vec2(vXZ.y*vSize.y,ySt):vec2(vXZ.x*vSize.x,ySt);
   vec2 cell=vec2(.34,.5),id=floor(uv/cell),f=fract(uv/cell);
   float win=step(.18,f.x)*step(f.x,.82)*step(.22,f.y)*step(f.y,.78)*step(1.,ySt)*side;
   float rnd=h21(id+vC.y*17.31+(abs(N.x)>.5?3.7:0.));
   float alive=1.-smoothstep(vB.z+.06,vB.z+.26,uT);alive=max(alive,.05);
   float act=vB.w*alive;
-  float lit=step(rnd,act*.85+.02);
-  float fl=.78+.22*sin(uTime*(1.+rnd*3.)+rnd*40.);
+  /* a few windows switch on and off over tens of seconds, so the city feels lived in (not a flicker) */
+  float lit=step(rnd,act*.85+.02+.05*sin(uTime*.045+rnd*61.));
+  float fl=.9+.1*sin(uTime*(.25+rnd*.35)+rnd*40.);/* slow breathing, no shimmer */
   vec3 warm=mix(vec3(1.,.66,.32),vec3(1.,.84,.56),h21(id+7.7));
+  warm=mix(warm,vec3(.78,.9,1.),step(.72,h21(vec2(vC.y*13.1,5.3)))*.85);/* cool office light in some buildings */
+  warm*=.62+.38*h21(id+2.1);/* curtains and lamps: not every window equally bright */
   warm=mix(warm,vec3(1.,.30,.20),vC.z*uHot);
   vec3 emis=warm*lit*win*fl*1.9;
   emis*=1.-vC.w*.9;
@@ -123,7 +139,14 @@ void main(){
   emis+=vec3(1.,.9,.72)*flash*win*1.5;col+=vec3(.5,.45,.36)*flash*.35;
   float grow=1.-vG;
   emis+=vec3(.45,.95,1.)*grow*smoothstep(1.2,0.,vTop-vW.y)*.8*uFlow;/* growth glow only while history plays */
-  if(N.y>.5){col*=1.15;emis+=vec3(1.,.28,.18)*vC.z*uHot*.9;}
+  if(N.y>.5){
+    col*=1.15;emis+=vec3(1.,.28,.18)*vC.z*uHot*.9;
+    vec2 q=abs(vXZ-.5)*2.;float edge=smoothstep(.86,.97,max(q.x,q.y));
+    col+=vec3(.42,.36,.62)*edge*.35;/* lit parapet */
+    float ld=length((vXZ-.5)*vSize);/* aviation light: tall towers blink red, slowly and out of step */
+    float blink=smoothstep(.0,.08,fract(uTime*.45+vC.y*7.))*smoothstep(.36,.2,fract(uTime*.45+vC.y*7.));
+    emis+=vec3(1.,.16,.1)*smoothstep(.16,.05,ld)*step(6.,vTop)*blink*4.*(1.-vC.w);
+  }
   float inF=(uFocus<-.5)?1.:step(abs(vDist-uFocus),.5);/* PORT: focus by district index, not palette */
   col*=mix(1.,mix(.32,1.25,inF),uFocusAmt);emis*=mix(1.,mix(.35,1.3,inF),uFocusAmt);
   /* PORT (A5): compare mode tints each building by what the data says happened between two dates.

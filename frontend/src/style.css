@@ -51,8 +51,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .brand { flex-shrink: 0; }
 .chip { white-space: nowrap; background: var(--color-glass); border: 1px solid var(--color-line); border-radius: var(--radius-sm); padding: 6px 11px;
   font: 500 var(--size-xs) var(--font-mono); letter-spacing: 0.08em; backdrop-filter: blur(8px);
-  transition: border-color var(--motion-base) var(--motion-ease-out), background var(--motion-base) var(--motion-ease-out), transform var(--motion-fast); }
-.chip:hover { border-color: rgba(255, 180, 94, 0.6); background: var(--color-glass-hi); }
+  transition: border-color var(--motion-base) var(--motion-ease-out), background var(--motion-base) var(--motion-ease-out), transform var(--motion-fast), box-shadow var(--motion-base) var(--motion-ease-out); }
+.chip:hover { border-color: rgba(255, 180, 94, 0.6); background: var(--color-glass-hi); transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35), 0 0 18px rgba(255, 180, 94, 0.12); }
+.chip:active { transform: translateY(0) scale(0.97); }
 .chip:active { transform: translateY(1px); }
 .chip[aria-pressed='true'] { border-color: var(--color-amber); color: var(--color-amber); }
 
@@ -94,6 +96,13 @@ main > section { position: fixed; z-index: var(--z-panel); }
 .bar { height: 2px; background: var(--color-line); max-width: 34rem; }
 .bar i { display: block; height: 100%; width: 0; background: var(--color-amber); box-shadow: 0 0 12px var(--color-amber); transition: width var(--motion-slow) var(--motion-ease-out); }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes reveal { from { opacity: 0; transform: translateY(18px); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
+/* Start page: elements rise in one after another (transforms only, so no layout shift; off with reduced motion). */
+#hero:not([hidden]) > * { animation: reveal 900ms var(--motion-ease-out) both; }
+#hero > :nth-child(2) { animation-delay: 90ms; }
+#hero > :nth-child(3) { animation-delay: 180ms; }
+#hero > :nth-child(4) { animation-delay: 270ms; }
+#hero > :nth-child(n + 5) { animation-delay: 360ms; }
 
 /* story (A4) */
 html.story-scroll, html.story-scroll body { overflow-y: auto; overflow-x: hidden; height: auto; }
