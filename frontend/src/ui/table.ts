@@ -2,6 +2,7 @@
  * 2D fallback (no WebGL2, context loss, shader failure, or "View as table") and the screen-reader summary
  * (EXPERIENCE section 8). Same data as the city, no 3D required.
  */
+import { beforeWindow, trend, TREND_TEXT } from '../lib/history';
 import type { Result } from '../lib/result';
 import { ago, el, fmt, fmtDate } from './dom';
 
@@ -22,7 +23,7 @@ export function renderTable(r: Result, tbody: HTMLElement, caption: HTMLElement,
         el('td', fmt(f.changes_12m), 'num'),
         el('td', fmt(f.authors), 'num'),
         el('td', r.meta.truncated.sizes && f.loc === 0 ? 'n/a' : fmt(f.loc), 'num'),
-        el('td', ago(f.last, now)),
+        el('td', beforeWindow(f) ? `before ${fmtDate(f.last)}` : ago(f.last, now)),
         el('td', status, status ? `status-${f.hot ? 'hot' : 'quiet'}` : undefined),
       );
       return tr;
@@ -106,7 +107,9 @@ export function renderSummary(r: Result, root: HTMLElement): void {
   const hot = el('ol');
   for (const i of r.insights.hotspots.slice(0, 10)) {
     const f = r.files[i];
-    if (f) hot.append(el('li', `${f.path}: ${fmt(f.changes_12m)} changes in the last 12 months`));
+    const t = f ? trend(f.quarters) : null;
+    const heat = t && t.kind !== 'steady' ? `, ${TREND_TEXT[t.kind]}` : '';
+    if (f) hot.append(el('li', `${f.path}: ${fmt(f.changes_12m)} changes in the last 12 months${heat}`));
   }
   parts.push(hot.childElementCount ? hot : el('p', 'None found.'));
 

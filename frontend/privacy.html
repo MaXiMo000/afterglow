@@ -27,7 +27,8 @@
       <ul>
         <li><strong>Analysis results</strong>, built only from the repository's public git history: file paths, dates,
           change counts, line counts and co-change pairs. Contributors appear as <code>Contributor 1</code>,
-          <code>Contributor 2</code> and so on. No names, no email addresses, no file contents. Results are cached for
+          <code>Contributor 2</code> and so on (the repository's own <code>.mailmap</code>, if it has one, is used only to
+          count one person's name spellings once). No names, no email addresses, no file contents. Results are cached for
           reuse by anyone who asks for the same repository and commit. A result is deleted once it is more than 30 days
           old and nobody has asked for that repository at that commit in the last 7 days.</li>
         <li><strong>Job records</strong>: repository name, commit, status, time, and the IP pseudonym above. The

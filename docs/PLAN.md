@@ -34,7 +34,7 @@ Browser (static SPA) --https--> Caddy (TLS, CSP and headers, static files, body 
 | Decision | Reason |
 | --- | --- |
 | Python 3.12, FastAPI, Pydantic v2, uvicorn | Strict typed schemas at the boundary |
-| Worker parses `git log --name-status -z` from a bare, blobless clone; line counts from one capped, batched fetch of HEAD's blobs, never checked out | Attacker-controlled files are never written to disk; lazy per-blob fetches would be slow and uncappable |
+| Worker parses `git log --name-status -z -M100%` (exact renames only: they need blob ids, not contents) from a bare, blobless clone; line counts from one capped, batched fetch of HEAD's blobs, never checked out | Attacker-controlled files are never written to disk; lazy per-blob fetches would be slow and uncappable |
 | Queue: Postgres `SELECT ... FOR UPDATE SKIP LOCKED` | One stateful service for jobs and results |
 | Result wire format: strict JSON, compressed by Caddy | Measured 62.5 KB gzip for 3,139 files, ~1 MB at the 50k-file cap (budget 1.5 MB) |
 | Vite + TypeScript strict, no UI framework; raw WebGL2 renderer | Small bundle (a scene library would add ~150 KB gzip); GPU picking and parallel shader compile need raw GL anyway |
@@ -66,7 +66,13 @@ Browser (static SPA) --https--> Caddy (TLS, CSP and headers, static files, body 
   Ids are 32 lower-case hex characters (random UUIDv4).
 - Result schema (strict, `extra=forbid`, bounded): `meta{repo,sha,analyser,generated_at,commits,files,people,span,truncated}`,
   `dirs[]`, `files[]`, `coupling[]`, `people[] {handle,commits,areas}`, `insights{hotspots,bus_factor,quiet,coupling}`,
-  `timeline[]`. Contributors are pseudonyms (`Contributor 7`); emails are never read.
+  `timeline[]`. Contributors are pseudonyms (`Contributor 7`); emails are never read by the analyser (git uses them
+  internally to apply the repository's `.mailmap`, read from the analysed commit, capped at 1 MB).
+  Analyser 3 adds `files[].quarters` (changes in each of the last 8 calendar quarters, oldest first, or `[]`) and
+  `timeline[].removed` (files deleted that month and absent at HEAD). Files followed through exact renames keep their
+  history. When history is truncated, files at HEAD untouched in the window are kept with `changes: 0` and the
+  window's first date as an upper bound; the UI labels them "before". The client accepts analyser 2 results (the
+  bundled demo) without the new fields.
 - Hard caps (tested): pack size, commits (200k), files (50k), path length, wall time (90 s), memory, output size.
   Over a cap the most recent data is analysed, `truncated` is set, and the UI says so.
 

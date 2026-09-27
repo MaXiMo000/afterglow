@@ -211,6 +211,7 @@ kbd { font: var(--size-xs) var(--font-mono); padding: 0 5px; border: 1px solid v
 #compareLegend .c-last { background: #ffb45e; }
 #compareLegend .c-after { background: #8ab4ff; }
 #compareLegend .c-before { background: #56626b; }
+#compareLegend .c-removed { background: transparent; border: 1px dashed #ff9a8f; }
 #minimap { position: fixed; z-index: var(--z-hud); right: var(--gutter); bottom: calc(env(safe-area-inset-bottom, 0px) + 120px); width: 180px; height: 180px; border-radius: var(--radius-md); border: 1px solid var(--color-line); cursor: crosshair; }
 #photoBar { position: fixed; z-index: var(--z-overlay); left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 32px); display: flex; gap: 16px; align-items: center; }
 #toast { position: fixed; z-index: var(--z-toast); left: 50%; top: 72px; transform: translateX(-50%); margin: 0; padding: 8px 14px; font-size: var(--size-sm);
@@ -243,6 +244,13 @@ dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
 .pill { display: inline-block; font: var(--size-xs) var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 7px; border-radius: 2px; margin-bottom: 8px; }
 .pill.hot { background: rgba(255, 90, 74, 0.16); color: #ff9a8f; border: 1px solid rgba(255, 90, 74, 0.45); }
 .pill.quiet { background: rgba(138, 180, 255, 0.1); color: var(--color-sky); border: 1px solid rgba(138, 180, 255, 0.3); }
+.pill.heating { background: rgba(255, 180, 94, 0.14); color: var(--color-amber); border: 1px solid rgba(255, 180, 94, 0.45); }
+.pill.cooling { background: rgba(95, 214, 180, 0.1); color: #5fd6b4; border: 1px solid rgba(95, 214, 180, 0.35); }
+.quarters-fig { margin: 0 0 6px; }
+.quarters { display: block; width: 100%; max-width: 240px; height: 48px; }
+.quarters .q { fill: var(--color-amber); }
+.quarters .q.zero { fill: var(--color-line); }
+.quarters-axis { display: flex; justify-content: space-between; max-width: 240px; margin: 2px 0 0; font: var(--size-xs) var(--font-mono); color: var(--color-faint); }
 
 /* honesty strip */
 #honesty { position: fixed; z-index: var(--z-hud); left: 0; right: 0; bottom: 0; padding: 10px var(--gutter) calc(env(safe-area-inset-bottom, 0px) + 12px);

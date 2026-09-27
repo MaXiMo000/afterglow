@@ -28,10 +28,13 @@ export type FileRec = {
   authors: number;
   hot: boolean;
   dead: boolean;
+  /** Changes per calendar quarter, oldest first, ending with HEAD's quarter; [] when none (or analyser < 3). */
+  quarters: number[];
 };
 export type Coupling = { a: number; b: number; count: number; strength: number };
 export type Person = { handle: string; commits: number; areas: number[] };
-export type Month = { t: number; commits: number; added: number };
+/** `removed` is absent in results from analyser < 3 (e.g. the bundled demo). */
+export type Month = { t: number; commits: number; added: number; removed?: number };
 export type Insights = { hotspots: number[]; bus_factor: number[]; quiet: number[]; coupling: number[] };
 export type Result = {
   meta: Meta;
@@ -43,6 +46,7 @@ export type Result = {
   timeline: Month[];
 };
 
+export const QUARTERS = 8;
 export const LIMITS = { files: 50_000, dirs: 2_000, coupling: 300, people: 1_000, months: 1_200, text: 512 };
 
 export class InvalidResult extends Error {}
@@ -56,9 +60,9 @@ function obj(v: unknown, where: string): Record<string, unknown> {
   if (typeof v !== 'object' || v === null || Array.isArray(v)) fail(where);
   return v as Record<string, unknown>;
 }
-function keys(o: Record<string, unknown>, want: readonly string[], where: string): void {
+function keys(o: Record<string, unknown>, want: readonly string[], where: string, optional: readonly string[] = []): void {
   const got = Object.keys(o);
-  if (got.length !== want.length || !want.every((k) => k in o)) fail(where);
+  if (!want.every((k) => k in o) || !got.every((k) => want.includes(k) || optional.includes(k))) fail(where);
 }
 function int(v: unknown, where: string, max = 1e12): number {
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > max) fail(where);
@@ -130,18 +134,22 @@ export function validateResult(raw: unknown): Result {
   const nd = dirs.length;
   const files = arr(r['files'], LIMITS.files, 'files').map((f, i): FileRec => {
     const o = obj(f, `files.${i}`);
-    keys(o, ['path', 'dir', 'loc', 'birth', 'last', 'changes', 'changes_12m', 'authors', 'hot', 'dead'], `files.${i}`);
+    keys(o, ['path', 'dir', 'loc', 'birth', 'last', 'changes', 'changes_12m', 'authors', 'hot', 'dead'], `files.${i}`, ['quarters']);
+    const changes = int(o['changes'], `files.${i}.changes`);
+    const quarters = o['quarters'] === undefined ? [] : arr(o['quarters'], QUARTERS, `files.${i}.quarters`).map((q) => int(q, `files.${i}.q`));
+    if ((quarters.length !== 0 && quarters.length !== QUARTERS) || quarters.reduce((a, b) => a + b, 0) > changes) fail(`files.${i}.quarters`);
     return {
       path: text(o['path'], `files.${i}.path`),
       dir: idx(o['dir'], nd, `files.${i}.dir`),
       loc: int(o['loc'], `files.${i}.loc`),
       birth: int(o['birth'], `files.${i}.birth`),
       last: int(o['last'], `files.${i}.last`),
-      changes: int(o['changes'], `files.${i}.changes`),
+      changes,
       changes_12m: int(o['changes_12m'], `files.${i}.changes_12m`),
       authors: int(o['authors'], `files.${i}.authors`),
       hot: bool(o['hot'], `files.${i}.hot`),
       dead: bool(o['dead'], `files.${i}.dead`),
+      quarters,
     };
   });
   const nf = files.length;
@@ -167,8 +175,10 @@ export function validateResult(raw: unknown): Result {
   };
   const timeline = arr(r['timeline'], LIMITS.months, 'timeline').map((t, i): Month => {
     const o = obj(t, `timeline.${i}`);
-    keys(o, ['t', 'commits', 'added'], `timeline.${i}`);
-    return { t: int(o['t'], 'tl.t'), commits: int(o['commits'], 'tl.c'), added: int(o['added'], 'tl.a') };
+    keys(o, ['t', 'commits', 'added'], `timeline.${i}`, ['removed']);
+    const m: Month = { t: int(o['t'], 'tl.t'), commits: int(o['commits'], 'tl.c'), added: int(o['added'], 'tl.a') };
+    if (o['removed'] !== undefined) m.removed = int(o['removed'], 'tl.r');
+    return m;
   });
   return { meta, dirs, files, coupling, people, insights, timeline };
 }

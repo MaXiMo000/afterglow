@@ -14,13 +14,15 @@ from typing import Annotated, Self
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
-ANALYSER_VERSION = 2  # 2: files at HEAD come from HEAD's tree (A5 fix)
+ANALYSER_VERSION = 3  # 2: files at HEAD come from HEAD's tree (A5 fix). 3: exact renames followed, mailmap,
+# files older than a truncated window kept (changes=0), per-file quarters, removals per month
 MAX_PATH = 512
 MAX_FILES = 50_000
 MAX_DIRS = 2_000
 MAX_PEOPLE = 1_000
 MAX_COUPLING = 300
 MAX_MONTHS = 1_200
+QUARTERS = 8
 
 # C0/C1 controls, zero-width and bidi controls, BOM. Replaced (not dropped) so tampering stays visible.
 _UNSAFE = re.compile("[\x00-\x1f\x7f-\x9f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]")
@@ -94,6 +96,14 @@ class File(_Strict):
     authors: Count
     hot: bool
     dead: bool
+    # Changes per calendar quarter, oldest first, the last entry being HEAD's quarter; [] when all are zero.
+    quarters: Annotated[list[Count], Field(max_length=QUARTERS)]
+
+    @model_validator(mode="after")
+    def _quarters_shape(self) -> Self:
+        if len(self.quarters) not in (0, QUARTERS) or sum(self.quarters) > self.changes:
+            raise ValueError("quarters")
+        return self
 
 
 class Coupling(_Strict):
@@ -113,6 +123,7 @@ class Month(_Strict):
     t: Epoch
     commits: Count
     added: Count
+    removed: Count  # files whose deletion (this month) is why they are not at HEAD
 
 
 class Insights(_Strict):

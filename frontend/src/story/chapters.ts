@@ -2,6 +2,7 @@
  * Story chapters, derived from the real analysis (EXPERIENCE section 2). A chapter exists only if the data
  * supports it: no hotspots means no "hot streets" chapter, never a fabricated one.
  */
+import { beforeWindow } from '../lib/history';
 import type { V3 } from '../render/math';
 import type { Result } from '../lib/result';
 import type { World } from '../world/build';
@@ -59,8 +60,10 @@ export function buildChapters(r: Result, w: World): Chapter[] {
       eyebrow: 'First light',
       title: 'Every codebase starts as',
       em: 'one commit.',
-      body: `The oldest file still standing is ${f0.path}, first committed on ${date(f0.birth)}.`,
-      callout: { at: top, name: f0.path, meta: `First commit \u00b7 ${date(f0.birth)}`, hot: false },
+      body: beforeWindow(f0)
+        ? `The oldest file still standing is ${f0.path}. It was already here before ${date(f0.birth)}, where the analysed history begins.`
+        : `The oldest file still standing is ${f0.path}, first committed on ${date(f0.birth)}.`,
+      callout: { at: top, name: f0.path, meta: `${beforeWindow(f0) ? 'Before' : 'First commit \u00b7'} ${date(f0.birth)}`, hot: false },
       key: orbitKey([top[0], top[1] * 0.5, top[2]], 16, 0.9, 0.35, 46),
       t: Math.min(1, norm(f0.birth) + 0.004),
       hot: 0.2,

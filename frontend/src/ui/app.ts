@@ -3,6 +3,7 @@
  * 2D table fallback. The effects pass (A6) builds on this.
  */
 import { ApiError, fetchResult, followProgress, startAnalysis, type Progress } from '../lib/api';
+import { beforeWindow } from '../lib/history';
 import { parseRepo, type RepoRef } from '../lib/repo';
 import { validateResult, type Result } from '../lib/result';
 import { decodeView, encodeView, type View } from '../lib/share';
@@ -596,7 +597,8 @@ export class App {
       row('c-last', 'Last changed in this window', n.lastIn),
       row('c-after', 'Still changing after it', n.after),
       row('c-before', 'Untouched since before it', n.before),
-      el('p', 'Deleted files are not in this analysis, so removals are not shown. Use , and . to move the window end, [ ] for speed.', 'sub'),
+      ...(n.removed === null ? [] : [row('c-removed', 'Removed in this window', n.removed)]),
+      el('p', `${n.removed === null ? 'Deleted files are not in this analysis, so removals are not shown.' : 'Removed files are counted by month, not drawn: they have no place in the city at HEAD.'} Use , and . to move the window end, [ ] for speed.`, 'sub'),
     );
     box.hidden = false;
   }
@@ -953,7 +955,7 @@ export class App {
       ['changes, all time', fmt(f.changes)],
       ['authors, all time', fmt(f.authors)],
       ['lines', r.meta.truncated.sizes && f.loc === 0 ? 'n/a' : fmt(f.loc)],
-      ['last change', ago(f.last, r.meta.span[1])],
+      ['last change', beforeWindow(f) ? `before ${fmtDate(f.last)}` : ago(f.last, r.meta.span[1])],
     ];
     const kids: HTMLElement[] = [];
     if (f.hot) kids.push(el('span', 'hotspot', 'pill hot'));

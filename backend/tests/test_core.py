@@ -51,10 +51,10 @@ def minimal(**over: object) -> dict[str, object]:
         },
         "dirs": [{"name": "(root)", "files": 1, "loc": 1, "last": 2, "bus_factor": 1, "quiet": False}],
         "files": [{"path": "a.py", "dir": 0, "loc": 1, "birth": 1, "last": 2, "changes": 1, "changes_12m": 1,
-                   "authors": 1, "hot": False, "dead": False}],
+                   "authors": 1, "hot": False, "dead": False, "quarters": []}],
         "coupling": [], "people": [{"handle": "Contributor 1", "commits": 1, "areas": [0]}],
         "insights": {"hotspots": [0], "bus_factor": [], "quiet": [], "coupling": []},
-        "timeline": [{"t": 0, "commits": 1, "added": 1}],
+        "timeline": [{"t": 0, "commits": 1, "added": 1, "removed": 0}],
     }  # fmt: skip
     doc.update(over)
     return doc
