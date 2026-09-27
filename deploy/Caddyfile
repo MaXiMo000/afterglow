@@ -40,7 +40,7 @@
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	}
 
-	@api path /api/* /healthz
+	@api path /api/* /healthz /readyz
 	handle @api {
 		# Cache-Control comes from the API: no-store by default, immutable for results.
 		reverse_proxy api:8000 {

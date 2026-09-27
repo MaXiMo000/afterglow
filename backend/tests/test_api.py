@@ -320,6 +320,37 @@ def test_retention_deletes_old_jobs_and_unused_results(client: TestClient, tmp_p
     assert client.get(f"/api/v1/analyses/{fresh['id']}").status_code == 200
 
 
+def test_readyz_reports_a_stalled_queue(client: TestClient) -> None:
+    assert client.get("/readyz").json() == {"status": "ok"}
+    with psycopg.connect(ADMIN, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO jobs (id, repo, client, created) "
+            "VALUES (gen_random_uuid(), 'a/b', repeat('1', 32), now() - interval '10 minutes')"
+        )
+    r = client.get("/readyz")
+    assert (r.status_code, r.json()) == (503, {"status": "queue_stalled"})
+    with psycopg.connect(ADMIN, autocommit=True) as conn:  # a worker is busy: the queue is moving
+        conn.execute(
+            "INSERT INTO jobs (id, repo, client, status, stage) "
+            "VALUES (gen_random_uuid(), 'c/d', repeat('1', 32), 'running', 'cloning')"
+        )
+    assert client.get("/readyz").status_code == 200
+
+
+def test_heartbeat_keeps_a_slow_job_alive(client: TestClient) -> None:
+    _, body = post(client, {"repo": "a/b"})
+    with psycopg.connect(ADMIN, autocommit=True) as conn:
+        conn.execute("UPDATE jobs SET status = 'running', updated = now() - interval '80 seconds'")
+    with psycopg.connect(WORKER, autocommit=True) as conn:
+        assert queue.claim(conn) is None  # 80 s without a beat is still inside LOST_AFTER
+    with psycopg.connect(ADMIN, autocommit=True) as conn:
+        assert conn.execute("SELECT status FROM jobs").fetchone() == ("running",)
+        conn.execute("UPDATE jobs SET updated = now() - interval '100 seconds'")
+    with psycopg.connect(WORKER, autocommit=True) as conn:
+        queue.claim(conn)
+    assert client.get(f"/api/v1/analyses/{body['id']}").json() == {"error": "worker_lost"}
+
+
 def test_limiter_and_gate_units() -> None:
     rl = RateLimiter(rate=2, per=60)
     assert rl.check("k") == 0 and rl.check("k") == 0

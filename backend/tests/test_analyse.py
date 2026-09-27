@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import itertools
+import time
 from pathlib import Path
 
 import pytest
 
 from core.repo import RepoRef
 from core.schema import Result
-from worker.analyse import YEAR, analyse, bus_factor
-from worker.git import Caps
+from worker import git as worker_git
+from worker.analyse import YEAR, analyse, bus_factor, line_counts
+from worker.git import Caps, Git
 
 from .gitfixture import C, make_repo
 
@@ -134,3 +136,37 @@ def test_empty_repo_fails_cleanly(tmp_path: Path) -> None:
     with pytest.raises(AnalysisError) as err:
         analyse(REPO, scratch, CAPS, url=bare.resolve().as_uri())
     assert err.value.reason in ("empty_repo", "clone_failed")
+
+
+def test_line_counts_across_stream_chunks(tmp_path: Path) -> None:
+    # Many blobs and one larger than a 64 KiB read chunk: the streamed cat-file parser must split them exactly.
+    files: dict[str, object] = {f"many/f{i}.txt": "line\n" * (i + 1) for i in range(300)}
+    files["big.txt"] = "x" * 99 + "\n" + "y\n" * 70_000
+    files["no_newline.txt"] = "a\nb"
+    by = {f.path: f.loc for f in run(tmp_path, [C(files)]).files}
+    assert by["many/f0.txt"] == 1 and by["many/f299.txt"] == 300
+    assert by["big.txt"] == 70_001
+    assert by["no_newline.txt"] == 2
+
+
+def test_sizes_come_from_the_analysed_commit(tmp_path: Path) -> None:
+    # A push between reading history and fetching contents must not change the sizes: they are fetched by id.
+    url = make_repo(tmp_path, [C({"a.py": "1\n"}, time=T0), C({"a.py": "1\n2\n3\n"}, time=T0 + 1)])
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    git = Git(scratch, CAPS, time.monotonic() + 30)
+    hist = git.clone(url, "hist.git", "--filter=blob:none")
+    first = git.run(hist, "rev-parse", "HEAD~1").strip().decode()
+    head = git.fetch_commit(url, "head.git", first)
+    loc, complete = line_counts(git, head, CAPS, first)
+    assert (loc, complete) == ({b"a.py": 1}, True)
+
+
+def test_heartbeat_beats_while_git_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(worker_git, "HEARTBEAT_S", 0.0)
+    beats: list[None] = []
+    url = make_repo(tmp_path, [C({"a.py": "1\n"})])
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    analyse(REPO, scratch, CAPS, url=url, heartbeat=lambda: beats.append(None))
+    assert len(beats) >= 3

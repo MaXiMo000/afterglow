@@ -98,8 +98,17 @@ services:
     environment:
       AFTERGLOW_GIT_PROXY: http://egress:3128
       AFTERGLOW_WORKER_DATABASE_URL: postgresql://afterglow_worker:${AFTERGLOW_DB_WORKER_PASSWORD:?run scripts/dev-env.sh}@db/afterglow
-    # Scratch is tmpfs, capped; clones never touch a persistent disk. Fresh directory per job.
-    tmpfs: ["/scratch:size=1100m,uid=10002,gid=10002,mode=0700"]
+    # Scratch is tmpfs, capped; clones never touch a persistent disk. Fresh directory per job. tmpfs pages count
+    # against mem_limit: the worker keeps all clones of a job under one 512 MB budget (Caps.pack_bytes), so the
+    # size here is that budget plus headroom, leaving the rest of the 1 GB for git and Python.
+    tmpfs: ["/scratch:size=600m,uid=10002,gid=10002,mode=0700"]
+    # The job loop touches /scratch/.alive every poll and every few seconds during a job.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,sys,time; sys.exit(time.time() - os.stat('/scratch/.alive').st_mtime > 180)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     networks: [worker]  # internal: only the egress proxy and the database are reachable
     depends_on:
       egress: { condition: service_started }

@@ -6,6 +6,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
+import psycopg
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -13,6 +14,7 @@ from psycopg_pool import AsyncConnectionPool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from app import db
 from app.api import build_router
 from app.settings import Settings, load_settings
 
@@ -87,6 +89,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/readyz")
+    async def readyz() -> JSONResponse:
+        """For an uptime monitor: 503 when the database is unreachable or no worker is taking queued jobs."""
+        if pool is None:
+            return JSONResponse({"status": "unavailable"}, status_code=503)
+        try:
+            async with pool.connection() as conn:
+                stalled = await db.queue_stalled(conn)
+        except psycopg.Error:
+            return JSONResponse({"status": "database"}, status_code=503)
+        if stalled:
+            return JSONResponse({"status": "queue_stalled"}, status_code=503)
+        return JSONResponse({"status": "ok"})
 
     app.include_router(build_router(cfg, pool))
     return app

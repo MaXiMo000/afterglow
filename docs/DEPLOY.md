@@ -77,7 +77,8 @@ headers at https://securityheaders.com and https://developer.mozilla.org/observa
 
 | Task | Command (from the `afterglow` directory) |
 | --- | --- |
-| Status | `docker compose -f deploy/compose.yaml ps` |
+| Status | `docker compose -f deploy/compose.yaml ps` (the worker reports `unhealthy` if its job loop stops) |
+| Uptime monitor | Point any monitor at `https://<your hostname>/readyz`: `200 {"status":"ok"}`, or `503` with `database` (Postgres unreachable) or `queue_stalled` (jobs waiting over 5 minutes and no worker running) |
 | Logs | `docker compose -f deploy/compose.yaml logs --tail 100 api worker caddy` |
 | Restart | `docker compose -f deploy/compose.yaml --profile worker restart` |
 | Stop | `docker compose -f deploy/compose.yaml --profile worker down` (data is kept in volumes) |

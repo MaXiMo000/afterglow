@@ -3,7 +3,7 @@
 Two clones, both bare and capped (docs/PLAN.md section 3):
 - history: blobless, full history. Read with `git log --name-status -z --no-renames` only; rename detection
   would need file contents, which a blobless clone does not have (and lazy fetching is disabled).
-- head: depth 1, contents of the current tree only, used for line counts. Never checked out.
+- head: the analysed commit only (fetched by id, depth 1), used for line counts. Never checked out.
 Commit messages and author emails are never requested from git.
 """
 
@@ -74,6 +74,7 @@ def parse_log(
     """
     commits: list[Commit] = []
     authors: dict[bytes, int] = {}
+    paths: dict[bytes, bytes] = {}  # one bytes object per distinct path: 200k commits repeat the same paths
     buf = b""
     tokens: list[bytes] = []
 
@@ -88,7 +89,8 @@ def parse_log(
             status = rest[i].lstrip(b"\n")[:1]
             if status not in _STATUSES:
                 raise AnalysisError("unparseable")
-            changes.append((status, rest[i + 1]))
+            path = rest[i + 1]
+            changes.append((status, paths.setdefault(path, path)))
         commits.append(Commit(int(at), authors.setdefault(name, len(authors)), changes))
 
     rec: list[bytes] | None = None
@@ -131,10 +133,10 @@ def district(path: str, split_top: str | None) -> str:
     return parts[0]
 
 
-def line_counts(git: Git, head: Path, caps: Caps) -> tuple[dict[bytes, int], bool]:
-    """Line counts for blobs at HEAD. Returns (counts by raw path, complete?). Binary files count 0."""
+def line_counts(git: Git, head: Path, caps: Caps, rev: str = "HEAD") -> tuple[dict[bytes, int], bool]:
+    """Line counts for blobs at `rev`. Returns (counts by raw path, complete?). Binary files count 0."""
     entries: dict[bytes, list[bytes]] = defaultdict(list)
-    for rec in git.run(head, "ls-tree", "-r", "-z", "--full-tree", "HEAD").split(b"\0"):
+    for rec in git.run(head, "ls-tree", "-r", "-z", "--full-tree", rev).split(b"\0"):
         if not rec:
             continue
         meta, _, path = rec.partition(b"\t")
@@ -164,23 +166,36 @@ def line_counts(git: Git, head: Path, caps: Caps) -> tuple[dict[bytes, int], boo
     counts: dict[bytes, int] = {}
     if batch:
         oid_file.write_bytes(b"\n".join(batch) + b"\n")
-        out = git.run(head, "cat-file", "--batch", stdin=oid_file)
-        pos = 0
-        while pos < len(out):
-            nl = out.index(b"\n", pos)
-            header = out[pos:nl].split(b" ")
-            if len(header) != 3:
-                raise AnalysisError("unparseable")
-            oid, _, size = header
-            body = out[nl + 1 : nl + 1 + int(size)]
-            pos = nl + 1 + int(size) + 1
-            n = (
-                0
-                if b"\0" in body[:8000]
-                else body.count(b"\n") + (1 if body and not body.endswith(b"\n") else 0)
-            )
-            for path in entries[oid]:
-                counts[path] = n
+        # Streamed: one blob (<= caps.blob_bytes) plus one chunk is held at a time, never the whole batch.
+        buf = bytearray()
+        want: tuple[bytes, int] | None = None  # (oid, size) of the blob being read
+        for chunk in git.stream(head, "cat-file", "--batch", stdin=oid_file):
+            buf += chunk
+            while True:
+                if want is None:
+                    nl = buf.find(b"\n")
+                    if nl < 0:
+                        break
+                    header = bytes(buf[:nl]).split(b" ")
+                    if len(header) != 3 or not header[2].isdigit() or header[0] not in entries:
+                        raise AnalysisError("unparseable")
+                    want = (header[0], int(header[2]))
+                    del buf[: nl + 1]
+                oid, blen = want
+                if len(buf) < blen + 1:
+                    break
+                body = bytes(buf[:blen])
+                del buf[: blen + 1]
+                want = None
+                n = (
+                    0
+                    if b"\0" in body[:8000]
+                    else body.count(b"\n") + (1 if body and not body.endswith(b"\n") else 0)
+                )
+                for path in entries[oid]:
+                    counts[path] = n
+        if want is not None or buf:
+            raise AnalysisError("unparseable")
     return counts, complete
 
 
@@ -351,11 +366,17 @@ Progress = Callable[[str, int, int], None]  # (stage, n, total); stages match th
 
 
 def analyse(
-    repo: RepoRef, scratch: Path, caps: Caps, *, url: str | None = None, progress: Progress | None = None
+    repo: RepoRef,
+    scratch: Path,
+    caps: Caps,
+    *,
+    url: str | None = None,
+    progress: Progress | None = None,
+    heartbeat: Callable[[], None] | None = None,
 ) -> Result:
     """Clone, read and score one repository. `url` overrides the GitHub URL for local test fixtures only."""
     report = progress or (lambda *_: None)
-    git = Git(scratch, caps, time.monotonic() + caps.wall_s)
+    git = Git(scratch, caps, time.monotonic() + caps.wall_s, heartbeat)
     source = url or repo.clone_url
     report("cloning", 0, 0)
     hist = git.clone(source, "hist.git", "--filter=blob:none")
@@ -383,8 +404,8 @@ def analyse(
     )  # fmt: skip
     report("sizing", 0, 0)
     try:
-        head = git.clone(source, "head.git", "--depth=1")
-        loc, complete = line_counts(git, head, caps)
+        head = git.fetch_commit(source, "head.git", sha)
+        loc, complete = line_counts(git, head, caps, sha)
     except AnalysisError as exc:
         if exc.reason not in ("too_large", "clone_failed"):
             raise

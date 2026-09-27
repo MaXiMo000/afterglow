@@ -15,6 +15,7 @@ from core.schema import ANALYSER_VERSION
 
 Conn = AsyncConnection[TupleRow]
 FRESH_FOR = "1 hour"  # a result younger than this is served without re-analysing
+STALL_AFTER = "5 minutes"
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +34,17 @@ async def queue_depth(conn: Conn) -> int:
     cur = await conn.execute("SELECT count(*) FROM jobs WHERE status = 'queued'")
     row = await cur.fetchone()
     return int(row[0]) if row else 0
+
+
+async def queue_stalled(conn: Conn) -> bool:
+    """Queued work older than STALL_AFTER while nothing is running: no worker is taking jobs."""
+    cur = await conn.execute(
+        "SELECT EXISTS (SELECT 1 FROM jobs WHERE status = 'queued' AND created < now() - %s::interval) "
+        "AND NOT EXISTS (SELECT 1 FROM jobs WHERE status = 'running')",
+        (STALL_AFTER,),
+    )
+    row = await cur.fetchone()
+    return bool(row and row[0])
 
 
 async def client_active(conn: Conn, client: str) -> int:

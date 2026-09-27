@@ -12,6 +12,10 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 - API: results are re-validated off the event loop (a 50k-file result blocked it for ~0.2 s); IPv6 clients are
   rate-limited per /64; progress-stream slots can no longer leak.
 - Release: images are scanned before they are pushed.
+- Worker: all clones of a job share one 512 MB scratch budget and line counts are streamed, so a large repository can
+  no longer exhaust the worker's memory; a heartbeat during git calls lets a dead worker's job fail after 90 s
+  instead of 3 minutes; line counts come from the analysed commit itself (fetched by id), not whatever HEAD is later.
+- Health: the worker container has a health check, and `/readyz` reports a down database or a stalled queue.
 
 ## v0.2.0 (2026-09-27)
 
