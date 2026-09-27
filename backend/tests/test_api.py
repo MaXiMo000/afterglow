@@ -16,6 +16,7 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
+from app import maint
 from app.limits import Gate, RateLimiter
 from app.main import create_app
 from app.settings import Settings
@@ -28,7 +29,8 @@ from .gitfixture import C, make_repo
 ADMIN = os.environ.get("AFTERGLOW_TEST_ADMIN_URL", "")
 API = os.environ.get("AFTERGLOW_TEST_API_URL", "")
 WORKER = os.environ.get("AFTERGLOW_TEST_WORKER_URL", "")
-if not (ADMIN and API and WORKER):
+MAINT = os.environ.get("AFTERGLOW_TEST_MAINT_URL", "")
+if not (ADMIN and API and WORKER and MAINT):
     if os.environ.get("CI"):
         raise RuntimeError("database tests must run in CI: set AFTERGLOW_TEST_*_URL")
     pytest.skip("no test database configured", allow_module_level=True)
@@ -269,12 +271,53 @@ def test_lost_worker_job_is_failed(client: TestClient) -> None:
         ("WORKER", "UPDATE jobs SET repo = 'x/y'"),
         ("WORKER", "UPDATE jobs SET client = repeat('1', 32)"),
         ("WORKER", "CREATE TABLE x (y int)"),
+        ("MAINT", "INSERT INTO jobs (id, repo, client) VALUES (gen_random_uuid(), 'a/b', repeat('0', 32))"),
+        ("MAINT", "UPDATE jobs SET status = 'failed'"),
+        ("MAINT", "SELECT client FROM jobs"),
+        ("MAINT", "INSERT INTO results (repo, sha, analyser, body) VALUES ('a/b', repeat('a', 40), 1, '')"),
+        ("MAINT", "SELECT body FROM results"),
+        ("MAINT", "CREATE TABLE x (y int)"),
     ],
 )
 def test_roles_are_least_privilege(dsn_name: str, sql: str) -> None:
-    dsn = API if dsn_name == "API" else WORKER
+    dsn = {"API": API, "WORKER": WORKER, "MAINT": MAINT}[dsn_name]
     with psycopg.connect(dsn, autocommit=True) as conn, pytest.raises(psycopg.errors.InsufficientPrivilege):
         conn.execute(sql)
+
+
+def test_retention_deletes_old_jobs_and_unused_results(client: TestClient, tmp_path: Path) -> None:
+    _, fresh = post(client, {"repo": "acme/orbit"})
+    work(tmp_path)  # a fresh job and result: both stay
+    sha = {"old": "1" * 40, "kept": "2" * 40, "v1": "3" * 40}
+    with psycopg.connect(ADMIN, autocommit=True) as conn:
+        for repo, key, analyser in (("a/old", "old", 2), ("a/kept", "kept", 2), ("a/v1", "v1", 1)):
+            conn.execute(
+                "INSERT INTO results (repo, sha, analyser, body, created) "
+                "VALUES (%s, %s, %s, '{}', now() - interval '40 days')",
+                (repo, sha[key], analyser),
+            )
+        # Asked for again recently: its job keeps the old result alive.
+        conn.execute(
+            "INSERT INTO jobs (id, repo, client, status, stage, sha, analyser) "
+            "VALUES (gen_random_uuid(), 'a/kept', repeat('0', 32), 'done', 'done', %s, 2)",
+            (sha["kept"],),
+        )
+        conn.execute(
+            "INSERT INTO jobs (id, repo, client, status, stage, reason, updated) VALUES "
+            "(gen_random_uuid(), 'a/gone', repeat('0', 32), 'failed', 'failed', 'not_found', now() - interval '8 days')"
+        )
+        conn.execute(  # an old job that is still queued is never deleted
+            "INSERT INTO jobs (id, repo, client, updated) "
+            "VALUES (gen_random_uuid(), 'a/wait', repeat('0', 32), now() - interval '8 days')"
+        )
+    with psycopg.connect(MAINT, autocommit=True) as conn:
+        assert maint.prune(conn) == (1, 2)
+    with psycopg.connect(ADMIN) as conn:
+        jobs = sorted(r[0] for r in conn.execute("SELECT repo FROM jobs"))
+        results = sorted(r[0] for r in conn.execute("SELECT repo FROM results"))
+    assert jobs == ["a/kept", "a/wait", "acme/orbit"]
+    assert results == ["a/kept", "acme/orbit"]
+    assert client.get(f"/api/v1/analyses/{fresh['id']}").status_code == 200
 
 
 def test_limiter_and_gate_units() -> None:

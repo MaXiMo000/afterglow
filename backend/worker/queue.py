@@ -92,9 +92,12 @@ def run_job(
             if url is None:
                 sha = Git(Path(tmp), caps, time.monotonic() + 20).remote_head(repo.clone_url)
                 if sha and cached_sha(conn, slug, sha):
-                    finish_done(conn, job, slug, sha, None)
-                    log.info("job %s %s cached", job, slug)
-                    return
+                    try:
+                        finish_done(conn, job, slug, sha, None)
+                        log.info("job %s %s cached", job, slug)
+                        return
+                    except psycopg.errors.ForeignKeyViolation:
+                        pass  # retention deleted the result between the check and now: analyse again
             result: Result = analyse(repo, Path(tmp), caps, url=url, progress=progress)
     except AnalysisError as exc:
         finish_failed(conn, job, exc.reason)

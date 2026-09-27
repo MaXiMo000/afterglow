@@ -60,6 +60,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run scripts/dev-env.sh}
       AFTERGLOW_DB_API_PASSWORD: ${AFTERGLOW_DB_API_PASSWORD:?run scripts/dev-env.sh}
       AFTERGLOW_DB_WORKER_PASSWORD: ${AFTERGLOW_DB_WORKER_PASSWORD:?run scripts/dev-env.sh}
+      AFTERGLOW_DB_MAINT_PASSWORD: ${AFTERGLOW_DB_MAINT_PASSWORD:?run scripts/dev-env.sh}
     volumes:
       - db_data:/var/lib/postgresql/data
       - ./db/init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
@@ -72,6 +73,22 @@ services:
       timeout: 3s
       retries: 20
     mem_limit: 512m
+
+  # Retention (frontend/privacy.html): hourly deletes of finished jobs and unused results, as the only role that can
+  # delete. Same image as the API; it serves nothing.
+  maint:
+    <<: *hardening
+    build: { context: ../backend, dockerfile: Dockerfile.api }
+    command: ["python", "-m", "app.maint"]
+    healthcheck: { disable: true }
+    environment:
+      AFTERGLOW_MAINT_DATABASE_URL: postgresql://afterglow_maint:${AFTERGLOW_DB_MAINT_PASSWORD:?run scripts/dev-env.sh}@db/afterglow
+    tmpfs: [/tmp]
+    networks: [backend]
+    depends_on:
+      db: { condition: service_healthy }
+    mem_limit: 128m
+    pids_limit: 16
 
   worker:
     <<: *hardening

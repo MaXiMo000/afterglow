@@ -88,8 +88,19 @@ headers at https://securityheaders.com and https://developer.mozilla.org/observa
 - Logs are capped at 3 x 10 MB per service. Nothing personal is stored: see `/privacy.html`.
 - The database only holds job records and cached results derived from public repositories, so backups are optional;
   a lost database just means repositories are analysed again.
-- `deploy/db/schema.sql` runs only when the database is first created. If a release changes it, its notes say what to
-  apply (as the `postgres` user, via `docker compose ... exec db psql -U postgres -d afterglow`).
+- The `maint` service deletes finished job records after 7 days, and cached results once they are over 30 days old and
+  nobody has asked for that commit in the last 7 days. Its log line `pruned jobs=N results=M` appears hourly.
+- `deploy/db/schema.sql` runs only when the database is first created. When a release changes it, it ships an upgrade
+  file in `deploy/db/upgrades/` and the changelog says so. Apply them in order, as below.
+
+### Upgrading a database created before the retention service
+```bash
+scripts/dev-env.sh                      # adds AFTERGLOW_DB_MAINT_PASSWORD; existing secrets are kept
+set -a; . deploy/.env; set +a
+docker compose -f deploy/compose.yaml exec -T db psql -U postgres -d afterglow -v ON_ERROR_STOP=1 \
+  -v maint_pw="$AFTERGLOW_DB_MAINT_PASSWORD" < deploy/db/upgrades/0002-retention.sql
+docker compose -f deploy/compose.yaml --profile worker up -d --build --wait
+```
 
 ## Troubleshooting
 
