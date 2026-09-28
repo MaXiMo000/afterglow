@@ -90,6 +90,7 @@ export class App {
   private lanterns: Float32Array | null = null;
   private selected = -1;
   private focusGoal = 0;
+  private tour = -1; // position in insights.hotspots during a J/K tour
   private typesGoal = 0; // colour by file type: 1 on; P.types eases toward it
   private ptrs = new Map<number, { x: number; y: number; t: number }>();
   private dragMoved = 0;
@@ -209,6 +210,7 @@ export class App {
     this.cam.frame(this.world.radius);
     this.cam.snap();
     this.selected = -1;
+    this.tour = -1;
     this.P.focus = -1;
     this.focusGoal = 0;
     this.tT = this.P.t = 1;
@@ -564,6 +566,10 @@ export class App {
       case 'timeline':
         this.timeline.root.hidden = !this.timeline.root.hidden;
         break;
+      case 'tourNext':
+      case 'tourPrev':
+        this.tourStep(id === 'tourNext' ? 1 : -1);
+        break;
       case 'types':
         this.setTypes(!this.typesGoal);
         break;
@@ -610,6 +616,28 @@ export class App {
     this.tT = t;
     this.playing = false;
     if (reducedMotion()) this.P.t = t;
+  }
+
+  /** Hotspot tour (docs/ROADMAP.md #2): fly to the next/previous hotspot, in the insights list order, and say why. */
+  private tourStep(dir: 1 | -1): void {
+    const r = this.result;
+    const list = r?.insights.hotspots ?? [];
+    if (!r || !list.length) {
+      this.toast('No hotspots in this repository: nothing changed often, by few people, in the last 12 months.');
+      return;
+    }
+    const at = list.indexOf(this.selected); // continue from a hotspot picked by hand
+    const from = at >= 0 ? at : this.tour;
+    this.tour = from < 0 ? (dir > 0 ? 0 : list.length - 1) : (from + dir + list.length) % list.length;
+    const i = list[this.tour]!;
+    const f = r.files[i]!;
+    this.select(i, true);
+    const name = f.path.slice(f.path.lastIndexOf('/') + 1);
+    const why = `${fmt(f.changes_12m)} changes in the last 12 months`;
+    setText($('#placeEy'), `Hotspot ${this.tour + 1} of ${list.length}`);
+    setText($('#placeName'), name);
+    setText($('#placeSub'), `${r.dirs[f.dir]?.name ?? ''} · ${why} · J next, K previous`);
+    this.announce(`Hotspot ${this.tour + 1} of ${list.length}: ${f.path}, ${why}.`);
   }
 
   /** Colour by file type (docs/ROADMAP.md #1). Compare mode also recolours buildings, so the two never overlap. */

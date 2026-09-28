@@ -110,6 +110,19 @@ test('every explore feature is reachable by keyboard alone', async ({ page }) =>
   await expect(page.locator('body')).toHaveClass(/mode-story/);
 });
 
+test('hotspot tour: J and K step through the hotspots and wrap around', async ({ page }) => {
+  await openCity(page);
+  await key(page, 'j');
+  await expect(page.locator('#placeEy')).toHaveText('Hotspot 1 of 2');
+  await expect(page.locator('#inspector .path')).toHaveText(/f0\.py$/);
+  await key(page, 'j');
+  await expect(page.locator('#placeEy')).toHaveText('Hotspot 2 of 2');
+  await key(page, 'j');
+  await expect(page.locator('#placeEy')).toHaveText('Hotspot 1 of 2'); // wraps
+  await key(page, 'k');
+  await expect(page.locator('#announce')).toContainText('Hotspot 2 of 2:');
+});
+
 test('colour by file type: legend, inspector row, and never together with compare', async ({ page }) => {
   await openCity(page);
   await key(page, 'y');
