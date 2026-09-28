@@ -1522,13 +1522,16 @@ export class App {
     $('#btnTable').addEventListener('click', () => this.openTable($('#tableView').hasAttribute('hidden')));
     addEventListener('keyup', (e) => this.held.delete(e.key.toLowerCase()));
     addEventListener('blur', () => this.held.clear());
+    const keyFromDialog = new WeakSet<Event>();
+    addEventListener('keydown', (e) => void (document.querySelector('dialog[open]') && keyFromDialog.add(e)), true);
     addEventListener('keydown', (e) => {
       const active = document.activeElement as HTMLElement | null;
       // An input inside a just-closed dialog can stay activeElement until the browser's focus fixup runs.
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(active?.tagName ?? '') && !active?.closest('dialog:not([open])');
       if (document.querySelector('dialog[open]')) return; // dialogs handle their own keys (Esc closes)
-      // A key that started in a dialog (Enter picking a palette result, say) has closed it by now: not ours either.
-      if (e.target instanceof Element && e.target.closest('dialog')) return;
+      // A key that began while a dialog was open (Enter picking a palette result, say) has closed it by now: not
+      // ours either. Marked in the capture phase, so later keys still work while focus lingers in a closed dialog.
+      if (keyFromDialog.has(e)) return;
       if (e.key === 'Escape' || (e.key === 'Backspace' && !typing)) {
         // Back out one level: photo -> table -> panels/selection/compare -> story -> start page.
         if (this.rec) return this.stopRecording(false);
