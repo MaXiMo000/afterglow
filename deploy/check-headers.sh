@@ -6,6 +6,8 @@ BASE="${1:-https://localhost:8443}"
 fail=0
 
 CSP="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types 'none'"
+# The embeddable city (ROADMAP #12) may be framed by https pages; the rest of the policy is identical.
+CSP_EMBED="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors https:; base-uri 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types 'none'"
 
 declare -A WANT=(
   [content-security-policy]="$CSP"
@@ -50,7 +52,7 @@ fi
 
 # The embeddable city (ROADMAP #12) is the only framable page: https parents only, no X-Frame-Options (it would
 # override frame-ancestors). Everything else in the set is unchanged, and the rest of the site stays DENY / 'none'.
-WANT[content-security-policy]="${CSP/frame-ancestors 'none'/frame-ancestors https:}"
+WANT[content-security-policy]="$CSP_EMBED"
 unset 'WANT[x-frame-options]'
 check /embed/octocat/hello-world
 if curl -sSk -D - -o /dev/null "$BASE/embed/octocat/hello-world" | grep -qi '^x-frame-options:'; then

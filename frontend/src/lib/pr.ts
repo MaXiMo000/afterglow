@@ -9,7 +9,7 @@ export type Pr = { repo: string; pr: number; merge: string; base: string; trunca
 
 export const MAX_PR_PATHS = 3000;
 const SHA = /^([0-9a-f]{40}|[0-9a-f]{64})$/;
-const UNSAFE = /[\u0000-\u001f\u007f-\u009f؜​-‏‪-‮⁠-⁩﻿]/;
+const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/;
 const STATUSES = ['added', 'modified', 'deleted', 'renamed'] as const;
 
 export class InvalidPr extends Error {}

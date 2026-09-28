@@ -471,8 +471,9 @@ def test_wait_estimate(client: TestClient) -> None:
 
     post(client, {"repo": "w/queued"})
     job = post(client, {"repo": "w/mine"}, ip="198.51.100.9")[1]["id"]
-    events = client.get(f"/api/v1/analyses/{job}/events", timeout=5)
-    first = json.loads(next(line[6:] for line in events.text.splitlines() if line.startswith("data: ")))
+    # The job stays queued, so the stream would stay open: read the first event and hang up.
+    with client.stream("GET", f"/api/v1/analyses/{job}/events") as events:
+        first = json.loads(next(line[6:] for line in events.iter_lines() if line.startswith("data: ")))
     assert (first["ahead"], first["wait"]) == (1, 60)  # one job ahead, one worker assumed: two run times
 
 
