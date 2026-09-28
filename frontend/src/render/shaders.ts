@@ -103,7 +103,7 @@ void main(){
 }`,
 fs:H+NOISE+`
 in vec3 vW;in vec3 vN;in vec2 vXZ;in vec2 vSize;in vec4 vB;in vec4 vC;in float vG;in float vTop;flat in float vInst;flat in float vDist;flat in float vType;
-uniform float uT,uTime,uFog,uHot,uFocus,uFocusAmt,uHover,uLift,uFlow,uType;uniform vec3 uCam,uFogCol,uCmp;uniform vec3 uPal[5];uniform vec3 uTypeCol[10];/* PORT: 5 palette kinds, not 12 districts */
+uniform float uT,uTime,uFog,uHot,uFocus,uFocusAmt,uHover,uLift,uFlow,uType,uWeather;uniform vec3 uCam,uFogCol,uCmp;uniform vec3 uPal[5];uniform vec3 uTypeCol[10];/* PORT: 5 palette kinds, not 12 districts */
 out vec4 o;
 void main(){
   vec3 N=normalize(vN);vec3 tc=uCam-vW;float dist=length(tc);vec3 V=tc/dist;
@@ -168,6 +168,9 @@ void main(){
   col+=vec3(.20,.42,.5)*hv*(.5+rim*2.);emis+=vec3(.2,.5,.6)*hv*.6*win+warm*hv*lit*win*.8*uLift;
   if(uHover>-.5&&hv<.5){col*=mix(1.,.8,uLift);emis*=mix(1.,.78,uLift);} /* A6: neighbours dim */
   vec3 c=col+emis;
+  /* weather (ROADMAP #5): low haze drifting round the feet of towers in quiet districts (palette 4 = quiet) */
+  float qf=uWeather*step(3.5,vC.x)*(1.-smoothstep(.28,3.4,vW.y))*(.75+.25*sin(vW.x*.35+uTime*.12)*sin(vW.z*.3-uTime*.09));
+  c=mix(c,vec3(.34,.42,.45),qf*.72);
   float fg=1.-exp(-dist*uFog);fg*=mix(1.,.5,smoothstep(0.,18.,vW.y));
   c=mix(c,uFogCol,fg);
   o=vec4(c,1.);
@@ -181,7 +184,7 @@ uniform mat4 uVP;out vec3 vW;out float vRad;out float vD;flat out vec4 vDist;
 void main(){vW=aPos;vRad=aR.x;vD=aR.y;vDist=aD;gl_Position=uVP*vec4(aPos,1.);}`,
 fs:H+NOISE+`
 in vec3 vW;in float vRad;in float vD;flat in vec4 vDist;
-uniform float uT,uTime,uFog,uFlow;uniform vec3 uCam,uFogCol,uRim[5];out vec4 o;
+uniform float uT,uTime,uFog,uFlow,uWeather;uniform vec3 uCam,uFogCol,uRim[5];out vec4 o;
 void main(){
   /* A born district shows fully; while history plays it dissolves in (dither), never as a black disc. */
   float vis=step(vDist.x,uT)*mix(1.,smoothstep(vDist.x,vDist.x+.05,uT),uFlow);
@@ -195,6 +198,7 @@ void main(){
   c+=uRim[int(vDist.w+.5)]*rim*(.5+.5*sin(uTime*.6+vD*1.7))*.9*mix(.25,1.,alive);
   float dist=length(uCam-vW);float fg=1.-exp(-dist*uFog);
   c=mix(c,uFogCol,fg*.9);
+  c=mix(c,vec3(.30,.38,.41),uWeather*step(3.5,vDist.w)*.45);/* weather: quiet districts' ground under haze */
   o=vec4(c,1.);
 }`};
 
@@ -245,6 +249,22 @@ void main(){
 }`,
 fs:H+NOISE+`in vec2 vQ;in float vD;in float vPh;uniform vec3 uFogCol;uniform float uTime;out vec4 o;
 void main(){float r=length(vQ);float a=pow(clamp(1.-r,0.,1.),1.6)*(.55+.45*vnoise(vQ*3.+vPh*20.+uTime*.02));a*=.10*smoothstep(8.,40.,vD);o=vec4(uFogCol*1.25*a,a);}`};
+
+/* Weather (ROADMAP #5). Rain: one line per drop, falling at a slight wind angle over the busiest districts; frozen
+   (still streaks) under reduced motion. uAmt eases the toggle. The fog half is a term in the bld and pad shaders. */
+SRC.rain={vs:H+`
+layout(location=0) in float aE;layout(location=1) in vec4 iP;
+uniform mat4 uVP;uniform vec3 uCam;uniform float uTime,uMotion;out float vA;
+void main(){
+  float H=16.;
+  float y=H-mod(uTime*(9.+iP.w*5.)*uMotion+iP.z*H,H)+.3;
+  vec3 p=vec3(iP.x,y,iP.y)+vec3(.16,-1.,.07)*aE*1.5;
+  float d=length(uCam-p);
+  vA=(1.-aE*.9)*smoothstep(.3,1.2,y)*smoothstep(H+.3,H-2.5,y)*clamp(70./d,.2,1.);
+  gl_Position=uVP*vec4(p,1.);
+}`,
+fs:H+`in float vA;uniform float uAmt;out vec4 o;void main(){float a=vA*uAmt*.26;o=vec4(vec3(.66,.8,.98)*a,a);}`};
+
 
 SRC.bright={vs:H+FS_TRI,fs:H+`in vec2 vUv;uniform sampler2D uTex;uniform vec2 uTexel;uniform float uThr;out vec4 o;
 void main(){vec2 u=vUv;vec3 c=(texture(uTex,u+uTexel*.5).rgb+texture(uTex,u-uTexel*.5).rgb+texture(uTex,u+vec2(uTexel.x,-uTexel.y)*.5).rgb+texture(uTex,u+vec2(-uTexel.x,uTexel.y)*.5).rgb)*.25;

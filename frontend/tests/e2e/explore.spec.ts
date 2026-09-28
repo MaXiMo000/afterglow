@@ -110,6 +110,13 @@ test('every explore feature is reachable by keyboard alone', async ({ page }) =>
   await expect(page.locator('body')).toHaveClass(/mode-story/);
 });
 
+test('weather on the Fast tier explains it needs Balanced or Cinematic', async ({ page }) => {
+  await openCity(page); // ?quality=simple: weather needs Balanced or Cinematic, and says so
+  await key(page, 'z');
+  await expect(page.locator('#toast')).toContainText('Weather needs the Balanced or Cinematic graphics setting');
+  await expect(page.locator('#weatherLegend')).toBeHidden();
+});
+
 test('walk mode: X enters, keys move, Esc leaves; camera flights take over', async ({ page }) => {
   await openCity(page);
   await key(page, 'x');

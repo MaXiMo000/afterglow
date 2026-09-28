@@ -12,6 +12,7 @@ import { DynRes } from '../render/dynres';
 import { Renderer, RendererError, TIERS, type Params } from '../render/renderer';
 import { buildWorld, type World } from '../world/build';
 import { TYPE_COLOURS } from '../world/types';
+import { weather } from '../world/weather';
 import { buildCamera, OrbitCamera, orbitFromPose, rayThrough, type Preset } from './camera';
 import { $, ago, el, fmt, fmtDate, reducedMotion, setText } from './dom';
 import { actionFor, KEYMAP, type ActionId } from './keymap';
@@ -81,7 +82,7 @@ export class App {
   private readonly cam = new OrbitCamera();
   private readonly P: Params = {
     t: 1, fog: FOG, hot: 0.5, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.035, ca: 1,
-    arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0,
+    arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0, weather: 0,
   }; // prettier-ignore
   private time = 0;
   private last = 0;
@@ -94,6 +95,7 @@ export class App {
   private walker: Walker | null = null; // walk mode (docs/ROADMAP.md #3)
   private hintsText = '';
   private tour = -1; // position in insights.hotspots during a J/K tour
+  private weatherGoal = 0; // weather layer: 1 on; P.weather eases toward it
   private typesGoal = 0; // colour by file type: 1 on; P.types eases toward it
   private ptrs = new Map<number, { x: number; y: number; t: number }>();
   private dragMoved = 0;
@@ -238,7 +240,8 @@ export class App {
     }
     renderSummary(r, $('#summaryBody'));
     this.renderHonesty();
-    if (this.typesGoal) this.setTypes(true, false); // keep the mode across repositories; its legend is per result
+    if (this.typesGoal) this.setTypes(true, false);
+    if (this.weatherGoal) this.setWeather(true, false); // keep the mode across repositories; its legend is per result
     if (!this.demo) {
       setText($('#hudRepo'), r.meta.repo);
       $('#hudRepo').title = r.meta.repo; // full name on hover when the slot truncates it
@@ -590,6 +593,9 @@ export class App {
       case 'tourPrev':
         this.tourStep(id === 'tourNext' ? 1 : -1);
         break;
+      case 'weather':
+        this.setWeather(!this.weatherGoal);
+        break;
       case 'types':
         this.setTypes(!this.typesGoal);
         break;
@@ -699,6 +705,35 @@ export class App {
     setText($('#placeName'), name);
     setText($('#placeSub'), `${r.dirs[f.dir]?.name ?? ''} · ${why} · J next, K previous`);
     this.announce(`Hotspot ${this.tour + 1} of ${list.length}: ${f.path}, ${why}.`);
+  }
+
+  /** Weather (docs/ROADMAP.md #5): decorative, but only where the data says, and the legend says what it means. */
+  private setWeather(on: boolean, announce = true): void {
+    const box = $('#weatherLegend');
+    const r = this.result;
+    if (on && this.renderer?.tierName === 'simple') {
+      this.toast('Weather needs the Balanced or Cinematic graphics setting (? to change it).');
+      on = false;
+    }
+    this.weatherGoal = on && r ? 1 : 0;
+    if (!this.weatherGoal || !r) {
+      box.hidden = true;
+      if (announce) this.announce('Weather off');
+      return;
+    }
+    const w = weather(r);
+    const row = (cls: string, text: string): HTMLElement => {
+      const p = el('div');
+      const i = el('i', null, cls);
+      i.setAttribute('aria-hidden', 'true');
+      p.append(i, document.createTextNode(text));
+      return p;
+    };
+    const rain = w.rain.length ? `Rain: the ${fmt(w.rain.length)} busiest ${w.rain.length === 1 ? 'district' : 'districts'} by changes in the last 12 months` : 'No rain: no district changed in the last 12 months';
+    const fog = w.fog.length ? `Fog: ${fmt(w.fog.length)} quiet ${w.fog.length === 1 ? 'district' : 'districts'} (no change in 2 years)` : 'No fog: no quiet districts';
+    box.replaceChildren(el('strong', 'Weather'), row('rain', rain), row('fog', fog), el('p', 'Decoration tied to those numbers, nothing more. Z to turn off.', 'sub'));
+    box.hidden = false;
+    if (announce) this.announce(`Weather on. ${rain}. ${fog}.`);
   }
 
   /** Colour by file type (docs/ROADMAP.md #1). Compare mode also recolours buildings, so the two never overlap. */
@@ -1035,6 +1070,7 @@ export class App {
         if (this.walker) return this.setWalk(false);
         if (this.compare) return this.setCompare(null);
         if (this.typesGoal) return this.setTypes(false);
+        if (this.weatherGoal) return this.setWeather(false);
         if (this.selected >= 0 || this.P.focus >= 0) return this.select(-1);
         if (this.insights.open) return this.run('insights');
         if ((this.mode === 'city' && !this.demo) || this.mode === 'story') {
@@ -1414,6 +1450,7 @@ export class App {
     this.fov = fov;
     this.lastPose = { pos, tgt };
     P.focusAmt += (this.focusGoal - P.focusAmt) * (1 - Math.exp(-dt * 5));
+    P.weather = reduced ? this.weatherGoal : P.weather + (this.weatherGoal - P.weather) * (1 - Math.exp(-dt * 2)); // slow fade in
     P.types = reduced ? this.typesGoal : P.types + (this.typesGoal - P.types) * (1 - Math.exp(-dt * 5)); // cross-fade
     const C = this.cameraNow(pos, tgt, fov);
     this.lastVP = C.vp;

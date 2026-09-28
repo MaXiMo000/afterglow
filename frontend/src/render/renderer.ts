@@ -9,12 +9,13 @@ import { mirrorY, rng, type M4, type V3 } from './math';
 import { SRC } from './shaders';
 import { INST, type World } from '../world/build';
 import { TYPE_COLOURS } from '../world/types';
+import { weather } from '../world/weather';
 
-export type Tier = { name: 'simple' | 'balanced' | 'cinematic'; dpr: number; refl: number; bloom: 0 | 1 | 2; msaa: number; mist: number; cloud: number; fire: number; dof: 0 | 1 | 2; flare: 0 | 1 | 2 };
+export type Tier = { name: 'simple' | 'balanced' | 'cinematic'; dpr: number; refl: number; bloom: 0 | 1 | 2; msaa: number; mist: number; cloud: number; fire: number; dof: 0 | 1 | 2; flare: 0 | 1 | 2; rain: number };
 export const TIERS: readonly Tier[] = [
-  { name: 'simple', dpr: 1.0, refl: 0, bloom: 0, msaa: 0, mist: 0, cloud: 0, fire: 60, dof: 0, flare: 0 },
-  { name: 'balanced', dpr: 1.25, refl: 0.35, bloom: 1, msaa: 0, mist: 10, cloud: 1, fire: 120, dof: 1, flare: 1 },
-  { name: 'cinematic', dpr: 1.75, refl: 0.5, bloom: 2, msaa: 4, mist: 26, cloud: 1, fire: 220, dof: 2, flare: 2 },
+  { name: 'simple', dpr: 1.0, refl: 0, bloom: 0, msaa: 0, mist: 0, cloud: 0, fire: 60, dof: 0, flare: 0, rain: 0 },
+  { name: 'balanced', dpr: 1.25, refl: 0.35, bloom: 1, msaa: 0, mist: 10, cloud: 1, fire: 120, dof: 1, flare: 1, rain: 2500 },
+  { name: 'cinematic', dpr: 1.75, refl: 0.5, bloom: 2, msaa: 4, mist: 26, cloud: 1, fire: 220, dof: 2, flare: 2, rain: 6000 },
 ];
 
 export type Camera = { vp: M4; vpR: M4; pos: V3; posR: V3; right: V3; up: V3; fwd: V3; tanH: number; near: number; far: number };
@@ -26,7 +27,9 @@ export type Params = { t: number; fog: number; hot: number; focus: number; focus
    *  moving (growth glow, birth rings and half-grown heights only show while it moves). */
   lift: number; sel: number; focusDist: number; dof: number; motion: number; flow: number;
   /** Colour by file type, 0..1 (eased by the app so the switch cross-fades). */
-  types: number };
+  types: number;
+  /** Weather layer, 0..1 (eased). */
+  weather: number };
 
 const FOG_COL: V3 = [0.075, 0.17, 0.19];
 const MOON: V3 = [-0.42, 0.36, -0.83];
@@ -35,6 +38,7 @@ const RIM = [[0.25, 0.95, 0.8], [0.7, 0.52, 1], [0.38, 0.6, 1], [1, 0.7, 0.4], [
 const TYPE_COL = TYPE_COLOURS.flatMap((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255));
 const MAX_FIRE = 220;
 const MAX_MIST = 26;
+const MAX_RAIN = 6000;
 
 type Prog = { p: WebGLProgram; u: Record<string, WebGLUniformLocation | null> };
 type Target = { f: WebGLFramebuffer; t: WebGLTexture | null; rbs: WebGLRenderbuffer[]; w: number; h: number; d?: WebGLTexture };
@@ -51,10 +55,13 @@ export class Renderer {
   private readonly maxSamples: number;
   private T: Record<string, Target> = {};
   private tier: Tier = TIERS[2]!;
+  get tierName(): Tier['name'] {
+    return this.tier.name;
+  }
   private cw = 2;
   private ch = 2;
   private world: World | null = null;
-  private vaos: { bld?: WebGLVertexArrayObject; pad?: WebGLVertexArrayObject; beam?: WebGLVertexArrayObject; fire?: WebGLVertexArrayObject; lant?: WebGLVertexArrayObject; mist?: WebGLVertexArrayObject; water?: WebGLVertexArrayObject; ripple?: WebGLVertexArrayObject; curves: WebGLVertexArrayObject[] } = { curves: [] };
+  private vaos: { bld?: WebGLVertexArrayObject; pad?: WebGLVertexArrayObject; beam?: WebGLVertexArrayObject; fire?: WebGLVertexArrayObject; lant?: WebGLVertexArrayObject; mist?: WebGLVertexArrayObject; rain?: WebGLVertexArrayObject; water?: WebGLVertexArrayObject; ripple?: WebGLVertexArrayObject; curves: WebGLVertexArrayObject[] } = { curves: [] };
   private buffers: WebGLBuffer[] = [];
   private n = 0;
   private padCount = 0;
@@ -308,6 +315,30 @@ export class Renderer {
       this.buf(new Float32Array([-1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, 1])), this.attr(0, 2);
       this.buf(mist), this.attr(1, 4, 16, 0, 1);
     });
+
+    // Weather (ROADMAP #5): rain drops spread over the rainy districts by area (fog is a shader term, no geometry).
+    const wx = weather(w.result);
+    const rainD = wx.rain.map((i) => w.dists[i]!).filter(Boolean);
+    const area = rainD.reduce((s, d) => s + d.r * d.r, 0) || 1;
+    const drops = new Float32Array(MAX_RAIN * 4);
+    let n = 0;
+    for (const d of rainD) {
+      const k = d === rainD[rainD.length - 1] ? MAX_RAIN - n : Math.round((MAX_RAIN * d.r * d.r) / area);
+      for (let j = 0; j < k && n < MAX_RAIN; j++, n++) {
+        const a = R() * Math.PI * 2;
+        const rr = Math.sqrt(R()) * d.r * 1.05;
+        drops.set([d.x + Math.cos(a) * rr, d.z + Math.sin(a) * rr, R(), R()], n * 4);
+      }
+    }
+    // Shuffle, so a tier that draws only the first N drops still rains on every rainy district.
+    for (let i = n - 1; i > 0; i--) {
+      const j = Math.floor(R() * (i + 1));
+      for (let c = 0; c < 4; c++) [drops[i * 4 + c], drops[j * 4 + c]] = [drops[j * 4 + c]!, drops[i * 4 + c]!];
+    }
+    this.vaos.rain = this.vao(() => {
+      this.buf(new Float32Array([0, 1])), this.attr(0, 1);
+      this.buf(drops), this.attr(1, 4, 16, 0, 1);
+    });
   }
 
   // ---------- render targets ----------
@@ -478,6 +509,7 @@ export class Renderer {
     gl.uniform3fv(u['uFogCol']!, FOG_COL);
     gl.uniform3fv(u['uRim']!, RIM);
     gl.uniform1f(u['uFlow']!, P.flow);
+    gl.uniform1f(u['uWeather']!, this.tier.rain ? P.weather : 0);
     gl.bindVertexArray(this.vaos.pad!);
     gl.drawArrays(gl.TRIANGLES, 0, this.padCount);
 
@@ -496,6 +528,7 @@ export class Renderer {
     gl.uniform1f(u['uFlow']!, P.flow);
     gl.uniform3fv(u['uPal']!, PAL);
     gl.uniform1f(u['uType']!, P.types);
+    gl.uniform1f(u['uWeather']!, this.tier.rain ? P.weather : 0);
     gl.uniform3fv(u['uTypeCol']!, TYPE_COL);
     gl.uniform3fv(u['uCmp']!, refl ? [0, 0, 0] : P.cmp);
     gl.bindVertexArray(this.vaos.bld!);
@@ -561,6 +594,17 @@ export class Renderer {
       gl.uniform3fv(u['uFogCol']!, FOG_COL);
       gl.bindVertexArray(this.vaos.mist!);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, Math.min(this.tier.mist, MAX_MIST));
+    }
+    if (P.weather > 0.01 && this.tier.rain) {
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      u = this.use('rain');
+      gl.uniformMatrix4fv(u['uVP']!, false, vp);
+      gl.uniform3fv(u['uCam']!, cp);
+      gl.uniform1f(u['uTime']!, time);
+      gl.uniform1f(u['uMotion']!, P.motion);
+      gl.uniform1f(u['uAmt']!, P.weather);
+      gl.bindVertexArray(this.vaos.rain!);
+      gl.drawArraysInstanced(gl.LINES, 0, 2, Math.min(this.tier.rain, MAX_RAIN));
     }
     gl.depthMask(true);
     gl.disable(gl.BLEND);
