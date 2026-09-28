@@ -8,6 +8,7 @@
 import { mirrorY, rng, type M4, type V3 } from './math';
 import { SRC } from './shaders';
 import { INST, type World } from '../world/build';
+import { TYPE_COLOURS } from '../world/types';
 
 export type Tier = { name: 'simple' | 'balanced' | 'cinematic'; dpr: number; refl: number; bloom: 0 | 1 | 2; msaa: number; mist: number; cloud: number; fire: number; dof: 0 | 1 | 2; flare: 0 | 1 | 2 };
 export const TIERS: readonly Tier[] = [
@@ -23,12 +24,15 @@ export type Params = { t: number; fog: number; hot: number; focus: number; focus
   /** Effects (A6): hover lift 0..1, selected file (-1 none), focus distance for depth of field (0 off), DOF amount,
    *  motion 0/1 (reduced motion turns off ripples, heartbeat and trails), flow 0..1 = how fast history time is
    *  moving (growth glow, birth rings and half-grown heights only show while it moves). */
-  lift: number; sel: number; focusDist: number; dof: number; motion: number; flow: number };
+  lift: number; sel: number; focusDist: number; dof: number; motion: number; flow: number;
+  /** Colour by file type, 0..1 (eased by the app so the switch cross-fades). */
+  types: number };
 
 const FOG_COL: V3 = [0.075, 0.17, 0.19];
 const MOON: V3 = [-0.42, 0.36, -0.83];
 const PAL = [[0.1, 0.22, 0.26], [0.17, 0.14, 0.3], [0.11, 0.17, 0.32], [0.26, 0.19, 0.15], [0.13, 0.16, 0.16]].flat();
 const RIM = [[0.25, 0.95, 0.8], [0.7, 0.52, 1], [0.38, 0.6, 1], [1, 0.7, 0.4], [0.45, 0.6, 0.6]].flat();
+const TYPE_COL = TYPE_COLOURS.flatMap((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255));
 const MAX_FIRE = 220;
 const MAX_MIST = 26;
 
@@ -491,6 +495,8 @@ export class Renderer {
     gl.uniform1f(u['uLift']!, refl ? 0 : P.lift);
     gl.uniform1f(u['uFlow']!, P.flow);
     gl.uniform3fv(u['uPal']!, PAL);
+    gl.uniform1f(u['uType']!, P.types);
+    gl.uniform3fv(u['uTypeCol']!, TYPE_COL);
     gl.uniform3fv(u['uCmp']!, refl ? [0, 0, 0] : P.cmp);
     gl.bindVertexArray(this.vaos.bld!);
     gl.drawElementsInstanced(gl.TRIANGLES, 30, gl.UNSIGNED_SHORT, 0, this.n);

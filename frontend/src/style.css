@@ -213,11 +213,17 @@ kbd { font: var(--size-xs) var(--font-mono); padding: 0 5px; border: 1px solid v
 #compareLegend .c-after { background: #8ab4ff; }
 #compareLegend .c-before { background: #56626b; }
 #compareLegend .c-removed { background: transparent; border: 1px dashed #ff9a8f; }
+#typeLegend { position: fixed; z-index: var(--z-hud); left: var(--gutter); top: calc(env(safe-area-inset-top, 0px) + 70px); display: grid; gap: 5px; padding: 12px 14px;
+  font-size: var(--size-sm); background: var(--color-glass); border: 1px solid var(--color-line); border-radius: var(--radius-md); backdrop-filter: blur(10px); min-width: 190px; max-width: 320px; }
+#typeLegend div { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center; }
+#typeLegend i { width: 10px; height: 10px; border-radius: 2px; box-shadow: 0 0 8px currentColor; }
+#typeLegend .ext { font-family: var(--font-mono); }
+#typeLegend .num { color: var(--color-dim); font-variant-numeric: tabular-nums; }
 #minimap { position: fixed; z-index: var(--z-hud); right: var(--gutter); bottom: calc(env(safe-area-inset-bottom, 0px) + 120px); width: 180px; height: 180px; border-radius: var(--radius-md); border: 1px solid var(--color-line); cursor: crosshair; }
 #photoBar { position: fixed; z-index: var(--z-overlay); left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 32px); display: flex; gap: 16px; align-items: center; }
 #toast { position: fixed; z-index: var(--z-toast); left: 50%; top: 72px; transform: translateX(-50%); margin: 0; padding: 8px 14px; font-size: var(--size-sm);
   background: var(--color-glass-hi); border: 1px solid var(--color-line); border-radius: var(--radius-sm); }
-body.photo #hud, body.photo #honesty, body.photo #timeline, body.photo #insights, body.photo #inspector, body.photo #minimap, body.photo #place, body.photo #hints, body.photo #compareLegend { display: none !important; }
+body.photo #hud, body.photo #honesty, body.photo #timeline, body.photo #insights, body.photo #inspector, body.photo #minimap, body.photo #place, body.photo #hints, body.photo #compareLegend, body.photo #typeLegend { display: none !important; }
 dialog { background: var(--color-glass-hi); color: var(--color-text); border: 1px solid var(--color-line); border-radius: var(--radius-md); box-shadow: var(--shadow-panel); padding: 0; }
 dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px); }
 #palette { width: min(600px, calc(100vw - 32px)); margin-top: 14vh; }
@@ -278,7 +284,7 @@ dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
 
 
 /* A6 motion language: mode changes and panels fade and rise instead of popping (disabled with reduced motion) */
-#hero, #loading, #city, #story, #tableView, .panel, #timeline, #compareLegend, #minimap, #photoBar, #toast, #tip, .chip {
+#hero, #loading, #city, #story, #tableView, .panel, #timeline, #compareLegend, #typeLegend, #minimap, #photoBar, #toast, #tip, .chip {
   transition-property: opacity, translate, display, overlay, border-color, background, transform;
   transition-duration: var(--motion-slow), var(--motion-slow), var(--motion-slow), var(--motion-slow), var(--motion-base), var(--motion-base), var(--motion-fast);
   transition-timing-function: var(--motion-ease-out);
@@ -286,7 +292,7 @@ dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
 }
 @starting-style {
   #hero:not([hidden]), #loading:not([hidden]), #city:not([hidden]), #story:not([hidden]), #tableView:not([hidden]),
-  .panel:not([hidden]), #timeline:not([hidden]), #compareLegend:not([hidden]), #minimap:not([hidden]), #photoBar:not([hidden]), #toast:not([hidden]) {
+  .panel:not([hidden]), #timeline:not([hidden]), #compareLegend:not([hidden]), #typeLegend:not([hidden]), #minimap:not([hidden]), #photoBar:not([hidden]), #toast:not([hidden]) {
     opacity: 0;
     translate: 0 10px;
   }

@@ -7,9 +7,10 @@
  */
 import { clamp, hashStr, rng, type V3 } from '../render/math';
 import type { Result } from '../lib/result';
+import { fileTypes, type FileTypes } from './types';
 
 export const CELL = 1.6;
-/** Floats per building instance: iA(x,z,w,d) iB(h,birth,last,activity) iC(palette,seed,hot,dead) iD(district,0,0,0). */
+/** Floats per building instance: iA(x,z,w,d) iB(h,birth,last,activity) iC(palette,seed,hot,dead) iD(district,type,0,0). */
 export const INST = 16;
 
 export type District = {
@@ -40,6 +41,8 @@ export type World = {
   radius: number;
   /** true when heights come from change counts because line counts were unavailable (must be labelled). */
   heightFromChanges: boolean;
+  /** File extension groups for colour-by-type (index per file is in each instance's iD.y). */
+  types: FileTypes;
 };
 
 /** Palette kinds (index into uPal/uRim): 0 core teal, 1 violet, 2 tests/infra blue, 3 docs amber, 4 quiet grey. */
@@ -133,6 +136,7 @@ export function buildWorld(result: Result): World {
   }
 
   const heightFromChanges = meta.truncated.sizes && files.every((f) => f.loc === 0);
+  const types = fileTypes(result);
   const inst = new Float32Array(files.length * INST);
   const pos = new Float32Array(files.length * 3);
   for (const d of D) {
@@ -160,7 +164,7 @@ export function buildWorld(result: Result): World {
       const act = f.dead ? 0.05 : f.changes_12m > 0 ? clamp(0.25 + (0.75 * Math.log1p(f.changes_12m)) / Math.log1p(maxC12), 0, 0.98) : 0.08;
       const w = 0.72 + fs * 0.56;
       const dp = 0.72 + ((fs * 7.31) % 1) * 0.56;
-      inst.set([cell[0], cell[1], w, dp, h, birth, last, act, d.pal, fs, f.hot ? 1 : 0, f.dead ? 1 : 0, d.index, 0, 0, 0], fi * INST);
+      inst.set([cell[0], cell[1], w, dp, h, birth, last, act, d.pal, fs, f.hot ? 1 : 0, f.dead ? 1 : 0, d.index, types.index[fi]!, 0, 0], fi * INST);
       pos.set([cell[0], 0.28 + h, cell[1]], fi * 3);
       d.birth = Math.min(d.birth, birth);
       d.last = Math.max(d.last, last);
@@ -226,5 +230,5 @@ export function buildWorld(result: Result): World {
   let radius = 20;
   for (const d of D) radius = Math.max(radius, Math.hypot(d.x, d.z) + d.r);
 
-  return { result, seed, t0, t1, dists: D, inst, pos, hot, curves, lanterns, radius, heightFromChanges };
+  return { result, seed, t0, t1, dists: D, inst, pos, hot, curves, lanterns, radius, heightFromChanges, types };
 }

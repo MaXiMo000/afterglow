@@ -4,6 +4,7 @@
  */
 import { beforeWindow, dirBeforeWindow, shownTrend, trend, TREND_TEXT } from '../lib/history';
 import type { Result } from '../lib/result';
+import { extensionOf } from '../world/types';
 import { ago, el, fmt, fmtDate } from './dom';
 
 const MAX_ROWS = 500;
@@ -20,6 +21,7 @@ export function renderTable(r: Result, tbody: HTMLElement, caption: HTMLElement,
       const status = f.hot ? 'hotspot' : f.dead ? 'quiet' : '';
       tr.append(
         el('td', f.path),
+        el('td', extensionOf(f.path) ?? '—'),
         el('td', fmt(f.changes_12m), 'num'),
         el('td', fmt(f.authors), 'num'),
         el('td', r.meta.truncated.sizes && f.loc === 0 ? 'n/a' : fmt(f.loc), 'num'),

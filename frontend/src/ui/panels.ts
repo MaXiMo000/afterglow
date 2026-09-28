@@ -5,6 +5,7 @@
 import { analysedFrom, beforeWindow, dirBeforeWindow, quarterLabel, removedBetween, shownTrend, trend, TREND_TEXT } from '../lib/history';
 import type { FileRec, Result } from '../lib/result';
 import type { World } from '../world/build';
+import { extensionOf } from '../world/types';
 import { ago, el, fmt, fmtDate, setText } from './dom';
 import { KEYMAP, MOVE_KEYS } from './keymap';
 
@@ -45,6 +46,7 @@ export class Inspector {
     const dl = el('dl');
     const row = (k: string, v: string): void => void dl.append(el('dt', k), el('dd', v));
     row('district', d ? d.name : '');
+    row('type', extensionOf(f.path) ?? 'no extension');
     row('lines', r.meta.truncated.sizes && f.loc === 0 ? 'n/a (size caps)' : fmt(f.loc));
     if (beforeWindow(f)) {
       row('created', `before ${fmtDate(f.birth)}`);

@@ -11,6 +11,7 @@ import { clamp, lerp, smoothstep } from '../render/math';
 import { DynRes } from '../render/dynres';
 import { Renderer, RendererError, TIERS, type Params } from '../render/renderer';
 import { buildWorld, type World } from '../world/build';
+import { TYPE_COLOURS } from '../world/types';
 import { buildCamera, OrbitCamera, orbitFromPose, rayThrough, type Preset } from './camera';
 import { $, ago, el, fmt, fmtDate, reducedMotion, setText } from './dom';
 import { actionFor, KEYMAP, type ActionId } from './keymap';
@@ -79,7 +80,7 @@ export class App {
   private readonly cam = new OrbitCamera();
   private readonly P: Params = {
     t: 1, fog: FOG, hot: 0.5, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.035, ca: 1,
-    arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0,
+    arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0,
   }; // prettier-ignore
   private time = 0;
   private last = 0;
@@ -89,6 +90,7 @@ export class App {
   private lanterns: Float32Array | null = null;
   private selected = -1;
   private focusGoal = 0;
+  private typesGoal = 0; // colour by file type: 1 on; P.types eases toward it
   private ptrs = new Map<number, { x: number; y: number; t: number }>();
   private dragMoved = 0;
   private pinch = 0;
@@ -224,6 +226,7 @@ export class App {
     }
     renderSummary(r, $('#summaryBody'));
     this.renderHonesty();
+    if (this.typesGoal) this.setTypes(true, false); // keep the mode across repositories; its legend is per result
     if (!this.demo) {
       setText($('#hudRepo'), r.meta.repo);
       $('#hudRepo').title = r.meta.repo; // full name on hover when the slot truncates it
@@ -561,6 +564,9 @@ export class App {
       case 'timeline':
         this.timeline.root.hidden = !this.timeline.root.hidden;
         break;
+      case 'types':
+        this.setTypes(!this.typesGoal);
+        break;
       case 'compare':
         this.setCompare(this.compare ? null : { a: clamp(this.tT - 0.25, 0, 0.75), b: this.tT >= 0.999 ? 1 : this.tT });
         break;
@@ -606,8 +612,40 @@ export class App {
     if (reducedMotion()) this.P.t = t;
   }
 
+  /** Colour by file type (docs/ROADMAP.md #1). Compare mode also recolours buildings, so the two never overlap. */
+  private setTypes(on: boolean, announce = true): void {
+    const box = $('#typeLegend');
+    const w = this.world;
+    this.typesGoal = on && w ? 1 : 0;
+    if (!this.typesGoal || !w) {
+      box.hidden = true;
+      if (announce) this.announce('Colour by file type off');
+      return;
+    }
+    if (this.compare) this.setCompare(null);
+    const t = w.types;
+    const rows = t.labels
+      .map((label, i) => ({ label, i, n: t.counts[i]! }))
+      .filter((x) => x.n > 0)
+      .map(({ label, i, n }) => {
+        const p = el('div');
+        const sw = el('i');
+        sw.setAttribute('aria-hidden', 'true');
+        sw.style.background = sw.style.color = TYPE_COLOURS[i]!; // CSSOM, allowed by the CSP (color feeds the glow)
+        p.append(sw, el('span', label, 'ext'), el('span', fmt(n), 'num'));
+        return p;
+      });
+    box.replaceChildren(el('strong', 'Colour by file type'), ...rows, el('p', 'By file extension, not language detection. Y to turn off.', 'sub'));
+    box.hidden = false;
+    if (announce) {
+      const top = t.labels.slice(0, 3).filter((l, i) => l && t.counts[i]).map((l, i) => `${l} ${fmt(t.counts[i]!)}`);
+      this.announce(`Colour by file type on. Most common: ${top.join(', ')}.`);
+    }
+  }
+
   private setCompare(c: { a: number; b: number } | null): void {
     this.compare = c;
+    if (c && this.typesGoal) this.setTypes(false, false);
     const box = $('#compareLegend');
     const r = this.result;
     const w = this.world;
@@ -833,6 +871,7 @@ export class App {
         if (this.photo) return this.togglePhoto();
         if (!$('#tableView').hidden) return this.openTable(false);
         if (this.compare) return this.setCompare(null);
+        if (this.typesGoal) return this.setTypes(false);
         if (this.selected >= 0 || this.P.focus >= 0) return this.select(-1);
         if (this.insights.open) return this.run('insights');
         if ((this.mode === 'city' && !this.demo) || this.mode === 'story') {
@@ -1172,6 +1211,7 @@ export class App {
     this.fov = fov;
     this.lastPose = { pos, tgt };
     P.focusAmt += (this.focusGoal - P.focusAmt) * (1 - Math.exp(-dt * 5));
+    P.types = reduced ? this.typesGoal : P.types + (this.typesGoal - P.types) * (1 - Math.exp(-dt * 5)); // cross-fade
     const C = this.cameraNow(pos, tgt, fov);
     this.lastVP = C.vp;
 

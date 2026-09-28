@@ -110,6 +110,28 @@ test('every explore feature is reachable by keyboard alone', async ({ page }) =>
   await expect(page.locator('body')).toHaveClass(/mode-story/);
 });
 
+test('colour by file type: legend, inspector row, and never together with compare', async ({ page }) => {
+  await openCity(page);
+  await key(page, 'y');
+  const legend = page.locator('#typeLegend');
+  await expect(legend).toBeVisible();
+  await expect(legend).toContainText('.py');
+  await expect(legend).toContainText('By file extension, not language detection');
+  await expect(page.locator('#announce')).toContainText('Colour by file type on');
+  await key(page, 'c'); // compare recolours buildings too: it takes over
+  await expect(page.locator('#compareLegend')).toBeVisible();
+  await expect(legend).toBeHidden();
+  await key(page, 'y');
+  await expect(legend).toBeVisible();
+  await expect(page.locator('#compareLegend')).toBeHidden();
+  await key(page, 'Escape'); // Esc backs out of the mode
+  await expect(legend).toBeHidden();
+  await key(page, '/');
+  await page.keyboard.type('tests/f4');
+  await key(page, 'Enter');
+  await expect(page.locator('#inspector')).toContainText('.py');
+});
+
 test('photo mode saves a PNG poster', async ({ page }) => {
   await openCity(page);
   await key(page, 'p');

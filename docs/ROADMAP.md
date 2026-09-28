@@ -11,7 +11,7 @@ Key map after this roadmap (actions must never take a movement key; `src/ui/keym
 
 | # | Feature | Size | Server | Schema | Decision needed |
 |---|---------|------|--------|--------|-----------------|
-| 1 | Colour by file type | S | no | no | no |
+| 1 | Colour by file type (done) | S | no | no | no |
 | 2 | Hotspot tour keys | S | no | no | no |
 | 3 | Walk mode | M | no | no | no |
 | 4 | Fly-through video export | S | no | no | no |

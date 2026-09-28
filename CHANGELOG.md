@@ -5,6 +5,8 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- Colour by file type (`Y`): buildings take their extension's colour, with a legend of the 8 most common types and
+  their counts; the inspector and the table gain a Type column.
 - Keys: Share moved from S to U, so S walks backward again (S was swallowed by Share). A unit test keeps actions
   off movement keys.
 - Queue: a queued job shows an estimated wait next to its position, from the median run time of recent jobs and the
