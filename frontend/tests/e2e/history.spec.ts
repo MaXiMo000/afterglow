@@ -19,6 +19,15 @@ function v3(windowStart?: number): unknown {
   Object.assign(r.files[2]!, { changes: 0, changes_12m: 0, birth: 1_450_000_000, last: 1_450_000_000 }); // legacy/f2.py
   r.timeline.forEach((m, i) => (m.removed = i % 2));
   if (windowStart) (r.meta as unknown as { span: number[] }).span[0] = windowStart;
+  if (owners) {
+    // Analyser 5: owners per district. Contributor 1 alone knows core; tests is shared; legacy is Contributor 2's.
+    const o = r as unknown as { meta: { analyser: number }; dirs: { owners?: unknown }[]; people: unknown[] };
+    o.meta.analyser = 5;
+    o.people.push({ handle: 'Contributor 2', commits: 120, areas: [1, 2] });
+    o.dirs[0]!.owners = [{ person: 0, share: 0.9 }, { person: 1, share: 0.05 }];
+    o.dirs[1]!.owners = [{ person: 0, share: 0.6 }, { person: 1, share: 0.4 }];
+    o.dirs[2]!.owners = [{ person: 1, share: 1 }];
+  }
   if (exactRemovals) {
     r.meta.analyser = 4;
     const times = r.timeline.flatMap((m) => Array.from({ length: m.removed ?? 0 }, () => (m as { t: number }).t + 86_400));
@@ -29,6 +38,7 @@ function v3(windowStart?: number): unknown {
 
 let windowStart: number | undefined;
 let exactRemovals = false;
+let owners = false;
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/analyses', (r) => r.fulfill({ status: 200, json: { id: ID, status: 'done' } }));
   await page.route(`**/api/v1/analyses/${ID}`, (r) => r.fulfill({ status: 200, json: v3(windowStart) }));
@@ -71,6 +81,24 @@ test('compare mode counts removed files', async ({ page }) => {
   const legend = page.locator('#compareLegend');
   await expect(legend).toContainText('Removed in this window');
   await expect(legend).toContainText('counted by whole month'); // analyser 3: monthly totals only
+});
+
+test.describe('an analysis with district owners (analyser 5)', () => {
+  test.beforeAll(() => void (owners = true));
+  test.afterAll(() => void (owners = false));
+  test('what if a contributor left: the sentence, the list, the legend, and Esc', async ({ page }) => {
+    await page.keyboard.press('i');
+    await page.locator('#insights [data-tab="bus"]').click();
+    await page.locator('#insights .whatif select').selectOption('0');
+    await expect(page.locator('#insights .whatif')).toContainText('Without Contributor 1, 1 district');
+    await expect(page.locator('#insights ol')).toContainText('core');
+    await expect(page.locator('#riskLegend')).toContainText('What if Contributor 1 left?');
+    await expect(page.locator('#announce')).toContainText('Without Contributor 1, 1 district');
+    await page.locator('#gl').evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#riskLegend')).toBeHidden();
+    await expect(page.locator('#announce')).toHaveText('What if cleared: all lights on.');
+  });
 });
 
 test.describe('an analysis with removal times (analyser 4)', () => {

@@ -6,6 +6,7 @@ import { analysedFrom, beforeWindow, dirBeforeWindow, quarterLabel, removedBetwe
 import type { FileRec, Result } from '../lib/result';
 import type { World } from '../world/build';
 import { extensionOf } from '../world/types';
+import { hasOwners, orphaned, OTHER_MIN } from '../world/whatif';
 import { ago, el, fmt, fmtDate, setText } from './dom';
 import { KEYMAP, MOVE_KEYS } from './keymap';
 
@@ -175,9 +176,12 @@ export class Insights {
   private readonly root = document.getElementById('insights')!;
   private tab: 'hot' | 'bus' | 'quiet' | 'coupling' = 'hot';
   private r: Result | null = null;
+  /** Contributor in the bus-factor what-if, or -1. */
+  whatIf = -1;
   constructor(
     private readonly onFile: (i: number) => void,
     private readonly onDistrict: (d: number) => void,
+    private readonly onWhatIf: (person: number) => void,
   ) {
     for (const b of this.root.querySelectorAll<HTMLButtonElement>('[role="tab"]')) {
       b.addEventListener('click', () => this.select(b.dataset['tab'] as typeof this.tab));
@@ -236,7 +240,14 @@ export class Insights {
         const heat = shownTrend(t) ? ` \u00b7 ${TREND_TEXT[t.kind]}` : '';
         add(f.path, `${fmt(f.changes_12m)} / 12 mo`, `${fmt(f.authors)} ${f.authors === 1 ? 'author' : 'authors'} all time \u00b7 last ${ago(f.last, now)}${heat}`, () => this.onFile(i), 'bad');
       }
-    if (this.tab === 'bus')
+    let head: HTMLElement | null = null;
+    if (this.tab === 'bus') head = this.whatIfControl(r);
+    if (this.tab === 'bus' && this.whatIf >= 0 && hasOwners(r))
+      for (const d of orphaned(r, this.whatIf)) {
+        const x = r.dirs[d]!;
+        add(x.name, `${fmt(x.files)} files`, `nobody else has ${Math.round(OTHER_MIN * 100)}%+ of its commits`, () => this.onDistrict(d), 'bad');
+      }
+    else if (this.tab === 'bus')
       for (const d of r.insights.bus_factor) {
         const x = r.dirs[d]!;
         add(x.name, `bus factor ${fmt(x.bus_factor)}`, `${fmt(x.files)} files \u00b7 commit-weighted`, () => this.onDistrict(d), x.bus_factor <= 1 ? 'bad' : x.bus_factor <= 2 ? 'warn' : 'ok');
@@ -254,9 +265,39 @@ export class Insights {
         const b = r.files[c.b]!;
         add(`${a.path} \u2194 ${b.path}`, `${fmt(c.count)} together`, `${Math.round(c.strength * 100)}% of the rarer file's changes`, () => this.onFile(c.a));
       }
-    if (!rows.length) rows.push(el('li', 'Nothing to show for this repository.', 'empty'));
+    if (!rows.length) rows.push(el('li', this.whatIf >= 0 && this.tab === 'bus' ? 'No district depends on this contributor alone.' : 'Nothing to show for this repository.', 'empty'));
+    this.root.querySelector('.whatif')?.remove();
+    if (head) this.root.querySelector('ol')!.before(head);
     this.root.querySelector('ol')!.replaceChildren(...rows);
   }
+
+  /** "What if Contributor N left?" (docs/ROADMAP.md #6): a native select, so it is keyboard and screen-reader ready. */
+  private whatIfControl(r: Result): HTMLElement {
+    const box = el('div', null, 'whatif');
+    if (!hasOwners(r)) {
+      box.append(el('p', 'The "what if" view needs a newer analysis of this repository (analyse it again).', 'sub'));
+      return box;
+    }
+    const label = el('label');
+    const sel = document.createElement('select');
+    sel.append(new Option('nobody', '-1'));
+    r.people.slice(0, 25).forEach((p, i) => sel.append(new Option(`${p.handle} (${fmt(p.commits)} commits)`, String(i))));
+    sel.value = String(this.whatIf);
+    sel.addEventListener('change', () => this.onWhatIf(Number(sel.value)));
+    label.append(document.createTextNode('What if '), sel, document.createTextNode(' left?'));
+    box.append(label);
+    if (this.whatIf >= 0) box.append(el('p', whatIfSentence(r, this.whatIf), 'sub'));
+    return box;
+  }
+}
+
+/** Plain-language result of the what-if, shared by the panel, the legend and the screen-reader announcement. */
+export function whatIfSentence(r: Result, person: number): string {
+  const ds = orphaned(r, person);
+  const who = r.people[person]?.handle ?? 'this contributor';
+  if (!ds.length) return `No district depends on ${who} alone: every district they work in has someone else with ${Math.round(OTHER_MIN * 100)}%+ of its commits.`;
+  const files = ds.reduce((n, d) => n + (r.dirs[d]?.files ?? 0), 0);
+  return `Without ${who}, ${fmt(ds.length)} ${ds.length === 1 ? 'district' : 'districts'} (${fmt(files)} files) would have no one else with ${Math.round(OTHER_MIN * 100)}%+ of the commits in the analysed history.`;
 }
 
 export function renderHelp(root: HTMLElement): void {

@@ -229,13 +229,19 @@ kbd { font: var(--size-xs) var(--font-mono); padding: 0 5px; border: 1px solid v
 #compareLegend .c-after { background: #8ab4ff; }
 #compareLegend .c-before { background: #56626b; }
 #compareLegend .c-removed { background: transparent; border: 1px dashed #ff9a8f; }
-#weatherLegend, #typeLegend { display: grid; gap: 5px; padding: 12px 14px;
+#riskLegend, #weatherLegend, #typeLegend { display: grid; gap: 5px; padding: 12px 14px;
   font-size: var(--size-sm); background: var(--color-glass); border: 1px solid var(--color-line); border-radius: var(--radius-md); backdrop-filter: blur(10px); min-width: 190px; max-width: 320px; }
 #typeLegend div { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center; }
 #typeLegend i { width: 10px; height: 10px; border-radius: 2px; box-shadow: 0 0 8px currentColor; }
 #typeLegend .ext { font-family: var(--font-mono); }
 #typeLegend .num { color: var(--color-dim); font-variant-numeric: tabular-nums; }
-#weatherLegend { max-width: 300px; }
+#weatherLegend, #riskLegend { max-width: 300px; }
+#riskLegend p { margin: 0; }
+#riskLegend i { display: inline-block; width: 12px; height: 10px; margin-right: 8px; vertical-align: -1px; border-radius: 2px; background: #1a1620; box-shadow: inset 0 0 0 1px #ff9a8f, 0 0 8px rgba(255, 110, 90, 0.5); }
+#insights .whatif { margin: 10px 0 6px; font-size: var(--size-sm); }
+#insights .whatif label { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#insights .whatif select { font: var(--size-sm) var(--font-mono); color: var(--color-text); background: var(--color-glass); border: 1px solid var(--color-line); border-radius: var(--radius-sm); padding: 5px 8px; max-width: 100%; }
+#insights .whatif .sub { margin: 8px 0 0; }
 #weatherLegend i { display: inline-block; width: 14px; height: 10px; margin-right: 8px; vertical-align: -1px; border-radius: 2px; }
 #weatherLegend .rain { background: repeating-linear-gradient(100deg, rgba(168, 204, 250, 0.9) 0 1px, transparent 1px 4px); }
 #weatherLegend .fog { background: linear-gradient(90deg, rgba(150, 170, 176, 0.15), rgba(150, 170, 176, 0.7), rgba(150, 170, 176, 0.15)); }
@@ -304,7 +310,7 @@ dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
 
 
 /* A6 motion language: mode changes and panels fade and rise instead of popping (disabled with reduced motion) */
-#hero, #loading, #city, #story, #tableView, .panel, #timeline, #compareLegend, #typeLegend, #weatherLegend, #minimap, #photoBar, #toast, #tip, .chip {
+#hero, #loading, #city, #story, #tableView, .panel, #timeline, #compareLegend, #typeLegend, #weatherLegend, #riskLegend, #minimap, #photoBar, #toast, #tip, .chip {
   transition-property: opacity, translate, display, overlay, border-color, background, transform;
   transition-duration: var(--motion-slow), var(--motion-slow), var(--motion-slow), var(--motion-slow), var(--motion-base), var(--motion-base), var(--motion-fast);
   transition-timing-function: var(--motion-ease-out);
@@ -312,7 +318,7 @@ dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
 }
 @starting-style {
   #hero:not([hidden]), #loading:not([hidden]), #city:not([hidden]), #story:not([hidden]), #tableView:not([hidden]),
-  .panel:not([hidden]), #timeline:not([hidden]), #compareLegend:not([hidden]), #typeLegend:not([hidden]), #weatherLegend:not([hidden]), #minimap:not([hidden]), #photoBar:not([hidden]), #toast:not([hidden]) {
+  .panel:not([hidden]), #timeline:not([hidden]), #compareLegend:not([hidden]), #typeLegend:not([hidden]), #weatherLegend:not([hidden]), #riskLegend:not([hidden]), #minimap:not([hidden]), #photoBar:not([hidden]), #toast:not([hidden]) {
     opacity: 0;
     translate: 0 10px;
   }

@@ -81,6 +81,8 @@ Browser (static SPA) --https--> Caddy (TLS, CSP and headers, static files, body 
   characters replaced, or shortened): the real path's bytes percent-encoded, used only for the GitHub link; and
   `removals[]`, the commit times (ascending) of the newest 10,000 removals counted in `timeline[].removed`, so compare
   mode counts removals exactly (by whole month only before the oldest kept time, and it says so).
+  Analyser 5 adds `dirs[].owners`: the top 5 authors of each district by share of its commits (`{person, share}`,
+  person = index into the pseudonymous `people[]`, largest first), for the bus-factor "what if".
   When history is truncated, files at HEAD untouched in the window are kept with `changes: 0` and the
   window's first date as an upper bound; the UI labels them "before". The client accepts analyser 2 results (the
   bundled demo) without the new fields.

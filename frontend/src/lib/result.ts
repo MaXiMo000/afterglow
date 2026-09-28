@@ -16,7 +16,9 @@ export type Meta = {
   span: [number, number];
   truncated: Truncated;
 };
-export type Dir = { name: string; files: number; loc: number; last: number; bus_factor: number; quiet: boolean };
+export type Owner = { person: number; share: number };
+/** `owners` (analyser >= 5): top 5 authors by commit share, largest first; people[] indices. */
+export type Dir = { name: string; files: number; loc: number; last: number; bus_factor: number; quiet: boolean; owners?: Owner[] };
 export type FileRec = {
   path: string;
   dir: number;
@@ -127,10 +129,19 @@ export function validateResult(raw: unknown): Result {
   // Analyser 3 always sends quarters and removals; only older results (the bundled demo) may lack them.
   const v3file = meta.analyser >= 3 ? ['quarters'] : [];
   const v3month = meta.analyser >= 3 ? ['removed'] : [];
+  const np = Array.isArray(r['people']) ? r['people'].length : 0; // people[] is validated below
+  const v5dir = meta.analyser >= 5 ? ['owners'] : [];
   const dirs = arr(r['dirs'], LIMITS.dirs, 'dirs').map((d, i): Dir => {
     const o = obj(d, `dirs.${i}`);
-    keys(o, ['name', 'files', 'loc', 'last', 'bus_factor', 'quiet'], `dirs.${i}`);
+    keys(o, ['name', 'files', 'loc', 'last', 'bus_factor', 'quiet', ...v5dir], `dirs.${i}`, ['owners']);
+    const owners = o['owners'] === undefined ? undefined : arr(o['owners'], 5, `dirs.${i}.owners`).map((x, k): Owner => {
+      const w = obj(x, `dirs.${i}.owners.${k}`);
+      keys(w, ['person', 'share'], `dirs.${i}.owners.${k}`);
+      return { person: idx(w['person'], np, 'o.person'), share: num01(w['share'], 'o.share') };
+    });
+    if (owners && (owners.some((w, k) => k > 0 && w.share > owners[k - 1]!.share) || owners.reduce((a, w) => a + w.share, 0) > 1 + 1e-6)) fail(`dirs.${i}.owners`);
     return {
+      ...(owners ? { owners } : {}),
       name: text(o['name'], `dirs.${i}.name`),
       files: int(o['files'], `dirs.${i}.files`),
       loc: int(o['loc'], `dirs.${i}.loc`),

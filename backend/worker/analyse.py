@@ -27,6 +27,7 @@ from core.schema import (
     MAX_COUPLING,
     MAX_DIRS,
     MAX_HREF,
+    MAX_OWNERS,
     MAX_PEOPLE,
     MAX_REMOVALS,
     QUARTERS,
@@ -36,6 +37,7 @@ from core.schema import (
     Insights,
     Meta,
     Month,
+    Owner,
     Person,
     Result,
     Truncated,
@@ -325,6 +327,9 @@ def build_result(repo: RepoRef, sha: str, commits: list[Commit], history_truncat
         for dname in {dir_of[p] for _, p in c.changes if p in file_index}:
             dir_authors[dir_index[dname]][c.author] += 1
 
+    ranked_people = [a for a, _ in author_commits.most_common(MAX_PEOPLE)]
+    rank_of = {a: i for i, a in enumerate(ranked_people)}
+
     by_dir: list[list[File]] = [[] for _ in dir_names]
     for f in files:
         by_dir[f.dir].append(f)
@@ -340,12 +345,12 @@ def build_result(repo: RepoRef, sha: str, commits: list[Commit], history_truncat
                 last=last,
                 bus_factor=bus_factor(dir_authors[d]),
                 quiet=last < head_t - QUIET_AFTER,
+                owners=owners(dir_authors[d], rank_of),
             )
         )
 
     coupling = co_change(commits[:COUPLING_WINDOW], file_index, files)
 
-    ranked_people = [a for a, _ in author_commits.most_common(MAX_PEOPLE)]
     people = []
     for rank, author in enumerate(ranked_people):
         areas = Counter({d: n for d, cnt in enumerate(dir_authors) if (n := cnt[author])})
@@ -405,6 +410,13 @@ def bus_factor(counts: Counter[int]) -> int:
         if covered * 2 >= total:
             return k
     return 0
+
+
+def owners(counts: Counter[int], rank_of: dict[int, int]) -> list[Owner]:
+    """Top authors of a district by share of its commits, as people[] indices, largest first."""
+    total = sum(counts.values())
+    ranked = sorted(((n, rank_of[a]) for a, n in counts.items() if a in rank_of), key=lambda x: (-x[0], x[1]))
+    return [Owner(person=p, share=round(n / total, 4)) for n, p in ranked[:MAX_OWNERS]] if total else []
 
 
 def co_change(commits: list[Commit], file_index: dict[bytes, int], files: list[File]) -> list[Coupling]:

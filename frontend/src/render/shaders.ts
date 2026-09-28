@@ -87,9 +87,9 @@ SRC.bld={vs:H+`
 layout(location=0) in vec3 aPos;layout(location=1) in vec3 aNor;
 layout(location=2) in vec4 iA;layout(location=3) in vec4 iB;layout(location=4) in vec4 iC;layout(location=5) in vec4 iD;
 `+BUILDING_COMMON+`
-out vec3 vW;out vec3 vN;out vec2 vXZ;out vec2 vSize;out vec4 vB;out vec4 vC;out float vG;out float vTop;flat out float vInst;flat out float vDist;flat out float vType;
+out vec3 vW;out vec3 vN;out vec2 vXZ;out vec2 vSize;out vec4 vB;out vec4 vC;out float vG;out float vTop;flat out float vInst;flat out float vDist;flat out float vType;flat out float vRisk;
 void main(){
-  vType=iD.y;
+  vType=iD.y;vRisk=iD.z;
   float g=clamp((uT-iB.y)/.03,0.,1.);
   float ge=1.-pow(1.-g,3.);ge*=1.+.06*sin(g*3.14159);
   if(g<=0.){gl_Position=vec4(2.,2.,2.,1.);return;}
@@ -102,8 +102,8 @@ void main(){
   gl_Position=uVP*vec4(w,1.);
 }`,
 fs:H+NOISE+`
-in vec3 vW;in vec3 vN;in vec2 vXZ;in vec2 vSize;in vec4 vB;in vec4 vC;in float vG;in float vTop;flat in float vInst;flat in float vDist;flat in float vType;
-uniform float uT,uTime,uFog,uHot,uFocus,uFocusAmt,uHover,uLift,uFlow,uType,uWeather;uniform vec3 uCam,uFogCol,uCmp;uniform vec3 uPal[5];uniform vec3 uTypeCol[10];/* PORT: 5 palette kinds, not 12 districts */
+in vec3 vW;in vec3 vN;in vec2 vXZ;in vec2 vSize;in vec4 vB;in vec4 vC;in float vG;in float vTop;flat in float vInst;flat in float vDist;flat in float vType;flat in float vRisk;
+uniform float uT,uTime,uFog,uHot,uFocus,uFocusAmt,uHover,uLift,uFlow,uType,uWeather,uRisk;uniform vec3 uCam,uFogCol,uCmp;uniform vec3 uPal[5];uniform vec3 uTypeCol[10];/* PORT: 5 palette kinds, not 12 districts */
 out vec4 o;
 void main(){
   vec3 N=normalize(vN);vec3 tc=uCam-vW;float dist=length(tc);vec3 V=tc/dist;
@@ -143,11 +143,14 @@ void main(){
   emis+=vec3(1.,.9,.72)*flash*win*1.5;col+=vec3(.5,.45,.36)*flash*.35;
   float grow=1.-vG;
   emis+=vec3(.45,.95,1.)*grow*smoothstep(1.2,0.,vTop-vW.y)*.8*uFlow;/* growth glow only while history plays */
+  /* bus-factor what-if (ROADMAP #6): the lights go out where nobody else holds 10%+ of the commits */
+  float rk=vRisk*uRisk;emis*=1.-.9*rk;col=mix(col,col*.55+vec3(.05,.02,.03),rk);
   if(N.y>.5){
     col*=1.15;emis+=vec3(1.,.28,.18)*vC.z*uHot*.9;
     vec2 q=abs(vXZ-.5)*2.;float edge=smoothstep(.86,.97,max(q.x,q.y));
     col+=vec3(.42,.36,.62)*edge*.35;/* lit parapet */
     col=mix(col,tcol*.7,.55*uType);emis+=tcol*edge*.45*uType;/* type-coloured roof and glowing parapet */
+    emis+=vec3(1.,.36,.3)*edge*rk*.9;/* what-if: at-risk roofs keep a coral edge */
     float ld=length((vXZ-.5)*vSize);/* aviation light: tall towers blink red, slowly and out of step */
     float blink=smoothstep(.0,.08,fract(uTime*.45+vC.y*7.))*smoothstep(.36,.2,fract(uTime*.45+vC.y*7.));
     emis+=vec3(1.,.16,.1)*smoothstep(.16,.05,ld)*step(6.,vTop)*blink*4.*(1.-vC.w);

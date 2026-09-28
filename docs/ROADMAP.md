@@ -16,7 +16,7 @@ Key map after this roadmap (actions must never take a movement key; `src/ui/keym
 | 3 | Walk mode (done) | M | no | no | no |
 | 4 | Fly-through video export (done) | S | no | no | no |
 | 5 | Weather as activity (done) | M | no | no | no |
-| 6 | Bus-factor "what if" | M | worker | analyser 5 | no |
+| 6 | Bus-factor "what if" (done) | M | worker | analyser 5 | no |
 | 7 | PR overlay | M | API + worker | new table | no (no new egress, see below) |
 | 8 | What changed since last time | M | API | no | no |
 | 9 | District drill-down | M | no | no | no |

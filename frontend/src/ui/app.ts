@@ -17,7 +17,8 @@ import { buildCamera, OrbitCamera, orbitFromPose, rayThrough, type Preset } from
 import { $, ago, el, fmt, fmtDate, reducedMotion, setText } from './dom';
 import { actionFor, KEYMAP, type ActionId } from './keymap';
 import { Palette, type Item } from './palette';
-import { compareCounts, Inspector, Insights, MiniMap, renderHelp, Timeline } from './panels';
+import { compareCounts, Inspector, Insights, MiniMap, renderHelp, Timeline, whatIfSentence } from './panels';
+import { orphaned } from '../world/whatif';
 import { Story } from './story';
 import { NEAR, Walker } from './walk';
 import { drawTreemap, honestyLines, renderSummary, renderTable } from './table';
@@ -82,7 +83,7 @@ export class App {
   private readonly cam = new OrbitCamera();
   private readonly P: Params = {
     t: 1, fog: FOG, hot: 0.5, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.035, ca: 1,
-    arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0, weather: 0,
+    arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0, weather: 0, risk: 0,
   }; // prettier-ignore
   private time = 0;
   private last = 0;
@@ -134,6 +135,7 @@ export class App {
   private readonly insights = new Insights(
     (i) => this.select(i, true),
     (d) => this.flyToDistrict(d),
+    (p) => this.setWhatIf(p),
   );
   private readonly minimap = new MiniMap((x, z) => {
     if (!this.walker) return this.cam.flyTo({ ...this.cam.goal, x, z }, 0.8, reducedMotion());
@@ -241,7 +243,8 @@ export class App {
     renderSummary(r, $('#summaryBody'));
     this.renderHonesty();
     if (this.typesGoal) this.setTypes(true, false);
-    if (this.weatherGoal) this.setWeather(true, false); // keep the mode across repositories; its legend is per result
+    if (this.weatherGoal) this.setWeather(true, false);
+    this.setWhatIf(-1, false); // a new world starts with every light on // keep the mode across repositories; its legend is per result
     if (!this.demo) {
       setText($('#hudRepo'), r.meta.repo);
       $('#hudRepo').title = r.meta.repo; // full name on hover when the slot truncates it
@@ -707,6 +710,28 @@ export class App {
     this.announce(`Hotspot ${this.tour + 1} of ${list.length}: ${f.path}, ${why}.`);
   }
 
+  /** Bus-factor what-if (docs/ROADMAP.md #6): lights go out in the districts nobody else knows. -1 clears it. */
+  private setWhatIf(person: number, announce = true): void {
+    const r = this.result;
+    const box = $('#riskLegend');
+    this.insights.whatIf = r && person >= 0 && person < r.people.length ? person : -1;
+    if (this.insights.open && r) this.insights.toggle(r, true); // re-render the bus tab
+    if (this.insights.whatIf < 0 || !r) {
+      box.hidden = true;
+      if (announce) this.announce('What if cleared: all lights on.');
+      return;
+    }
+    this.renderer?.setRisk(new Set(orphaned(r, this.insights.whatIf)));
+    const text = whatIfSentence(r, this.insights.whatIf);
+    const row = el('div');
+    const i = el('i', null, 'risk');
+    i.setAttribute('aria-hidden', 'true');
+    row.append(i, document.createTextNode('Lights out: no one else has 10%+ of the commits'));
+    box.replaceChildren(el('strong', `What if ${r.people[this.insights.whatIf]!.handle} left?`), el('p', text), row, el('p', 'Commit share in the analysed history, not ownership. Esc to clear.', 'sub'));
+    box.hidden = false;
+    if (announce) this.announce(text);
+  }
+
   /** Weather (docs/ROADMAP.md #5): decorative, but only where the data says, and the legend says what it means. */
   private setWeather(on: boolean, announce = true): void {
     const box = $('#weatherLegend');
@@ -1070,6 +1095,7 @@ export class App {
         if (this.walker) return this.setWalk(false);
         if (this.compare) return this.setCompare(null);
         if (this.typesGoal) return this.setTypes(false);
+        if (this.insights.whatIf >= 0) return this.setWhatIf(-1);
         if (this.weatherGoal) return this.setWeather(false);
         if (this.selected >= 0 || this.P.focus >= 0) return this.select(-1);
         if (this.insights.open) return this.run('insights');
@@ -1451,6 +1477,8 @@ export class App {
     this.lastPose = { pos, tgt };
     P.focusAmt += (this.focusGoal - P.focusAmt) * (1 - Math.exp(-dt * 5));
     P.weather = reduced ? this.weatherGoal : P.weather + (this.weatherGoal - P.weather) * (1 - Math.exp(-dt * 2)); // slow fade in
+    const riskGoal = this.insights.whatIf >= 0 ? 1 : 0;
+    P.risk = reduced ? riskGoal : P.risk + (riskGoal - P.risk) * (1 - Math.exp(-dt * 3)); // lights fade out, not snap
     P.types = reduced ? this.typesGoal : P.types + (this.typesGoal - P.types) * (1 - Math.exp(-dt * 5)); // cross-fade
     const C = this.cameraNow(pos, tgt, fov);
     this.lastVP = C.vp;

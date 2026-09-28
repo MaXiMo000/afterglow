@@ -14,12 +14,13 @@ from typing import Annotated, Self
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
-ANALYSER_VERSION = 4  # 2: files at HEAD come from HEAD's tree (A5 fix). 3: exact renames followed, mailmap,
+ANALYSER_VERSION = 5  # 2: files at HEAD come from HEAD's tree (A5 fix). 3: exact renames followed, mailmap,
 # files older than a truncated window kept (changes=0), per-file quarters, removals per month.
-# 4: files[].href for paths the display form changed, exact removal times
+# 4: files[].href for paths the display form changed, exact removal times. 5: dirs[].owners
 MAX_PATH = 512
 MAX_HREF = 6_144  # MAX_PATH characters of up to 4 UTF-8 bytes, each percent-encoded
 MAX_REMOVALS = 10_000
+MAX_OWNERS = 5
 MAX_FILES = 50_000
 MAX_DIRS = 2_000
 MAX_PEOPLE = 1_000
@@ -79,6 +80,11 @@ class Meta(_Strict):
     truncated: Truncated
 
 
+class Owner(_Strict):
+    person: Index  # into people[] (pseudonymous, ranked by commits)
+    share: Ratio  # of the commits touching this district in the analysed history
+
+
 class Dir(_Strict):
     name: SafeStr
     files: Count
@@ -86,6 +92,16 @@ class Dir(_Strict):
     last: Epoch
     bus_factor: Count  # authors covering >= 50% of commits touching this district (commit-weighted)
     quiet: bool
+    # Top MAX_OWNERS authors by commit share, largest first. Authors outside people[] (past MAX_PEOPLE) are
+    # left out but still count in the shares' denominator. Feeds the bus-factor "what if" (ROADMAP #6).
+    owners: Annotated[list[Owner], Field(max_length=MAX_OWNERS)] = []
+
+    @model_validator(mode="after")
+    def _owners_sorted(self) -> Self:
+        shares = [o.share for o in self.owners]
+        if shares != sorted(shares, reverse=True) or sum(shares) > 1 + 1e-6:
+            raise ValueError("owners")
+        return self
 
 
 class File(_Strict):
@@ -157,6 +173,7 @@ class Result(_Strict):
             all(f.dir < nd for f in self.files)
             and all(c.a < nf and c.b < nf for c in self.coupling)
             and all(a < nd for p in self.people for a in p.areas)
+            and all(o.person < len(self.people) for d in self.dirs for o in d.owners)
             and all(i < nf for i in self.insights.hotspots)
             and all(i < nd for i in self.insights.bus_factor + self.insights.quiet)
             and all(i < nc for i in self.insights.coupling)

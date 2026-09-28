@@ -5,6 +5,8 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- Bus-factor "what if" (Insights, Bus factor): pick a contributor and the districts nobody else knows go dark.
+  Analyser 5 (`dirs[].owners`, top 5 authors per district by commit share); cached results are recomputed.
 - Weather (`Z`): rain over the busiest districts of the last 12 months and low haze over quiet ones, with a legend
   that says exactly that.
 - Video export (`O`, or photo mode): record a 12 s orbit or the whole history in 20 s as a WebM, captioned like the

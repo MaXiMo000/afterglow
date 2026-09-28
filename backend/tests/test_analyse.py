@@ -79,6 +79,8 @@ def test_dirs_and_insights(golden: Result) -> None:
     assert golden.insights.quiet[0] == names.index("legacy")
     core = golden.dirs[names.index("core")]
     assert core.bus_factor == 1  # Ann made 7 of 8 commits touching core
+    # Ann is Contributor 1 (8 commits), Cy is Contributor 3 (1 commit)
+    assert [(o.person, o.share) for o in core.owners] == [(0, 0.875), (2, 0.125)]
 
 
 def test_coupling(golden: Result) -> None:
