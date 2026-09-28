@@ -110,6 +110,13 @@ docker compose -f deploy/compose.yaml exec -T db psql -U postgres -d afterglow -
 docker compose -f deploy/compose.yaml --profile worker up -d --build --wait
 ```
 
+### Upgrading a database created before the queue wait estimate
+```bash
+docker compose -f deploy/compose.yaml exec -T db psql -U postgres -d afterglow -v ON_ERROR_STOP=1   < deploy/db/upgrades/0003-queue-wait.sql
+docker compose -f deploy/compose.yaml --profile worker up -d --build --wait
+```
+Apply it before starting the new worker: the worker records when it starts each job (`jobs.started`).
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |

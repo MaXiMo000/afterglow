@@ -30,6 +30,8 @@ export type FileRec = {
   dead: boolean;
   /** Changes per calendar quarter, oldest first, ending with HEAD's quarter; [] when none (or analyser < 3). */
   quarters: number[];
+  /** The real path, percent-encoded, when `path` is only its display form (analyser >= 4). For GitHub links. */
+  href?: string;
 };
 export type Coupling = { a: number; b: number; count: number; strength: number };
 export type Person = { handle: string; commits: number; areas: number[] };
@@ -44,10 +46,13 @@ export type Result = {
   people: Person[];
   insights: Insights;
   timeline: Month[];
+  /** Times of the newest removals counted in timeline[].removed, ascending (analyser >= 4). */
+  removals?: number[];
 };
 
 export const QUARTERS = 8;
-export const LIMITS = { files: 50_000, dirs: 2_000, coupling: 300, people: 1_000, months: 1_200, text: 512 };
+export const LIMITS = { files: 50_000, dirs: 2_000, coupling: 300, people: 1_000, months: 1_200, text: 512, href: 6_144, removals: 10_000 };
+const HREF = /^[A-Za-z0-9%._~/-]+$/;
 
 export class InvalidResult extends Error {}
 
@@ -92,7 +97,7 @@ function idx(v: unknown, n: number, where: string): number {
 
 export function validateResult(raw: unknown): Result {
   const r = obj(raw, 'result');
-  keys(r, ['meta', 'dirs', 'files', 'coupling', 'people', 'insights', 'timeline'], 'result');
+  keys(r, ['meta', 'dirs', 'files', 'coupling', 'people', 'insights', 'timeline'], 'result', ['removals']);
 
   const m = obj(r['meta'], 'meta');
   keys(m, ['repo', 'sha', 'analyser', 'generated_at', 'commits', 'files', 'people', 'span', 'truncated'], 'meta');
@@ -137,11 +142,14 @@ export function validateResult(raw: unknown): Result {
   const nd = dirs.length;
   const files = arr(r['files'], LIMITS.files, 'files').map((f, i): FileRec => {
     const o = obj(f, `files.${i}`);
-    keys(o, ['path', 'dir', 'loc', 'birth', 'last', 'changes', 'changes_12m', 'authors', 'hot', 'dead', ...v3file], `files.${i}`, ['quarters']);
+    keys(o, ['path', 'dir', 'loc', 'birth', 'last', 'changes', 'changes_12m', 'authors', 'hot', 'dead', ...v3file], `files.${i}`, ['quarters', 'href']);
     const changes = int(o['changes'], `files.${i}.changes`);
     const quarters = o['quarters'] === undefined ? [] : arr(o['quarters'], QUARTERS, `files.${i}.quarters`).map((q) => int(q, `files.${i}.q`));
     if ((quarters.length !== 0 && quarters.length !== QUARTERS) || quarters.reduce((a, b) => a + b, 0) > changes) fail(`files.${i}.quarters`);
+    const href = o['href'];
+    if (href !== undefined && (typeof href !== 'string' || href.length > LIMITS.href || !HREF.test(href))) fail(`files.${i}.href`);
     return {
+      ...(href === undefined ? {} : { href }),
       path: text(o['path'], `files.${i}.path`),
       dir: idx(o['dir'], nd, `files.${i}.dir`),
       loc: int(o['loc'], `files.${i}.loc`),
@@ -183,5 +191,11 @@ export function validateResult(raw: unknown): Result {
     if (o['removed'] !== undefined) m.removed = int(o['removed'], 'tl.r');
     return m;
   });
-  return { meta, dirs, files, coupling, people, insights, timeline };
+  const out: Result = { meta, dirs, files, coupling, people, insights, timeline };
+  if (r['removals'] !== undefined) {
+    const times = arr(r['removals'], LIMITS.removals, 'removals').map((t) => int(t, 'removals'));
+    if (times.some((t, i) => i > 0 && t < times[i - 1]!)) fail('removals');
+    out.removals = times;
+  }
+  return out;
 }

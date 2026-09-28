@@ -5,6 +5,15 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- Queue: a queued job shows an estimated wait next to its position, from the median run time of recent jobs and the
+  number of live workers, labelled an estimate. **Upgrading:** apply `deploy/db/upgrades/0003-queue-wait.sql` before
+  starting the new worker (see `docs/DEPLOY.md`).
+- README badge: `GET /api/v1/badges/owner/name.svg` draws a small skyline of the repository's most-changed files from
+  its newest stored analysis (never starts one); the city's Badge button copies the Markdown.
+- Fixed (analyser 4; cached results are recomputed): "Open on GitHub" 404ed for paths the display form changed, such
+  as decomposed (NFD) Unicode names written by macOS; the link now uses the real path. Compare mode's "Removed in
+  this window" count is exact instead of rounded to whole months.
+
 - Retention: a new `maint` service deletes finished job records after 7 days, and cached results once they are over
   30 days old and nobody has asked for that commit in the last 7 days. **Upgrading:** run `scripts/dev-env.sh` (adds
   `AFTERGLOW_DB_MAINT_PASSWORD`), then apply `deploy/db/upgrades/0002-retention.sql` (see `docs/DEPLOY.md`).

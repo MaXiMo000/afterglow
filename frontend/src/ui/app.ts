@@ -60,6 +60,13 @@ const NO_RETRY = ['invalid_repo', 'not_found', 'empty_repo', 'no_files', 'too_la
 const IDLE_FRAME_MS = 1000 / 30; // nothing moving: ambient animation only, at half rate (PLAN section 6, Idle)
 const ACTIVE_FOR_MS = 2000; // input keeps the full frame rate this long after it stops
 
+/** "2 ahead in the queue, estimated wait about 3 min": the wait is the server's estimate from recent jobs. */
+function queueText(p: Progress): string {
+  const parts = p.ahead ? [`${fmt(p.ahead)} ahead in the queue`] : [];
+  if (p.wait !== undefined) parts.push(`estimated wait ${p.wait < 60 ? 'under a minute' : `about ${fmt(Math.round(p.wait / 60))} min`}`);
+  return parts.join(', ');
+}
+
 const dist = (a: Vec, b: Vec): number => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 export class App {
@@ -252,7 +259,7 @@ export class App {
     $('#btnCity').hidden = m !== 'story';
     const explore = m === 'city' && !this.demo;
     $('#btnStory').hidden = !explore || !this.renderer;
-    for (const id of ['#btnSearch', '#btnInsights', '#btnShare', '#btnPhoto', '#btnHelp']) $(id).hidden = !explore;
+    for (const id of ['#btnSearch', '#btnInsights', '#btnShare', '#btnBadge', '#btnPhoto', '#btnHelp']) $(id).hidden = !explore;
     this.timeline.root.hidden = !explore;
     if (!explore) {
       this.insights.toggle(this.result!, false);
@@ -410,7 +417,7 @@ export class App {
           (p: Progress) => {
             let text = STAGE_TEXT[p.stage] ?? p.stage;
             if (p.stage === 'parsing' && p.total) text = `${text}: ${fmt(p.n)} of ${fmt(p.total)} commits`;
-            else if (p.stage === 'queued' && p.ahead) text = `${text} (${fmt(p.ahead)} ahead in the queue)`;
+            else if (p.stage === 'queued' && (p.ahead || p.wait !== undefined)) text = `${text} (${queueText(p)})`;
             if (p.stage !== lastStage) {
               lastStage = p.stage;
               line(text);
@@ -625,8 +632,12 @@ export class App {
       row('c-last', 'Last changed in this window', n.lastIn),
       row('c-after', 'Still changing after it', n.after),
       row('c-before', 'Untouched since before it', n.before),
-      ...(n.removed === null ? [] : [row('c-removed', 'Removed in this window', n.removed)]),
-      el('p', `${n.removed === null ? 'Deleted files are not in this analysis, so removals are not shown.' : 'Removed files are counted by month, not drawn: they have no place in the city at HEAD.'} Use , and . to move the window end, [ ] for speed.`, 'sub'),
+      ...(n.removed === null ? [] : [row('c-removed', 'Removed in this window', n.removed.n)]),
+      el(
+        'p',
+        `${n.removed === null ? 'Deleted files are not in this analysis, so removals are not shown.' : `Removed files are counted${n.removed.exact ? '' : ' by whole month (this far back only monthly totals are kept)'}, not drawn: they have no place in the city at HEAD.`} Use , and . to move the window end, [ ] for speed.`,
+        'sub',
+      ),
     );
     box.hidden = false;
   }
@@ -644,6 +655,19 @@ export class App {
       this.toast('Link to this view copied');
     } catch {
       this.toast('Link is in the address bar (clipboard unavailable)');
+    }
+  }
+
+  /** README Markdown for the badge image (drawn by the server from the stored analysis), linking to this city. */
+  private async copyBadge(): Promise<void> {
+    const repo = this.result?.meta.repo; // validated `owner/name`, lower-case
+    if (!repo || !/^[a-z0-9-]{1,39}\/[a-z0-9._-]{1,100}$/.test(repo)) return;
+    const md = `[![Afterglow city of ${repo}](${location.origin}/api/v1/badges/${repo}.svg)](${location.origin}/${repo})`;
+    try {
+      await navigator.clipboard.writeText(md);
+      this.toast('Badge Markdown copied: paste it into a README');
+    } catch {
+      this.toast('Clipboard unavailable');
     }
   }
 
@@ -789,6 +813,7 @@ export class App {
     });
     $('#btnNew').addEventListener('click', () => this.goHome());
     $('#btnShare').addEventListener('click', () => this.run('share'));
+    $('#btnBadge').addEventListener('click', () => void this.copyBadge());
     $('#brandHome').addEventListener('click', (e) => {
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return; // let the browser open a new tab
       e.preventDefault();

@@ -447,3 +447,42 @@ def test_listener_wakes_streams_on_job_changes(client: TestClient) -> None:
     took, queued, other = asyncio.run(scenario())
     assert took < SSE_POLL_S
     assert queued and not other
+
+
+def test_wait_estimate(client: TestClient) -> None:
+    async def stats() -> tuple[float, int] | None:
+        async with await psycopg.AsyncConnection.connect(API) as conn:
+            return await db.run_stats(conn)
+
+    assert asyncio.run(stats()) is None  # nothing finished today: no estimate rather than a guess
+    with psycopg.connect(ADMIN, autocommit=True) as conn:
+        for i, secs in enumerate((10, 30, 90)):
+            conn.execute(
+                "INSERT INTO jobs (id, repo, client, status, stage, reason, started, updated) "
+                "VALUES (gen_random_uuid(), %s, repeat('0', 32), 'failed', 'failed', 'x', "
+                "now() - make_interval(secs => %s), now())",
+                (f"w/r{i}", secs),
+            )
+    assert asyncio.run(stats()) == (30.0, 0)  # median run time; no live worker
+
+    post(client, {"repo": "w/queued"})
+    job = post(client, {"repo": "w/mine"}, ip="198.51.100.9")[1]["id"]
+    events = client.get(f"/api/v1/analyses/{job}/events", timeout=5)
+    first = json.loads(next(line[6:] for line in events.text.splitlines() if line.startswith("data: ")))
+    assert (first["ahead"], first["wait"]) == (1, 60)  # one job ahead, one worker assumed: two run times
+
+
+def test_badge(client: TestClient, tmp_path: Path) -> None:
+    missing = client.get("/api/v1/badges/acme/orbit.svg")
+    assert missing.status_code == 200 and b"not analysed" in missing.content
+    assert missing.headers["cache-control"] == "public, max-age=300"
+    post(client, {"repo": "acme/orbit"})
+    work(tmp_path)
+    r = client.get("/api/v1/badges/Acme/Orbit.svg")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("image/svg+xml")
+    assert b"acme/orbit" in r.content and b"not analysed" not in r.content
+    assert r.headers["cache-control"] == "public, max-age=3600"
+    for bad in ("acme/orbit.png", "acme/..svg", "-x/y.svg", "a/b.git.svg"):
+        assert client.get(f"/api/v1/badges/{bad}").status_code == 404
+    with psycopg.connect(ADMIN, autocommit=True) as conn:
+        assert conn.execute("SELECT count(*) FROM jobs").fetchone() == (1,)  # a badge never queues work

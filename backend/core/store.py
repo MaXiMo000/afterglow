@@ -49,7 +49,7 @@ class ResultStore:
         fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
         try:
             with os.fdopen(fd, "wb") as fh:
-                fh.write(result.model_dump_json().encode())
+                fh.write(result.model_dump_json(exclude_none=True).encode())
             os.replace(tmp, path)
         except BaseException:
             Path(tmp).unlink(missing_ok=True)

@@ -31,10 +31,19 @@ describe('trend', () => {
 });
 
 describe('removedBetween', () => {
-  const r = (months: Result['timeline']): Result => ({ timeline: months }) as Result;
-  it('sums removals in the window', () => {
-    const tl = [{ t: 10, commits: 1, added: 0, removed: 2 }, { t: 20, commits: 1, added: 0, removed: 3 }, { t: 30, commits: 1, added: 0, removed: 5 }];
-    expect(removedBetween(r(tl), 10, 30)).toBe(8);
+  const r = (months: Result['timeline'], removals?: number[]): Result => ({ timeline: months, removals }) as Result;
+  const tl = [{ t: 10, commits: 1, added: 0, removed: 2 }, { t: 20, commits: 1, added: 0, removed: 3 }, { t: 30, commits: 1, added: 0, removed: 5 }];
+  it('sums whole months without removal times (analyser 3)', () => {
+    expect(removedBetween(r(tl), 10, 30)).toEqual({ n: 8, exact: false });
+  });
+  it('counts exact times inside the window, not whole months', () => {
+    const times = [11, 12, 21, 22, 23, 31, 32, 33, 34, 35];
+    expect(removedBetween(r(tl, times), 12, 22)).toEqual({ n: 2, exact: true }); // 21 and 22; not 12 (the window is (a, b])
+  });
+  it('falls back to months only before the oldest kept time', () => {
+    const newest = [31, 32, 33, 34, 35]; // capped: the 5 older removals are only in the monthly totals
+    expect(removedBetween(r(tl, newest), 31, 40)).toEqual({ n: 4, exact: true });
+    expect(removedBetween(r(tl, newest), 5, 40)).toEqual({ n: 10, exact: false });
   });
   it('is unknown for older analyses', () => {
     expect(removedBetween(r([{ t: 10, commits: 1, added: 0 }]), 0, 20)).toBeNull();

@@ -20,7 +20,7 @@ from psycopg_pool import AsyncConnectionPool
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 
-from app import db
+from app import badge, db
 from app.limits import Gate, RateLimiter, client_id
 from app.notify import ALL, Hub
 from app.settings import Settings
@@ -33,6 +33,9 @@ MAX_ACTIVE_PER_CLIENT = 2
 SSE_POLL_S = 2.0  # fallback only: NOTIFY wakes a stream as soon as its job changes (app/notify.py)
 SSE_HEARTBEAT_S = 15.0
 SSE_MAX_S = 300.0
+RUN_STATS_S = 30.0  # the queue wait estimate's inputs are re-read at most this often per process
+BADGE_CACHE = 256  # rendered badges kept per process (a few KB each)
+BADGE_MAX_AGE = 3600
 
 
 def _err(code: str, status: int, retry_after: float | None = None) -> JSONResponse:
@@ -74,6 +77,20 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
     read_limit = RateLimiter(rate=240, per=60)
     streams = Gate(per_key=4, total=200, max_age=SSE_MAX_S + 30)
     validated = ValidatedBodies()
+    badge_renders = RateLimiter(rate=60, per=60)  # cache misses parse a whole result: bounded globally
+    badges: OrderedDict[tuple[str, str], bytes] = OrderedDict()
+    run_stats: list[tuple[float, tuple[float, int] | None]] = []  # (read at, db.run_stats())
+
+    async def wait_estimate(conn: db.Conn, ahead: int) -> int | None:
+        """Seconds until a job with `ahead` queued jobs before it starts: each worker takes one job per median
+        run time of recent jobs. An estimate, and labelled one in the UI (CLAUDE.md rule 6)."""
+        if not run_stats or time.monotonic() - run_stats[0][0] > RUN_STATS_S:
+            run_stats[:] = [(time.monotonic(), await db.run_stats(conn))]
+        stats = run_stats[0][1]
+        if stats is None:
+            return None
+        median, workers = stats
+        return round((ahead // max(workers, 1) + 1) * median)
 
     def client_of(request: Request) -> str:
         # Caddy overwrites X-Real-IP with the TCP peer; the API is reachable only via Caddy (internal net).
@@ -180,11 +197,13 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
                 started = beat = time.monotonic()
                 current: db.Job | None = job
                 while current is not None and time.monotonic() - started < SSE_MAX_S:
-                    ahead = None
+                    ahead = wait = None
                     if current.status == "queued":
                         hub.subscribe(ALL, woken)  # queue movements change this job's position
                         async with pool.connection() as conn:
                             ahead = await db.queue_ahead(conn, current.id)
+                            if ahead is not None:
+                                wait = await wait_estimate(conn, ahead)
                     else:
                         hub.unsubscribe(ALL, woken)
                     state = (
@@ -194,6 +213,7 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
                         current.total,
                         current.reason,
                         ahead,
+                        wait,
                     )
                     if state != last:
                         last = state
@@ -203,6 +223,8 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
                             data["reason"] = current.reason
                         if ahead is not None:
                             data["ahead"] = ahead
+                        if wait is not None:
+                            data["wait"] = wait
                         yield f"event: progress\ndata: {json.dumps(data)}\n\n".encode()
                         beat = time.monotonic()
                     if current.status in ("done", "failed"):
@@ -227,5 +249,43 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
+
+    @router.get("/badges/{owner}/{file}")
+    async def badge_svg(request: Request, owner: str, file: str) -> Response:
+        """SVG skyline for READMEs, from the newest stored result. Never starts an analysis."""
+        if wait := read_limit.check(client_of(request)):
+            return _err("rate_limited", 429, wait)
+        try:
+            if not file.endswith(".svg"):
+                raise InvalidRepoError
+            slug = parse_repo(f"{owner}/{file.removesuffix('.svg')}").slug
+        except InvalidRepoError:
+            return _err("not_found", 404)
+        if pool is None:
+            return _err("unavailable", 503, 30)
+        async with pool.connection() as conn:
+            sha = await db.latest_result(conn, slug)
+            key = (slug, sha or "")
+            svg = badges.get(key)
+            body = None
+            if svg is None and sha is not None:
+                if wait := badge_renders.check("*"):
+                    return _err("rate_limited", 429, wait)
+                body = await db.get_result_body(conn, slug, sha)
+        if svg is None:
+            if sha is None or body is None:
+                svg = badge.placeholder(slug)
+            else:
+                try:
+                    svg = badge.render(await run_in_threadpool(Result.model_validate_json, body))
+                except ValidationError:
+                    return _err("internal", 500)
+            badges[key] = svg
+            if len(badges) > BADGE_CACHE:
+                badges.popitem(last=False)
+        badges.move_to_end(key)
+        # Short cache for the placeholder, so a first analysis shows up soon.
+        age = BADGE_MAX_AGE if sha else 300
+        return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": f"public, max-age={age}"})
 
     return router

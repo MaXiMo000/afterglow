@@ -16,6 +16,7 @@ from core.schema import ANALYSER_VERSION
 Conn = AsyncConnection[TupleRow]
 FRESH_FOR = "1 hour"  # a result younger than this is served without re-analysing
 STALL_AFTER = "5 minutes"
+RUN_SAMPLE = 20
 LIVE_WITHIN = "90 seconds"  # worker.queue.LOST_AFTER: a running job silent for longer has no live worker
 
 
@@ -106,6 +107,30 @@ async def queue_ahead(conn: Conn, job_id: uuid.UUID) -> int | None:
     )
     row = await cur.fetchone()
     return int(row[0]) if row else None
+
+
+async def run_stats(conn: Conn) -> tuple[float, int] | None:
+    """(median run time in seconds of the last RUN_SAMPLE jobs a worker finished today, live workers), or None
+    when no job finished today. Feeds the queue wait estimate."""
+    cur = await conn.execute(
+        "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM updated - started)), "
+        "  (SELECT count(*) FROM jobs WHERE status = 'running' AND updated > now() - %s::interval) "
+        "FROM (SELECT started, updated FROM jobs WHERE status IN ('done', 'failed') AND started IS NOT NULL "
+        "      AND updated > now() - interval '1 day' ORDER BY updated DESC LIMIT %s) recent",
+        (LIVE_WITHIN, RUN_SAMPLE),
+    )
+    row = await cur.fetchone()
+    return (float(row[0]), int(row[1])) if row and row[0] is not None else None
+
+
+async def latest_result(conn: Conn, repo: str) -> str | None:
+    """Sha of the newest stored result for `repo` from this analyser, any age (badges never start work)."""
+    cur = await conn.execute(
+        "SELECT sha FROM results WHERE repo = %s AND analyser = %s ORDER BY created DESC LIMIT 1",
+        (repo, ANALYSER_VERSION),
+    )
+    row = await cur.fetchone()
+    return str(row[0]) if row else None
 
 
 async def get_job(conn: Conn, job_id: uuid.UUID) -> Job | None:

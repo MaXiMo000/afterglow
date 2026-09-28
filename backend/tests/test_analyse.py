@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import itertools
+import json
 import time
+import unicodedata
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
 
+from app import badge
 from core.repo import RepoRef
 from core.schema import Result
 from worker import git as worker_git
@@ -99,6 +103,7 @@ def test_timeline(golden: Result) -> None:
     assert months[0].t <= T0 - 3 * YEAR < months[1].t
     assert sum(m.commits for m in months) == 11
     assert sum(m.removed for m in months) == 1  # gone.txt
+    assert golden.removals == [T0 - 80]  # exact time, not the month
     assert all(b.t > a.t for a, b in itertools.pairwise(months))
 
 
@@ -272,3 +277,24 @@ def test_files_before_the_window_respect_the_path_cap(tmp_path: Path) -> None:
     result = run(tmp_path, commits, caps)
     assert len(result.files) == 10
     assert result.meta.truncated.files and result.meta.files == 51
+
+
+def test_links_use_the_real_path_when_the_shown_one_differs(tmp_path: Path) -> None:
+    """macOS writes decomposed (NFD) names; the result shows NFC, so the GitHub link needs the real bytes."""
+    nfd = unicodedata.normalize("NFD", "café.md")
+    result = run(tmp_path, [C({nfd: "x\n", "plain.md": "y\n"})])
+    by = {f.path: f for f in result.files}
+    assert by["café.md"].href == "cafe%CC%81.md"
+    assert by["plain.md"].href is None
+    body = json.loads(result.model_dump_json(exclude_none=True))
+    assert [f.get("href") for f in body["files"] if f["path"] == "plain.md"] == [None]  # key omitted
+
+
+def test_badge_is_plain_svg(golden: Result) -> None:
+    svg = badge.render(golden)
+    root = ET.fromstring(svg)  # noqa: S314 - our own output; the test checks it is well-formed XML
+    assert root.tag == "{http://www.w3.org/2000/svg}svg"
+    assert len(root.findall("{http://www.w3.org/2000/svg}rect")) == 2 + len(golden.files)
+    assert b"acme/orbit" in svg
+    assert not any(t in svg.lower() for t in (b"<script", b"<style", b"href=", b"onload", b"<image"))
+    assert b"not analysed" in badge.placeholder("a/b")

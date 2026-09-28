@@ -19,13 +19,16 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from core.repo import RepoRef
 from core.schema import (
     ANALYSER_VERSION,
     MAX_COUPLING,
     MAX_DIRS,
+    MAX_HREF,
     MAX_PEOPLE,
+    MAX_REMOVALS,
     QUARTERS,
     Coupling,
     Dir,
@@ -236,6 +239,7 @@ def build_result(repo: RepoRef, sha: str, commits: list[Commit], history_truncat
     paths_truncated = False
     author_commits: Counter[int] = Counter()
     months: dict[int, list[int]] = defaultdict(lambda: [0, 0, 0])  # commits, files added, files removed
+    removals: list[int] = []  # times of the removals in months; one per path, so tracked_paths caps it
     head_dt = datetime.fromtimestamp(head_t, UTC)
     head_q = head_dt.year * 4 + (head_dt.month - 1) // 3
 
@@ -254,6 +258,7 @@ def build_result(repo: RepoRef, sha: str, commits: list[Commit], history_truncat
                 gone = path not in head_paths if head_paths is not None else not s.alive
                 if status == b"D" and gone:  # its newest change removed it, and it is not at HEAD
                     month[2] += 1
+                    removals.append(c.time)
             s.birth = min(s.birth, c.time)
             if status == b"A":
                 month[1] += 1
@@ -309,6 +314,7 @@ def build_result(repo: RepoRef, sha: str, commits: list[Commit], history_truncat
             path=path, dir=dir_index[dir_of[raw]], loc=loc.get(raw, 0), birth=s.birth, last=s.last,
             changes=s.changes, changes_12m=s.changes_12m, authors=len(s.authors), hot=i in hot_set,
             dead=s.last < head_t - QUIET_AFTER, quarters=s.quarters if any(s.quarters) else [],
+            href=github_href(path, raw),
         )
         for i, (path, raw, s) in enumerate(alive)
     ]  # fmt: skip
@@ -374,7 +380,17 @@ def build_result(repo: RepoRef, sha: str, commits: list[Commit], history_truncat
         insights=Insights(hotspots=hotspots, bus_factor=by_risk[:10], quiet=quiet[:10],
                           coupling=list(range(min(10, len(coupling))))),
         timeline=timeline,
+        removals=sorted(r for r in removals if r >= timeline[0].t)[-MAX_REMOVALS:],
     )  # fmt: skip
+
+
+def github_href(path: str, raw: bytes) -> str | None:
+    """Percent-encoded real path for the GitHub link when the shown `path` is not it (NFC, replaced
+    characters, shortened); None when they match or the encoding would be too long to store."""
+    if raw == path.encode():
+        return None
+    href = quote(raw, safe="/")
+    return href if len(href) <= MAX_HREF else None
 
 
 def _month_start(m: int) -> int:

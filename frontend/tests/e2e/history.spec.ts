@@ -19,10 +19,16 @@ function v3(windowStart?: number): unknown {
   Object.assign(r.files[2]!, { changes: 0, changes_12m: 0, birth: 1_450_000_000, last: 1_450_000_000 }); // legacy/f2.py
   r.timeline.forEach((m, i) => (m.removed = i % 2));
   if (windowStart) (r.meta as unknown as { span: number[] }).span[0] = windowStart;
+  if (exactRemovals) {
+    r.meta.analyser = 4;
+    const times = r.timeline.flatMap((m) => Array.from({ length: m.removed ?? 0 }, () => (m as { t: number }).t + 86_400));
+    Object.assign(r, { removals: times });
+  }
   return r;
 }
 
 let windowStart: number | undefined;
+let exactRemovals = false;
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/analyses', (r) => r.fulfill({ status: 200, json: { id: ID, status: 'done' } }));
   await page.route(`**/api/v1/analyses/${ID}`, (r) => r.fulfill({ status: 200, json: v3(windowStart) }));
@@ -64,7 +70,18 @@ test('compare mode counts removed files', async ({ page }) => {
   await page.keyboard.press('c');
   const legend = page.locator('#compareLegend');
   await expect(legend).toContainText('Removed in this window');
-  await expect(legend).toContainText('counted by month, not drawn');
+  await expect(legend).toContainText('counted by whole month'); // analyser 3: monthly totals only
+});
+
+test.describe('an analysis with removal times (analyser 4)', () => {
+  test.beforeAll(() => void (exactRemovals = true));
+  test.afterAll(() => void (exactRemovals = false));
+  test('compare mode counts removals exactly, not by month', async ({ page }) => {
+    await page.keyboard.press('c');
+    const legend = page.locator('#compareLegend');
+    await expect(legend).toContainText('Removed in this window');
+    await expect(legend).toContainText('Removed files are counted, not drawn');
+  });
 });
 
 test.describe('a truncated history that starts inside the last two years', () => {

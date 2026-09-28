@@ -9,13 +9,14 @@ import { ago, el, fmt, fmtDate, setText } from './dom';
 import { KEYMAP, MOVE_KEYS } from './keymap';
 
 /** Validated GitHub URL for a file at the analysed commit (the only dynamic href in the app, SECURITY T5). */
-export function githubUrl(r: Result, path: string): string | null {
+export function githubUrl(r: Result, f: Pick<FileRec, 'path' | 'href'>): string | null {
   const m = /^([a-z0-9-]{1,39})\/([a-z0-9._-]{1,100})$/.exec(r.meta.repo);
   if (!m || !/^[0-9a-f]{40,64}$/.test(r.meta.sha)) return null;
-  if (pathWasCleaned(path)) return null; // not the real path any more: a link would 404
-  const segs = path.split('/');
+  // `href` is the real path (already percent-encoded, validated in result.ts) when `path` is only its display form.
+  if (f.href === undefined && pathWasCleaned(f.path)) return null; // not the real path any more: a link would 404
+  const segs = f.href !== undefined ? f.href.split('/') : f.path.split('/').map(encodeURIComponent);
   if (segs.some((s) => s === '' || s === '.' || s === '..')) return null;
-  return `https://github.com/${m[1]}/${m[2]}/blob/${r.meta.sha}/${segs.map(encodeURIComponent).join('/')}`;
+  return `https://github.com/${m[1]}/${m[2]}/blob/${r.meta.sha}/${segs.join('/')}`;
 }
 
 /** The server replaces control/bidi characters with U+FFFD and ends paths over 512 characters with an ellipsis. */
@@ -77,7 +78,7 @@ export class Inspector {
       }
       kids.push(ul);
     } else kids.push(el('p', 'No strong co-change partners in the latest 10,000 commits.', 'sub'));
-    const url = githubUrl(r, f.path);
+    const url = githubUrl(r, f);
     if (url) {
       const a = el('a', 'Open on GitHub', 'chip');
       a.href = url;
@@ -341,7 +342,7 @@ export function compareCounts(
   r: Result,
   a: number,
   b: number,
-): { added: number; lastIn: number; after: number; before: number; removed: number | null } {
+): { added: number; lastIn: number; after: number; before: number; removed: ReturnType<typeof removedBetween> } {
   const out = { added: 0, lastIn: 0, after: 0, before: 0, removed: removedBetween(r, a, b) };
   for (const f of r.files) {
     if (f.birth > a && f.birth <= b) out.added++;

@@ -55,10 +55,30 @@ export const TREND_TEXT: Record<Trend, string> = { heating: 'heating up', coolin
 export const shownTrend = (t: ReturnType<typeof trend>): t is { kind: 'heating' | 'cooling'; recent: number; before: number } =>
   t !== null && (t.kind === 'heating' || t.kind === 'cooling');
 
-/** Files removed in (a, b]: null when the analysis predates removal counts. Month granularity. */
-export function removedBetween(r: Result, a: number, b: number): number | null {
+/**
+ * Files removed in (a, b]: null when the analysis predates removal counts. Exact from `removals` (the newest
+ * removal times) when they cover the window; otherwise summed by month, and `exact` says so.
+ */
+export function removedBetween(r: Result, a: number, b: number): { n: number; exact: boolean } | null {
   if (r.timeline.some((m) => m.removed === undefined)) return null;
-  return r.timeline.reduce((n, m) => (m.t > a && m.t <= b ? n + (m.removed ?? 0) : n), 0);
+  const times = r.removals;
+  const total = r.timeline.reduce((n, m) => n + (m.removed ?? 0), 0);
+  if (times && (times.length === total || (times.length > 0 && a >= times[0]!))) {
+    return { n: countUpTo(times, b) - countUpTo(times, a), exact: true };
+  }
+  return { n: r.timeline.reduce((n, m) => (m.t > a && m.t <= b ? n + (m.removed ?? 0) : n), 0), exact: false };
+}
+
+/** Number of entries <= x in an ascending list. */
+function countUpTo(sorted: number[], x: number): number {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sorted[mid]! <= x) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
 
 /** Label for the quarter `i` (0 = oldest) of a result whose HEAD is at `head`. */

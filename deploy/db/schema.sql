@@ -27,6 +27,7 @@ CREATE TABLE jobs (
   analyser  integer,
   created   timestamptz NOT NULL DEFAULT now(),
   updated   timestamptz NOT NULL DEFAULT now(),
+  started   timestamptz,                            -- claimed by a worker; run time feeds the queue wait estimate
   FOREIGN KEY (repo, sha, analyser) REFERENCES results (repo, sha, analyser),
   CHECK (status <> 'done' OR sha IS NOT NULL),
   CHECK (status <> 'failed' OR reason IS NOT NULL)
@@ -72,7 +73,7 @@ GRANT SELECT (id, repo, status, stage, progress, total, reason, sha, analyser, c
 GRANT SELECT ON results TO afterglow_api;
 
 GRANT SELECT ON jobs TO afterglow_worker;
-GRANT UPDATE (status, stage, progress, total, reason, sha, analyser, updated) ON jobs TO afterglow_worker;
+GRANT UPDATE (status, stage, progress, total, reason, sha, analyser, updated, started) ON jobs TO afterglow_worker;
 GRANT SELECT, INSERT ON results TO afterglow_worker;
 
 -- Retention (backend/app/maint.py): the only role that can delete. It cannot insert or update anything.

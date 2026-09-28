@@ -58,19 +58,30 @@ Browser (static SPA) --https--> Caddy (TLS, CSP and headers, static files, body 
   -> `202 {"id","status":"queued"}` (new or deduplicated) or `200 {"id","status":"done"}` if a fresh result exists.
   Errors: `400 invalid_repo`, `403 forbidden`, `413 too_large`, `415`, `429 rate_limited|too_many_jobs`,
   `503 busy` (+ `Retry-After`). Repo regex `^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$`, not `.`/`..`, no URLs.
-- `GET /api/v1/analyses/{id}/events` -> SSE frames `{"status","stage","n","total"[,"reason"][,"ahead"]}`; stages
-  `queued, cloning, counting, parsing, sizing, scoring, done, failed`; `ahead` (queued only) is how many queued
-  jobs the worker will claim first. Frames are pushed when the job changes (Postgres `NOTIFY job_progress` from a
+- `GET /api/v1/analyses/{id}/events` -> SSE frames `{"status","stage","n","total"[,"reason"][,"ahead"][,"wait"]}`;
+  stages `queued, cloning, counting, parsing, sizing, scoring, done, failed`; `ahead` (queued only) is how many queued
+  jobs the worker will claim first; `wait` (queued only, when any job finished today) is an estimate in seconds until
+  the job starts: `(ahead // live workers + 1) x` the median run time of the last 20 finished jobs. The UI labels it
+  an estimate. Frames are pushed when the job changes (Postgres `NOTIFY job_progress` from a
   trigger on `jobs`, carrying only the job id), with a 2 s re-check as a fallback.
 - `GET /api/v1/analyses/{id}` -> `200` result, `409 not_ready`, `422 <reason>` for failed jobs, `404` unknown.
   Ids are 32 lower-case hex characters (random UUIDv4).
+- `GET /api/v1/badges/{owner}/{name}.svg` -> `200 image/svg+xml`, a README badge: towers for the 48 most-changed
+  files of the newest stored result (height = changes, amber = hotspot), or a "not analysed yet" placeholder.
+  Never starts an analysis. Same repo parser (`404` otherwise), per-client read limit, renders capped at 60/min per
+  process (`429`), 256 rendered badges cached; `Cache-Control` 1 h (placeholder 5 min). Markdown from the city's
+  Badge button: `[![...](https://<site>/api/v1/badges/owner/name.svg)](https://<site>/owner/name)`.
 - Result schema (strict, `extra=forbid`, bounded): `meta{repo,sha,analyser,generated_at,commits,files,people,span,truncated}`,
   `dirs[]`, `files[]`, `coupling[]`, `people[] {handle,commits,areas}`, `insights{hotspots,bus_factor,quiet,coupling}`,
   `timeline[]`. Contributors are pseudonyms (`Contributor 7`); emails are never read by the analyser (git uses them
   internally to apply the repository's `.mailmap`, read from the analysed commit, capped at 1 MB).
   Analyser 3 adds `files[].quarters` (changes in each of the last 8 calendar quarters, oldest first, or `[]`) and
   `timeline[].removed` (files deleted that month and absent at HEAD). Files followed through exact renames keep their
-  history. When history is truncated, files at HEAD untouched in the window are kept with `changes: 0` and the
+  history. Analyser 4 adds `files[].href`, present only when the shown `path` is not the real one (NFC-normalised,
+  characters replaced, or shortened): the real path's bytes percent-encoded, used only for the GitHub link; and
+  `removals[]`, the commit times (ascending) of the newest 10,000 removals counted in `timeline[].removed`, so compare
+  mode counts removals exactly (by whole month only before the oldest kept time, and it says so).
+  When history is truncated, files at HEAD untouched in the window are kept with `changes: 0` and the
   window's first date as an upper bound; the UI labels them "before". The client accepts analyser 2 results (the
   bundled demo) without the new fields.
 - Hard caps (tested): pack size, commits (200k), files (50k), path length, wall time (90 s), memory, output size.

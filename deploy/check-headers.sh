@@ -42,6 +42,12 @@ check /
 check /healthz
 check /does-not-exist
 
+# README badges get the full header set too (CORP same-origin: GitHub fetches README images server-side via camo).
+check /api/v1/badges/octocat/hello-world.svg
+if ! curl -sSk -D - -o /dev/null "$BASE/api/v1/badges/octocat/hello-world.svg" | grep -qi '^content-type: image/svg+xml'; then
+  echo "FAIL badge content-type"; fail=1
+fi
+
 # API errors are generic JSON, never stack traces or echoed input (T14).
 body="$(curl -sSk "$BASE/api/v1/%3Cscript%3E")"
 if [ "$body" != '{"error":"not_found"}' ]; then echo "FAIL api 404 body: $body"; fail=1; fi

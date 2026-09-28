@@ -14,9 +14,12 @@ from typing import Annotated, Self
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
-ANALYSER_VERSION = 3  # 2: files at HEAD come from HEAD's tree (A5 fix). 3: exact renames followed, mailmap,
-# files older than a truncated window kept (changes=0), per-file quarters, removals per month
+ANALYSER_VERSION = 4  # 2: files at HEAD come from HEAD's tree (A5 fix). 3: exact renames followed, mailmap,
+# files older than a truncated window kept (changes=0), per-file quarters, removals per month.
+# 4: files[].href for paths the display form changed, exact removal times
 MAX_PATH = 512
+MAX_HREF = 6_144  # MAX_PATH characters of up to 4 UTF-8 bytes, each percent-encoded
+MAX_REMOVALS = 10_000
 MAX_FILES = 50_000
 MAX_DIRS = 2_000
 MAX_PEOPLE = 1_000
@@ -98,6 +101,9 @@ class File(_Strict):
     dead: bool
     # Changes per calendar quarter, oldest first, the last entry being HEAD's quarter; [] when all are zero.
     quarters: Annotated[list[Count], Field(max_length=QUARTERS)]
+    # The real path, percent-encoded from git's bytes, when `path` differs from it (NFC, replaced characters,
+    # shortened); omitted otherwise. Only the GitHub link uses it.
+    href: Annotated[str, Field(max_length=MAX_HREF, pattern=r"^[A-Za-z0-9%._~/-]+$")] | None = None
 
     @model_validator(mode="after")
     def _quarters_shape(self) -> Self:
@@ -141,6 +147,8 @@ class Result(_Strict):
     people: Annotated[list[Person], Field(max_length=MAX_PEOPLE)]
     insights: Insights
     timeline: Annotated[list[Month], Field(max_length=MAX_MONTHS)]
+    # Commit times of the newest MAX_REMOVALS removals counted in timeline[].removed, ascending.
+    removals: Annotated[list[Epoch], Field(max_length=MAX_REMOVALS)] = []
 
     @model_validator(mode="after")
     def _indices_in_range(self) -> Self:
@@ -155,4 +163,7 @@ class Result(_Strict):
         )
         if not ok:
             raise ValueError("index out of range")
+        removed = sum(m.removed for m in self.timeline)
+        if self.removals != sorted(self.removals) or len(self.removals) > removed:
+            raise ValueError("removals")
         return self

@@ -39,7 +39,8 @@ def claim(conn: Conn) -> tuple[str, str] | None:
             (LOST_AFTER,),
         )
         row = conn.execute(
-            "UPDATE jobs SET status = 'running', stage = 'cloning', updated = now() WHERE id = ("
+            "UPDATE jobs SET status = 'running', stage = 'cloning', updated = now(), started = now() "
+            "WHERE id = ("
             "  SELECT id FROM jobs WHERE status = 'queued' ORDER BY created FOR UPDATE SKIP LOCKED LIMIT 1"
             ") RETURNING id::text, repo"
         ).fetchone()
@@ -128,7 +129,7 @@ def run_job(
         finish_failed(conn, job, "internal")
         log.exception("job %s %s crashed", job, slug)
         return
-    body = result.model_dump_json().encode()
+    body = result.model_dump_json(exclude_none=True).encode()
     try:
         finish_done(conn, job, slug, result.meta.sha, body)
     except psycopg.errors.ForeignKeyViolation:
