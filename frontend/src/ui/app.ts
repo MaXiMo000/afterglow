@@ -5,6 +5,7 @@
 import { ApiError, fetchPr, fetchPrevious, fetchResult, followProgress, startAnalysis, startPr, type Progress } from '../lib/api';
 import { overlay } from '../lib/pr';
 import { since } from '../lib/since';
+import { drill, topPrefix } from '../lib/drill';
 import { beforeWindow } from '../lib/history';
 import { parseRepo, repoFromPath, repoPath, type RepoRef } from '../lib/repo';
 import { validateResult, type Result } from '../lib/result';
@@ -137,7 +138,13 @@ export class App {
   private hotDirs: ReadonlySet<number> = new Set();
   private readonly held = new Set<string>();
   private readonly palette = new Palette();
-  private readonly inspector = new Inspector((i) => this.select(i));
+  private readonly inspector = new Inspector(
+    (i) => this.select(i),
+    (d) => this.drillInto(d),
+  );
+  /** Drill-down (docs/ROADMAP.md #9): the parent cities, outermost first, and the current city's district prefixes. */
+  private drillStack: { result: Result; prefixes: string[] | null; from: number }[] = [];
+  private prefixes: string[] | null = null;
   private readonly insights = new Insights(
     (i) => this.select(i, true),
     (d) => this.flyToDistrict(d),
@@ -221,7 +228,11 @@ export class App {
     }
   }
 
-  private show(r: Result): void {
+  private show(r: Result, drilling = false): void {
+    if (!drilling) {
+      this.drillStack = [];
+      this.prefixes = null;
+    }
     this.dyn.hold(); // building the world and first frames are slow: not a reason to lower quality
     this.result = r;
     this.resultId = null;
@@ -367,6 +378,7 @@ export class App {
 
   /** One level back (city -> story -> start page): through browser history when we added the entry. */
   private back(): void {
+    while (this.drillStack.length) this.drillOut(true); // the story and start page belong to the whole city
     if (history.state?.back) return history.back(); // popstate applies the screen
     if (this.mode === 'city' && this.result && !this.demo && this.renderer) {
       this.enterStory(true, false);
@@ -390,6 +402,7 @@ export class App {
   /** Browser Back/Forward: show the screen the history entry names, without adding entries. */
   private onPop(state: { v?: string } | null): void {
     const v = state?.v ?? 'hero';
+    if (v !== 'city') while (this.drillStack.length) this.drillOut(true); // story and start page show the whole city
     const loaded = !!this.result && !this.demo;
     const linked = repoFromPath(location.pathname);
     if ((v === 'story' || v === 'city') && linked && (!loaded || `${linked.owner}/${linked.name}`.toLowerCase() !== this.result!.meta.repo)) {
@@ -611,6 +624,12 @@ export class App {
         d.showModal();
         break;
       }
+      case 'drill': {
+        const d = this.selected >= 0 ? r.files[this.selected]!.dir : this.P.focus;
+        if (d >= 0) this.drillInto(d);
+        else this.toast('Select a building or a district first, then Enter opens its district as a city.');
+        break;
+      }
       case 'since':
         void this.showSince();
         break;
@@ -781,12 +800,60 @@ export class App {
     }
   }
 
+  /** "core / api" for the current drilled-in city. */
+  private drillPath(): string {
+    const top = this.drillStack[0];
+    const names = this.drillStack.map((s, k) => (k === 0 ? topPrefix(s.result.dirs[s.from]!.name) || '(root)' : s.result.dirs[s.from]!.name));
+    return top ? names.join(' / ') : '';
+  }
+
+  /** District caption: files, bus factor (only known for top-level districts), quiet. */
+  private districtLine(x: { files: number; bus_factor: number; quiet: boolean }): string {
+    const bus = this.drillStack.length ? 'bus factor: per top-level district only' : `bus factor ${fmt(x.bus_factor)}`;
+    return `${fmt(x.files)} files \u00b7 ${bus}${x.quiet ? ' \u00b7 quiet' : ''}`;
+  }
+
+  /** Open district `d` of the current city as a city of its own (docs/ROADMAP.md #9). */
+  private drillInto(d: number): void {
+    const r = this.result;
+    if (!r || this.demo || this.mode !== 'city' || !r.dirs[d]) return;
+    const prefix = this.prefixes ? this.prefixes[d]! : topPrefix(r.dirs[d].name);
+    const next = drill(r, d, prefix);
+    if (next.result.dirs.length < 2 && next.result.files.length < 2) return this.toast('This district has a single file: nothing to open.');
+    if (this.walker) this.setWalk(false, true);
+    const from = this.lastPose;
+    const id = this.resultId;
+    this.drillStack.push({ result: r, prefixes: this.prefixes, from: d });
+    this.prefixes = next.prefixes;
+    this.show(next.result, true);
+    this.resultId = id;
+    if (from) this.blend = { pos: [...from.pos], tgt: [...from.tgt], fov: this.fov, k: 0 };
+    this.select(-1);
+    this.announce(`Inside ${this.drillPath()}: ${fmt(next.result.files.length)} files in ${fmt(next.result.dirs.length)} folders. Backspace climbs out.`);
+  }
+
+  /** Back to the parent city; `quiet` skips the transition and announcement (leaving the city altogether). */
+  private drillOut(quiet = false): void {
+    const top = this.drillStack.pop();
+    if (!top) return;
+    const from = this.lastPose;
+    const id = this.resultId;
+    this.prefixes = top.prefixes;
+    this.show(top.result, true);
+    this.resultId = id;
+    if (quiet) return;
+    if (from) this.blend = { pos: [...from.pos], tgt: [...from.tgt], fov: this.fov, k: 0 };
+    this.flyToDistrict(top.from);
+    this.announce(this.drillStack.length ? `Back in ${this.drillPath()}.` : 'Back in the whole city.');
+  }
+
   /** What changed since the previous stored analysis (docs/ROADMAP.md #8). 6 again turns it off. */
   private async showSince(): Promise<void> {
     const r = this.result;
     const id = this.resultId;
     if (!r || this.demo) return;
     if (this.overlayKind === 'since') return this.clearPr(true);
+    if (this.drillStack.length) return this.toast('Climb out to the whole city (Backspace) to compare with the previous analysis.');
     if (!id) return this.toast('Load a repository first.');
     this.clearPr(false);
     const abort = new AbortController();
@@ -964,6 +1031,17 @@ export class App {
     const r = this.result;
     const repo = r ? parseRepo(r.meta.repo) : null;
     if (!repo) return;
+    if (this.drillStack.length) {
+      // A drilled-in camera means nothing in the whole city a link opens: share the repository itself.
+      const plain = `${location.origin}${repoPath(repo)}`;
+      try {
+        await navigator.clipboard.writeText(plain);
+        this.toast('Link copied (it opens the whole city)');
+      } catch {
+        this.toast(plain);
+      }
+      return;
+    }
     const g = this.cam.goal;
     const hash = encodeView({ repo: repo as RepoRef, cam: { yaw: g.yaw, pitch: g.pitch, dist: g.dist, x: g.x, z: g.z }, t: this.tT });
     const url = `${location.origin}${repoPath(repo)}${hash}`;
@@ -1154,7 +1232,7 @@ export class App {
     const x = r.dirs[d]!;
     setText($('#placeEy'), 'District');
     setText($('#placeName'), x.name);
-    setText($('#placeSub'), `${fmt(x.files)} files \u00b7 bus factor ${fmt(x.bus_factor)}${x.quiet ? ' \u00b7 quiet' : ''}`);
+    setText($('#placeSub'), this.districtLine(x));
     this.announce(`District ${x.name}: ${fmt(x.files)} files.`);
   }
 
@@ -1223,6 +1301,8 @@ export class App {
       // An input inside a just-closed dialog can stay activeElement until the browser's focus fixup runs.
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(active?.tagName ?? '') && !active?.closest('dialog:not([open])');
       if (document.querySelector('dialog[open]')) return; // dialogs handle their own keys (Esc closes)
+      // A key that started in a dialog (Enter picking a palette result, say) has closed it by now: not ours either.
+      if (e.target instanceof Element && e.target.closest('dialog')) return;
       if (e.key === 'Escape' || (e.key === 'Backspace' && !typing)) {
         // Back out one level: photo -> table -> panels/selection/compare -> story -> start page.
         if (this.rec) return this.stopRecording(false);
@@ -1236,6 +1316,7 @@ export class App {
         if (this.weatherGoal) return this.setWeather(false);
         if (this.selected >= 0 || this.P.focus >= 0) return this.select(-1);
         if (this.insights.open) return this.run('insights');
+        if (this.drillStack.length) return this.drillOut();
         if ((this.mode === 'city' && !this.demo) || this.mode === 'story') {
           e.preventDefault();
           return this.back();
@@ -1243,7 +1324,7 @@ export class App {
         return;
       }
       if (this.mode !== 'city' || typing || this.demo) return;
-      if (e.key === ' ' && active?.tagName === 'BUTTON') return; // Space activates the focused button
+      if ((e.key === ' ' || e.key === 'Enter') && /^(BUTTON|A|SUMMARY)$/.test(active?.tagName ?? '')) return; // keys activate the focused control
       const action = actionFor(e);
       if (action) {
         e.preventDefault();
@@ -1408,9 +1489,9 @@ export class App {
       this.P.focus = -1;
       this.focusGoal = 0;
       this.inspector.hide();
-      setText($('#placeEy'), 'Exploring');
-      setText($('#placeName'), 'the whole city');
-      setText($('#placeSub'), '');
+      setText($('#placeEy'), this.drillStack.length ? 'Inside' : 'Exploring');
+      setText($('#placeName'), this.drillStack.length ? this.drillPath() : 'the whole city');
+      setText($('#placeSub'), this.drillStack.length ? 'Backspace climbs out' : '');
       return;
     }
     const f = r.files[i]!;
@@ -1422,7 +1503,7 @@ export class App {
     this.inspector.show(r, i);
     setText($('#placeEy'), 'District');
     setText($('#placeName'), d.name);
-    setText($('#placeSub'), `${fmt(d.files)} files \u00b7 bus factor ${fmt(d.bus_factor)}${d.quiet ? ' \u00b7 quiet' : ''}`);
+    setText($('#placeSub'), this.districtLine(d));
     this.announce(`Selected ${f.path} in ${d.name}.`);
   }
 

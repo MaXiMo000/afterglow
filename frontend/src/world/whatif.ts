@@ -8,7 +8,8 @@ import type { Result } from '../lib/result';
 /** Another author at or above this share of a district's commits still knows it. */
 export const OTHER_MIN = 0.1;
 
-export const hasOwners = (r: Result): boolean => r.meta.analyser >= 5;
+/** Owner data is there: analyser 5, and not a drilled-in sub-city (owners are per top-level district). */
+export const hasOwners = (r: Result): boolean => r.meta.analyser >= 5 && r.dirs.some((d) => d.owners !== undefined);
 
 /** Districts where `person` is an owner and nobody else has OTHER_MIN or more of the commits. */
 export function orphaned(r: Result, person: number): number[] {

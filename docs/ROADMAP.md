@@ -19,7 +19,7 @@ Key map after this roadmap (actions must never take a movement key; `src/ui/keym
 | 6 | Bus-factor "what if" (done) | M | worker | analyser 5 | no |
 | 7 | PR overlay (done: open PRs; merged PRs are a follow-up) | M | API + worker | new table | no (no new egress, see below) |
 | 8 | What changed since last time (done) | M | API | no | no |
-| 9 | District drill-down | M | no | no | no |
+| 9 | District drill-down (done; share links from inside open the whole city) | M | no | no | no |
 | 10 | Gallery of featured cities | M | API + maint | new table | which repos |
 | 11 | Two cities side by side | L | no | no | no |
 | 12 | Interactive embed | M | Caddy | no | **yes: loosens `frame-ancestors`** |

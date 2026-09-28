@@ -5,7 +5,7 @@
 export type ActionId =
   | 'home' | 'reset' | 'frame' | 'preset1' | 'preset2' | 'preset3' | 'preset4' | 'preset5'
   | 'play' | 'slower' | 'faster' | 'stepBack' | 'stepFwd' | 'timeline' | 'compare' | 'palette' | 'insights'
-  | 'photo' | 'minimap' | 'arcs' | 'lanterns' | 'help' | 'table' | 'share' | 'story' | 'types' | 'tourNext' | 'tourPrev' | 'walk' | 'record' | 'weather' | 'pr' | 'since'; // prettier-ignore
+  | 'photo' | 'minimap' | 'arcs' | 'lanterns' | 'help' | 'table' | 'share' | 'story' | 'types' | 'tourNext' | 'tourPrev' | 'walk' | 'record' | 'weather' | 'pr' | 'since' | 'drill'; // prettier-ignore
 
 export type KeyDef = { id: ActionId; keys: string[]; label: string; group: 'Camera' | 'Time' | 'Panels' | 'View' };
 
@@ -14,6 +14,7 @@ export const KEYMAP: readonly KeyDef[] = [
   { id: 'walk', keys: ['X'], label: 'Walk mode: explore on foot (X or Esc to leave)', group: 'Camera' },
   { id: 'tourNext', keys: ['J'], label: 'Next hotspot (tour)', group: 'Camera' },
   { id: 'tourPrev', keys: ['K'], label: 'Previous hotspot (tour)', group: 'Camera' },
+  { id: 'drill', keys: ['Enter'], label: 'Open the selected district as its own city (Backspace climbs out)', group: 'Camera' },
   { id: 'reset', keys: ['R'], label: 'Reset view and selection', group: 'Camera' },
   { id: 'frame', keys: ['F'], label: 'Frame the selection', group: 'Camera' },
   { id: 'preset1', keys: ['1'], label: 'Overview', group: 'Camera' },

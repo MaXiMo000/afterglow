@@ -135,6 +135,23 @@ test('walk mode: X enters, keys move, Esc leaves; camera flights take over', asy
   await expect(page.locator('#placeEy')).toHaveText('Hotspot 1 of 2');
 });
 
+test('drill-down: Enter opens the selected district as a city, Backspace climbs out; picking in the palette does not drill', async ({ page }) => {
+  await openCity(page);
+  await key(page, '/');
+  await page.keyboard.type('core/f0');
+  await key(page, 'Enter'); // picks the file; must not also drill in
+  await expect(page.locator('#inspector .path')).toHaveText(/core\/f0\.py$/);
+  await expect(page.locator('#placeEy')).toHaveText('District');
+  await page.locator('#gl').evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await key(page, 'Enter');
+  await expect(page.locator('#placeEy')).toHaveText('Inside');
+  await expect(page.locator('#placeName')).toHaveText('core');
+  await expect(page.locator('#announce')).toContainText('Inside core:');
+  await key(page, 'Backspace');
+  await expect(page.locator('#announce')).toHaveText('Back in the whole city.');
+  await expect(page.locator('#placeName')).toHaveText('core'); // flies back to the district it came from
+});
+
 test('hotspot tour: J and K step through the hotspots and wrap around', async ({ page }) => {
   await openCity(page);
   await key(page, 'j');

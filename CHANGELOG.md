@@ -5,6 +5,9 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- District drill-down (`Enter`, or the inspector button): open a district as its own city of sub-folders, drill again,
+  `Backspace` climbs out.
+- Fixed: Enter or other keys that close a dialog (the search palette) no longer also act on the city.
 - What changed since the previous analysis (`6`): new files glow green, files changed again glow cyan, removals are
   counted; compares with the newest earlier analysis stored on the site.
 - The hint line hides while a building is selected, so the place caption (and the hotspot tour line) never overlap it.

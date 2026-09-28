@@ -28,7 +28,10 @@ export function pathWasCleaned(path: string): boolean {
 
 export class Inspector {
   private readonly root = document.getElementById('inspector')!;
-  constructor(private readonly onSelect: (i: number) => void) {
+  constructor(
+    private readonly onSelect: (i: number) => void,
+    private readonly onDrill: (dir: number) => void,
+  ) {
     this.root.querySelector('.close')!.addEventListener('click', () => this.onSelect(-1));
   }
 
@@ -81,6 +84,13 @@ export class Inspector {
       }
       kids.push(ul);
     } else kids.push(el('p', 'No strong co-change partners in the latest 10,000 commits.', 'sub'));
+    if ((r.dirs[f.dir]?.files ?? 0) > 1) {
+      // Drill-down (ROADMAP #9): the district as its own city.
+      const b = el('button', `Open ${d ? d.name : 'district'} as a city`, 'chip');
+      b.type = 'button';
+      b.addEventListener('click', () => this.onDrill(f.dir));
+      kids.push(b);
+    }
     const url = githubUrl(r, f);
     if (url) {
       const a = el('a', 'Open on GitHub', 'chip');
@@ -275,7 +285,7 @@ export class Insights {
   private whatIfControl(r: Result): HTMLElement {
     const box = el('div', null, 'whatif');
     if (!hasOwners(r)) {
-      box.append(el('p', 'The "what if" view needs a newer analysis of this repository (analyse it again).', 'sub'));
+      box.append(el('p', 'The "what if" view needs owner data: it works on the whole city (climb out of a drilled-in district) of a recent analysis (analyse again if needed).', 'sub'));
       return box;
     }
     const label = el('label');
