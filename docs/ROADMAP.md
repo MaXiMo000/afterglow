@@ -22,7 +22,7 @@ Key map after this roadmap (actions must never take a movement key; `src/ui/keym
 | 9 | District drill-down (done; share links from inside open the whole city) | M | no | no | no |
 | 10 | Gallery of featured cities (done: list in AFTERGLOW_FEATURED, no table) | M | API + maint | new table | which repos |
 | 11 | Two cities side by side | L | no | no | no |
-| 12 | Interactive embed (done, owner-approved header change) | M | Caddy | no | **yes: loosens `frame-ancestors`** |
+| 12 | Interactive embed (built; header change pending owner approval) | M | Caddy | no | **yes: loosens `frame-ancestors`** |
 | 13 | Ambient sound | S | no | no | **yes: sound at all; check `autoplay=()`** |
 
 ## 1. Colour by file type
