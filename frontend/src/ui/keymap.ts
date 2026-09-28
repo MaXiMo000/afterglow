@@ -5,7 +5,7 @@
 export type ActionId =
   | 'home' | 'reset' | 'frame' | 'preset1' | 'preset2' | 'preset3' | 'preset4' | 'preset5'
   | 'play' | 'slower' | 'faster' | 'stepBack' | 'stepFwd' | 'timeline' | 'compare' | 'palette' | 'insights'
-  | 'photo' | 'minimap' | 'arcs' | 'lanterns' | 'help' | 'table' | 'share' | 'story' | 'types' | 'tourNext' | 'tourPrev' | 'walk' | 'record' | 'weather' | 'pr'; // prettier-ignore
+  | 'photo' | 'minimap' | 'arcs' | 'lanterns' | 'help' | 'table' | 'share' | 'story' | 'types' | 'tourNext' | 'tourPrev' | 'walk' | 'record' | 'weather' | 'pr' | 'since'; // prettier-ignore
 
 export type KeyDef = { id: ActionId; keys: string[]; label: string; group: 'Camera' | 'Time' | 'Panels' | 'View' };
 
@@ -27,6 +27,7 @@ export const KEYMAP: readonly KeyDef[] = [
   { id: 'stepBack', keys: [','], label: 'Step back one month', group: 'Time' },
   { id: 'stepFwd', keys: ['.'], label: 'Step forward one month', group: 'Time' },
   { id: 'timeline', keys: ['T'], label: 'Show / hide the timeline', group: 'Time' },
+  { id: 'since', keys: ['6'], label: 'What changed since the previous analysis', group: 'Time' },
   { id: 'compare', keys: ['C'], label: 'Compare two dates', group: 'Time' },
   { id: 'palette', keys: ['/', 'Ctrl+K'], label: 'Search files, districts, people, actions', group: 'Panels' },
   { id: 'insights', keys: ['I'], label: 'Insights panel', group: 'Panels' },

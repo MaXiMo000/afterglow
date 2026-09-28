@@ -146,8 +146,10 @@ void main(){
   /* bus-factor what-if (ROADMAP #6): the lights go out where nobody else holds 10%+ of the commits */
   float rk=vRisk*uRisk;emis*=1.-.9*rk;col=mix(col,col*.55+vec3(.05,.02,.03),rk);
   /* PR overlay (ROADMAP #7): changed = cyan, deleted or moved away = red, pulsing gently; the rest dims */
-  float pch=step(.5,vPr)*step(vPr,1.5),pgo=step(1.5,vPr);vec3 pcol=pch*vec3(.3,.85,1.)+pgo*vec3(1.,.32,.28);
-  float ptouch=pch+pgo,ppulse=.62+.38*sin(uTime*2.4+vC.y*6.)*uMotion;
+  /* marks: 1 changed (cyan), 2 deleted or moved away (red), 3 new since the previous analysis (green, ROADMAP #8) */
+  float pch=step(.5,vPr)*step(vPr,1.5),pgo=step(1.5,vPr)*step(vPr,2.5),pnw=step(2.5,vPr);
+  vec3 pcol=pch*vec3(.3,.85,1.)+pgo*vec3(1.,.32,.28)+pnw*vec3(.45,1.,.6);
+  float ptouch=pch+pgo+pnw,ppulse=.62+.38*sin(uTime*2.4+vC.y*6.)*uMotion;
   col*=mix(1.,mix(.42,1.,ptouch),uPr);emis*=mix(1.,mix(.22,1.,ptouch),uPr);emis+=pcol*ppulse*.5*uPr*(.4+.6*side);
   if(N.y>.5){
     col*=1.15;emis+=vec3(1.,.28,.18)*vC.z*uHot*.9;

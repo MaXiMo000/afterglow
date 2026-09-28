@@ -2,8 +2,9 @@
  * App controller: hero -> loading (real SSE progress) -> story (A4) -> city with the explore tools (A5), plus the
  * 2D table fallback. The effects pass (A6) builds on this.
  */
-import { ApiError, fetchPr, fetchResult, followProgress, startAnalysis, startPr, type Progress } from '../lib/api';
+import { ApiError, fetchPr, fetchPrevious, fetchResult, followProgress, startAnalysis, startPr, type Progress } from '../lib/api';
 import { overlay } from '../lib/pr';
+import { since } from '../lib/since';
 import { beforeWindow } from '../lib/history';
 import { parseRepo, repoFromPath, repoPath, type RepoRef } from '../lib/repo';
 import { validateResult, type Result } from '../lib/result';
@@ -97,7 +98,9 @@ export class App {
   private walker: Walker | null = null; // walk mode (docs/ROADMAP.md #3)
   private hintsText = '';
   private tour = -1; // position in insights.hotspots during a J/K tour
-  private prOn = false; // a PR overlay is shown (docs/ROADMAP.md #7)
+  private prOn = false; // an overlay (PR, or changes since the previous analysis) is shown
+  private overlayKind: 'pr' | 'since' | null = null;
+  private resultId: string | null = null; // job id of the loaded analysis (null for the demo)
   private prAbort: AbortController | null = null;
   private weatherGoal = 0; // weather layer: 1 on; P.weather eases toward it
   private typesGoal = 0; // colour by file type: 1 on; P.types eases toward it
@@ -221,6 +224,7 @@ export class App {
   private show(r: Result): void {
     this.dyn.hold(); // building the world and first frames are slow: not a reason to lower quality
     this.result = r;
+    this.resultId = null;
     this.world = buildWorld(r);
     this.hotDirs = new Set(r.insights.hotspots.map((i) => r.files[i]!.dir));
     this.lanterns = new Float32Array(this.world.lanterns.length * 3);
@@ -469,6 +473,7 @@ export class App {
       bar.style.width = '100%';
       this.demo = false;
       this.show(r);
+      this.resultId = id;
       this.announce(`Loaded ${r.meta.repo}: ${fmt(r.meta.files)} files.`);
       const view = this.pendingView;
       this.pendingView = null;
@@ -606,6 +611,9 @@ export class App {
         d.showModal();
         break;
       }
+      case 'since':
+        void this.showSince();
+        break;
       case 'weather':
         this.setWeather(!this.weatherGoal);
         break;
@@ -740,6 +748,7 @@ export class App {
       const o = overlay(r, p);
       this.renderer?.setPr(o.marks);
       this.prOn = true;
+      this.overlayKind = 'pr';
       const row = (cls: string, t: string): HTMLElement => {
         const d = el('div');
         const i = el('i', null, cls);
@@ -772,13 +781,64 @@ export class App {
     }
   }
 
+  /** What changed since the previous stored analysis (docs/ROADMAP.md #8). 6 again turns it off. */
+  private async showSince(): Promise<void> {
+    const r = this.result;
+    const id = this.resultId;
+    if (!r || this.demo) return;
+    if (this.overlayKind === 'since') return this.clearPr(true);
+    if (!id) return this.toast('Load a repository first.');
+    this.clearPr(false);
+    const abort = new AbortController();
+    this.prAbort = abort;
+    try {
+      const prev = await fetchPrevious(id);
+      if (abort.signal.aborted || this.result !== r) return;
+      this.prAbort = null;
+      if (!prev) {
+        const t = 'No earlier analysis of this repository is stored here yet (analyses are kept about 30 days).';
+        this.toast(t);
+        this.announce(t);
+        return;
+      }
+      const s = since(r, prev);
+      this.renderer?.setPr(s.marks);
+      this.prOn = true;
+      this.overlayKind = 'since';
+      const row = (cls: string, t: string): HTMLElement => {
+        const d = el('div');
+        const i = el('i', null, cls);
+        i.setAttribute('aria-hidden', 'true');
+        d.append(i, document.createTextNode(t));
+        return d;
+      };
+      const when = fmtDate(prev.meta.generated_at);
+      $('#prLegend').replaceChildren(
+        el('strong', `Since ${when}`),
+        row('pr-new', `New since then: ${fmt(s.fresh)} ${s.fresh === 1 ? 'file' : 'files'}`),
+        row('pr-ch', `Changed again: ${fmt(s.again)} ${s.again === 1 ? 'file' : 'files'} (${fmt(s.changes)} changes)`),
+        ...(s.removed ? [el('p', `${fmt(s.removed)} ${s.removed === 1 ? 'file' : 'files'} removed since then (not drawn: not in today's city)`)] : []),
+        ...(s.partial ? [el('p', 'One of the analyses is truncated, so this covers only the files and history both contain.')] : []),
+        el('p', `Compared with this site's analysis of ${when} (${prev.meta.sha.slice(0, 7)}); now at ${r.meta.sha.slice(0, 7)}. Esc or 6 to clear.`, 'sub'),
+      );
+      $('#prLegend').hidden = false;
+      this.announce(`Since ${when}: ${fmt(s.fresh)} new, ${fmt(s.again)} changed again, ${fmt(s.removed)} removed.`);
+    } catch (e) {
+      if (abort.signal.aborted) return;
+      this.prAbort = null;
+      const code = e instanceof ApiError ? e.code : 'unavailable';
+      this.toast(ERROR_TEXT[code] ?? 'The previous analysis could not be loaded. Please try again.');
+    }
+  }
+
   private clearPr(announce: boolean): void {
     this.prAbort?.abort();
     this.prAbort = null;
     if (!this.prOn && !announce) return;
     this.prOn = false;
+    this.overlayKind = null;
     $('#prLegend').hidden = true;
-    if (announce) this.announce('PR overlay cleared.');
+    if (announce) this.announce('Overlay cleared.');
   }
 
   /** Bus-factor what-if (docs/ROADMAP.md #6): lights go out in the districts nobody else knows. -1 clears it. */
@@ -1343,6 +1403,7 @@ export class App {
     const w = this.world;
     this.selected = i;
     this.P.hover = i;
+    this.body.classList.toggle('has-sel', i >= 0);
     if (!r || !w || i < 0) {
       this.P.focus = -1;
       this.focusGoal = 0;

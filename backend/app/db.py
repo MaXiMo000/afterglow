@@ -180,6 +180,19 @@ async def get_job(conn: Conn, job_id: uuid.UUID) -> Job | None:
     return Job(*row) if row else None
 
 
+async def previous_result(conn: Conn, repo: str, sha: str) -> bytes | None:
+    """The newest stored result for `repo` from before the one at `sha` (same analyser), for "what changed
+    since last time" (ROADMAP #8). None when there is none (first analysis, or retention removed it)."""
+    cur = await conn.execute(
+        "SELECT p.body FROM results c JOIN results p ON p.repo = c.repo AND p.analyser = c.analyser "
+        "AND p.created < c.created AND p.sha <> c.sha "
+        "WHERE c.repo = %s AND c.sha = %s AND c.analyser = %s ORDER BY p.created DESC LIMIT 1",
+        (repo, sha, ANALYSER_VERSION),
+    )
+    row = await cur.fetchone()
+    return bytes(row[0]) if row else None
+
+
 async def get_pr_body(conn: Conn, repo: str, pr: int, merge: str) -> bytes | None:
     cur = await conn.execute(
         "SELECT body FROM pr_results WHERE repo = %s AND pr = %s AND merge = %s", (repo, pr, merge)

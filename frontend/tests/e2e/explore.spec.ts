@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { mock } from './fixture';
+import { mock, result } from './fixture';
 
 // A5 gate: "keyboard-only walkthrough of every feature". After the repo is submitted with Enter, nothing here uses
 // the mouse. Also: share links restore a view; hostile share links are ignored (SECURITY T15).
@@ -200,6 +200,7 @@ test('N overlays a pull request: dialog, request, legend, Esc; a missing PR expl
   expect(JSON.parse(body)).toEqual({ repo: 'acme/orbit', pr: 42 });
   await key(page, 'Escape');
   await expect(legend).toBeHidden();
+  await expect(page.locator('#announce')).toHaveText('Overlay cleared.');
   await page.unroute('**/api/v1/prs');
   await page.route('**/api/v1/prs', (r) => r.fulfill({ status: 200, json: { id: PR, status: 'done' } }));
   await page.unroute(`**/api/v1/prs/${PR}`);
@@ -208,6 +209,25 @@ test('N overlays a pull request: dialog, request, legend, Esc; a missing PR expl
   await page.fill('#prInput', '7');
   await page.keyboard.press('Enter');
   await expect(page.locator('#announce')).toContainText('GitHub has no test merge for PR #7');
+});
+
+test('6 shows what changed since the previous analysis, or says there is none', async ({ page }) => {
+  await page.route(`**/api/v1/analyses/${ID}/previous`, (r) => r.fulfill({ status: 404, json: { error: 'not_found' } }));
+  await openCity(page);
+  await key(page, '6');
+  await expect(page.locator('#toast')).toContainText('No earlier analysis of this repository is stored here yet');
+  await page.unroute(`**/api/v1/analyses/${ID}/previous`);
+  const prev = result() as { meta: { sha: string; generated_at: number }; files: { path: string; changes: number }[] };
+  prev.meta.sha = 'e'.repeat(40);
+  prev.meta.generated_at = 1_690_000_000;
+  prev.files = prev.files.slice(1).map((f) => ({ ...f, changes: Math.max(0, f.changes - 1) }));
+  await page.route(`**/api/v1/analyses/${ID}/previous`, (r) => r.fulfill({ status: 200, json: prev }));
+  await key(page, '6');
+  const legend = page.locator('#prLegend');
+  await expect(legend).toContainText('Since');
+  await expect(legend).toContainText('Changed again:');
+  await key(page, '6');
+  await expect(legend).toBeHidden();
 });
 
 test('O records an orbit video (WebM download); Esc cancels a recording', async ({ page }) => {

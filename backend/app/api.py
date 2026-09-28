@@ -216,6 +216,27 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
             headers={"ETag": etag, "Cache-Control": "public, max-age=31536000, immutable"},
         )
 
+    @router.get("/analyses/{job_id}/previous")
+    async def previous(request: Request, job_id: str) -> Response:
+        """The analysis of this repository before this one (ROADMAP #8), re-validated like any result."""
+        job = await load_job(request, job_id)
+        if isinstance(job, JSONResponse):
+            return job
+        if job.kind != "analysis" or job.status != "done" or job.sha is None:
+            return _err("not_found", 404)
+        assert pool is not None  # noqa: S101 - load_job returned a job, so the pool exists  # nosec B101
+        async with pool.connection() as conn:
+            body = await db.previous_result(conn, job.repo, job.sha)
+        if body is None:
+            return _err("not_found", 404)
+        try:
+            await run_in_threadpool(validated.check, body)
+        except ValidationError:
+            return _err("internal", 500)
+        return Response(
+            body, media_type="application/json", headers={"Cache-Control": "private, max-age=300"}
+        )
+
     @router.get("/prs/{job_id}")
     async def pr_result(request: Request, job_id: str) -> Response:
         job = await load_job(request, job_id)

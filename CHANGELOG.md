@@ -5,6 +5,9 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- What changed since the previous analysis (`6`): new files glow green, files changed again glow cyan, removals are
+  counted; compares with the newest earlier analysis stored on the site.
+- The hint line hides while a building is selected, so the place caption (and the hotspot tour line) never overlap it.
 - PR overlay (`N`): enter an open pull request's number and the buildings it changes light up (deleted ones in red),
   from GitHub's test merge through the existing github.com-only egress (file names only). **Upgrading:** apply
   `deploy/db/upgrades/0004-pr-overlay.sql` before starting the new containers (see `docs/DEPLOY.md`).

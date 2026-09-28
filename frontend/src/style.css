@@ -157,8 +157,8 @@ body.recording #hud::after { content: ''; position: fixed; right: var(--gutter);
 @keyframes rec-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { body.recording #hud::after { animation: none; } }
 
-/* Short windows: the place caption (and the hotspot tour line) needs the room; ? lists the same hints. */
-@media (max-height: 560px) { #hints { display: none; } }
+/* With a building selected the place caption (and the hotspot tour line) needs the room; ? lists the same hints. */
+body.has-sel #hints { display: none; }
 
 /* walk mode (ROADMAP #3): a soft centre dot to aim with while the mouse is captured */
 #reticle { display: none; position: fixed; left: 50%; top: 50%; width: 7px; height: 7px; margin: -4px 0 0 -4px; border-radius: 50%; pointer-events: none;
@@ -242,6 +242,7 @@ kbd { font: var(--size-xs) var(--font-mono); padding: 0 5px; border: 1px solid v
 #prLegend p { margin: 0; }
 #prLegend i { display: inline-block; width: 12px; height: 10px; margin-right: 8px; vertical-align: -1px; border-radius: 2px; }
 #prLegend .pr-ch { background: #4cd8ff; box-shadow: 0 0 8px rgba(76, 216, 255, 0.6); }
+#prLegend .pr-new { background: #72ff9a; box-shadow: 0 0 8px rgba(114, 255, 154, 0.6); }
 #prLegend .pr-go { background: #ff5247; box-shadow: 0 0 8px rgba(255, 82, 71, 0.6); }
 #riskLegend p { margin: 0; }
 #riskLegend i { display: inline-block; width: 12px; height: 10px; margin-right: 8px; vertical-align: -1px; border-radius: 2px; background: #1a1620; box-shadow: inset 0 0 0 1px #ff9a8f, 0 0 8px rgba(255, 110, 90, 0.5); }

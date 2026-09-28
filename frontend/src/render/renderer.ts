@@ -352,7 +352,7 @@ export class Renderer {
     this.setSlot(14, (o) => (dirs.has(this.world!.inst[o + 12]!) ? 1 : 0));
   }
 
-  /** Mark buildings for the PR overlay (instance slot iD.w): 1 changed, 2 deleted or moved away. */
+  /** Mark buildings for an overlay (instance slot iD.w): 1 changed, 2 deleted or moved away, 3 new. */
   setPr(marks: ReadonlyMap<number, number>): void {
     this.setSlot(15, (o) => marks.get(o / INST) ?? 0);
   }

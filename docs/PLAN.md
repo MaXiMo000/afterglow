@@ -66,6 +66,8 @@ Browser (static SPA) --https--> Caddy (TLS, CSP and headers, static files, body 
   trigger on `jobs`, carrying only the job id), with a 2 s re-check as a fallback.
 - `GET /api/v1/analyses/{id}` -> `200` result, `409 not_ready`, `422 <reason>` for failed jobs, `404` unknown.
   Ids are 32 lower-case hex characters (random UUIDv4).
+- `GET /api/v1/analyses/{id}/previous` -> `200` the newest stored result of the same repository from before this
+  job's result (same analyser, re-validated), or `404` when there is none. For "what changed since last time".
 - `POST /api/v1/prs` body `{"repo":"owner/name","pr":<1..10000000>}` (same headers, limits and job quota as analyses)
   -> `202`/`200 {"id","status"}`; `400 invalid_pr` for anything but an integer in range. Progress on the same
   `/analyses/{id}/events` stream. `GET /api/v1/prs/{id}` -> `200 {repo, pr, merge, base, truncated, changes[{path,

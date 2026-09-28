@@ -114,6 +114,15 @@ export async function fetchPr(id: string): Promise<Pr> {
   return validatePr(await res.json());
 }
 
+/** The analysis of the same repository before this one (docs/ROADMAP.md #8), or null if none is stored. */
+export async function fetchPrevious(id: string): Promise<Result | null> {
+  if (!ID.test(id)) throw new ApiError('bad_response');
+  const res = await fetch(`/api/v1/analyses/${id}/previous`, { credentials: 'omit' });
+  if (res.status === 404) return null;
+  if (res.status !== 200) throw await errorOf(res);
+  return validateResult(await res.json());
+}
+
 export async function fetchResult(id: string): Promise<Result> {
   if (!ID.test(id)) throw new ApiError('bad_response');
   const res = await fetch(`/api/v1/analyses/${id}`, { credentials: 'omit' });

@@ -522,3 +522,27 @@ def test_pr_overlay_flow(client: TestClient, tmp_path: Path) -> None:
 def post_pr(client: TestClient, body: object, ip: str = "203.0.113.9") -> tuple[int, dict[str, str]]:
     r = client.post("/api/v1/prs", content=json.dumps(body).encode(), headers={**HEADERS, "x-real-ip": ip})
     return r.status_code, r.json()
+
+
+def test_previous_analysis(client: TestClient, tmp_path: Path) -> None:
+    _, body = post(client, {"repo": "acme/orbit"})
+    work(tmp_path)
+    job = body["id"]
+    assert client.get(f"/api/v1/analyses/{job}/previous").status_code == 404  # the first analysis
+    current = client.get(f"/api/v1/analyses/{job}").content
+    older = Result.model_validate_json(current).model_copy(
+        update={"meta": Result.model_validate_json(current).meta.model_copy(update={"sha": "b" * 40})}
+    )
+    with psycopg.connect(ADMIN, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO results (repo, sha, analyser, body, created) VALUES (%s, %s, %s, %s, now() - interval '3 days')",
+            ("acme/orbit", "b" * 40, ANALYSER_VERSION, older.model_dump_json(exclude_none=True).encode()),
+        )
+        conn.execute(  # a different analyser version is never offered as "previous"
+            "INSERT INTO results (repo, sha, analyser, body, created) VALUES (%s, %s, %s, %s, now() - interval '1 day')",
+            ("acme/orbit", "c" * 40, ANALYSER_VERSION - 1, b"{}"),
+        )
+    r = client.get(f"/api/v1/analyses/{job}/previous")
+    assert r.status_code == 200
+    assert Result.model_validate_json(r.content).meta.sha == "b" * 40
+    assert client.get(f"/api/v1/analyses/{'0' * 32}/previous").status_code == 404
