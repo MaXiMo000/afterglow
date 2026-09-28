@@ -48,6 +48,21 @@ if ! curl -sSk -D - -o /dev/null "$BASE/api/v1/badges/octocat/hello-world.svg" |
   echo "FAIL badge content-type"; fail=1
 fi
 
+# The embeddable city (ROADMAP #12) is the only framable page: https parents only, no X-Frame-Options (it would
+# override frame-ancestors). Everything else in the set is unchanged, and the rest of the site stays DENY / 'none'.
+WANT[content-security-policy]="${CSP/frame-ancestors 'none'/frame-ancestors https:}"
+unset 'WANT[x-frame-options]'
+check /embed/octocat/hello-world
+if curl -sSk -D - -o /dev/null "$BASE/embed/octocat/hello-world" | grep -qi '^x-frame-options:'; then
+  echo "FAIL /embed must not send X-Frame-Options"; fail=1
+fi
+if ! curl -sSk "$BASE/embed/octocat/hello-world" | grep -q 'src="/assets/embed-'; then
+  echo "FAIL /embed/* does not serve the embed page"; fail=1
+fi
+WANT[content-security-policy]="$CSP"
+WANT[x-frame-options]="DENY"
+check /embed.html.bak  # a non-embed path right next to it keeps the strict set
+
 # API errors are generic JSON, never stack traces or echoed input (T14).
 body="$(curl -sSk "$BASE/api/v1/%3Cscript%3E")"
 if [ "$body" != '{"error":"not_found"}' ]; then echo "FAIL api 404 body: $body"; fail=1; fi

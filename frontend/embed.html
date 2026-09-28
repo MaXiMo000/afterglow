@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="robots" content="noindex" />
+    <title>Afterglow city</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script type="module" src="/src/embed.ts"></script>
+  </head>
+  <body>
+    <main id="embed" aria-busy="true">
+      <canvas id="gl" tabindex="0" aria-label="3D city of the repository. Drag or use the arrow keys to turn it; Ctrl and the wheel, or + and -, to zoom."></canvas>
+      <img id="fallback" alt="" hidden />
+      <div class="cap">
+        <p class="repo" id="repo"></p>
+        <p class="note" id="note"></p>
+        <a id="open" target="_blank" rel="noopener noreferrer">Open the full city on Afterglow <span aria-hidden="true">&#8599;</span></a>
+      </div>
+      <p id="status" role="status"></p>
+    </main>
+  </body>
+</html>

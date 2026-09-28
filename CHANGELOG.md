@@ -5,6 +5,9 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- Embeddable city: `/embed/owner/name` shows the newest stored analysis in an iframe on any https site ("Copy embed
+  code" in the `?` panel). Only that page may be framed; everything else keeps `frame-ancestors 'none'` and
+  `X-Frame-Options: DENY`.
 - Featured cities on the start page: a strip of skyline tiles (`AFTERGLOW_FEATURED`, up to 12), kept fresh by the
   API when the queue is idle.
 - District drill-down (`Enter`, or the inspector button): open a district as its own city of sub-folders, drill again,

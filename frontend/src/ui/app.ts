@@ -1106,6 +1106,19 @@ export class App {
     }
   }
 
+  /** Iframe snippet for the embeddable city (docs/ROADMAP.md #12): read-only, newest stored analysis. */
+  private async copyEmbed(): Promise<void> {
+    const repo = this.result?.meta.repo; // validated `owner/name`, lower-case
+    if (!repo || this.demo || !/^[a-z0-9-]{1,39}\/[a-z0-9._-]{1,100}$/.test(repo)) return this.toast('Load a repository first.');
+    const html = `<iframe src="${location.origin}/embed/${repo}" title="Afterglow city of ${repo}" width="720" height="405" loading="lazy" style="border:0;border-radius:8px"></iframe>`;
+    try {
+      await navigator.clipboard.writeText(html);
+      this.toast('Embed code copied: paste it into your site or blog (HTML)');
+    } catch {
+      this.toast('Clipboard unavailable');
+    }
+  }
+
   private togglePhoto(): void {
     this.photo = !this.photo;
     this.body.classList.toggle('photo', this.photo);
@@ -1322,6 +1335,7 @@ export class App {
     $('#btnNew').addEventListener('click', () => this.goHome());
     $('#btnShare').addEventListener('click', () => this.run('share'));
     $('#btnBadge').addEventListener('click', () => void this.copyBadge());
+    $('#btnEmbed').addEventListener('click', () => void this.copyEmbed());
     // `submit` fires synchronously with the button press (a dialog's `close` event is queued behind rendering).
     $('#prDialog form').addEventListener('submit', (e) => {
       const v = ($('#prInput') as HTMLInputElement).value.trim();

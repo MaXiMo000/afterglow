@@ -264,6 +264,23 @@ test('start page: featured cities strip, safe links, and nothing when the API ha
   await expect(page.locator('#featured')).toBeHidden();
 });
 
+test('embed page: read-only city for other sites, with a link to the full city', async ({ page }) => {
+  await page.route('**/api/v1/results/acme/orbit', (r) => r.fulfill({ status: 200, json: result() }));
+  await page.route('**/api/v1/results/nobody/here', (r) => r.fulfill({ status: 404, json: { error: 'not_found' } }));
+  const posts: string[] = [];
+  page.on('request', (req) => void (req.method() !== 'GET' && posts.push(req.url())));
+  await page.goto('/embed/acme/orbit');
+  await expect(page.locator('#repo')).toHaveText('acme/orbit');
+  await expect(page.locator('#open')).toHaveAttribute('href', '/acme/orbit');
+  await expect(page.locator('#open')).toHaveAttribute('target', '_blank');
+  await expect(page.locator('#gl')).toHaveAttribute('aria-label', /3D city of acme\/orbit/);
+  await page.goto('/embed/nobody/here');
+  await expect(page.locator('#status')).toContainText('Not analysed on Afterglow yet');
+  await page.goto('/embed/javascript:alert(1)/x');
+  await expect(page.locator('#status')).toHaveText('Not a repository address.');
+  expect(posts).toEqual([]); // never starts an analysis or changes anything
+});
+
 test('O records an orbit video (WebM download); Esc cancels a recording', async ({ page }) => {
   test.slow(); // the orbit clip is 12 s of real time
   await openCity(page);

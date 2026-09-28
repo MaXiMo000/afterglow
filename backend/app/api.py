@@ -332,6 +332,35 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
 
+    @router.get("/results/{owner}/{name}")
+    async def latest(request: Request, owner: str, name: str) -> Response:
+        """Newest stored result of a repository, for the embeddable city (ROADMAP #12). Never starts work."""
+        if wait := read_limit.check(client_of(request)):
+            return _err("rate_limited", 429, wait)
+        try:
+            slug = parse_repo(f"{owner}/{name}").slug
+        except InvalidRepoError:
+            return _err("not_found", 404)
+        if pool is None:
+            return _err("unavailable", 503, 30)
+        async with pool.connection() as conn:
+            sha = await db.latest_result(conn, slug)
+            if sha is None:
+                return _err("not_found", 404)
+            etag = f'"{sha}-{ANALYSER_VERSION}"'
+            if request.headers.get("if-none-match") == etag:
+                return Response(status_code=304, headers={"ETag": etag})
+            body = await db.get_result_body(conn, slug, sha)
+        if body is None:
+            return _err("not_found", 404)
+        try:
+            await run_in_threadpool(validated.check, body)
+        except ValidationError:
+            return _err("internal", 500)
+        # Short cache: a newer analysis should reach embeds within the hour. ETag makes revalidation cheap.
+        headers = {"ETag": etag, "Cache-Control": "public, max-age=600"}
+        return Response(body, media_type="application/json", headers=headers)
+
     @router.get("/featured")
     async def featured(request: Request) -> Response:
         """Start-page gallery (ROADMAP #10): the configured repositories, in order (tiles use the badges)."""

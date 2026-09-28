@@ -569,3 +569,19 @@ def test_featured_refresh_picks_the_stalest_only_when_idle(client: TestClient) -
     assert asyncio.run(pick()) == "f/two"  # f/one is fresh, f/three failed recently
     post(client, {"repo": "busy/repo"})
     assert asyncio.run(pick()) is None  # a visitor's job is queued: wait
+
+
+def test_latest_result_for_embeds(client: TestClient, tmp_path: Path) -> None:
+    assert client.get("/api/v1/results/acme/orbit").status_code == 404  # never analysed: no work is started
+    with psycopg.connect(ADMIN, autocommit=True) as conn:
+        assert conn.execute("SELECT count(*) FROM jobs").fetchone() == (0,)
+    post(client, {"repo": "acme/orbit"})
+    work(tmp_path)
+    r = client.get("/api/v1/results/Acme/Orbit")
+    assert r.status_code == 200 and Result.model_validate_json(r.content).meta.repo == "acme/orbit"
+    assert (
+        client.get("/api/v1/results/acme/orbit", headers={"if-none-match": r.headers["etag"]}).status_code
+        == 304
+    )
+    for bad in ("acme/..", "-x/y", "a/b.git"):
+        assert client.get(f"/api/v1/results/{bad}").status_code == 404

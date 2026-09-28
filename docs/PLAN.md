@@ -75,6 +75,9 @@ Browser (static SPA) --https--> Caddy (TLS, CSP and headers, static files, body 
   when GitHub has no test merge (closed, merged, conflicting or missing PR). The worker fetches only
   `refs/pull/<n>/merge` at depth 2 without blobs from github.com and compares it with its first parent (exact
   renames by blob id). A fresh overlay (< 10 min) is reused; overlays are deleted after 7 days.
+- `GET /api/v1/results/{owner}/{name}` -> `200` the newest stored result for the repository (current analyser,
+  re-validated, `ETag`, cached 10 min) or `404`. Never starts an analysis. Used by the embed page `/embed/owner/name`
+  (a separate entry, `embed.html`), the only page other sites may frame (see SECURITY T9).
 - `GET /api/v1/featured` -> `{"repos": ["owner/name", ...]}` from `AFTERGLOW_FEATURED` (up to 12, parsed like user input
   at startup; invalid config refuses to start). Every 10 min, only while nothing is queued or running, the API
   queues the one featured repository whose newest result is oldest and over 7 days (skipping any that failed in the

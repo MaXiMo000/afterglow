@@ -28,17 +28,26 @@
 	header {
 		-Server
 		-Via
-		Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types 'none'"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
 		Cross-Origin-Opener-Policy "same-origin"
 		Cross-Origin-Resource-Policy "same-origin"
 		Cross-Origin-Embedder-Policy "require-corp"
-		X-Frame-Options "DENY"
 		Permissions-Policy "accelerometer=(), autoplay=(), camera=(), clipboard-read=(), display-capture=(), encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), hid=(), idle-detection=(), magnetometer=(), microphone=(), midi=(), payment=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), usb=(), xr-spatial-tracking=()"
 		# HSTS without preload until the domain is stable (SECURITY T9).
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	}
+
+	# Framing (SECURITY T9): nothing may frame the site, except the embeddable city (docs/ROADMAP.md #12), which any
+	# https page may frame. It is read-only (no forms, no state-changing requests, never starts an analysis), so
+	# framing it offers nothing to click-jack. X-Frame-Options would override frame-ancestors there, so it is left off.
+	@embed path /embed/*
+	@not_embed not path /embed/*
+	header @not_embed {
+		Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types 'none'"
+		X-Frame-Options "DENY"
+	}
+	header @embed Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors https:; base-uri 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types 'none'"
 
 	@api path /api/* /healthz /readyz
 	handle @api {
@@ -58,6 +67,7 @@
 		@hashed path /assets/*
 		header @hashed Cache-Control "public, max-age=31536000, immutable"
 		header ?Cache-Control "no-cache"
+		rewrite @embed /embed.html
 		try_files {path} /index.html
 		file_server
 	}
