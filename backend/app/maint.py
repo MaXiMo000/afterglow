@@ -28,11 +28,11 @@ RETRY_S = 60.0
 ALIVE_FILE = "/tmp/.alive"  # noqa: S108  # nosec B108
 
 
-def prune(conn: Conn) -> tuple[int, int]:
+def prune(conn: Conn) -> tuple[int, int, int]:
     """Delete finished jobs past JOBS_KEEP, then old (or older-analyser) results that nothing references.
 
     A result stays while any job record points at it, so asking for the same commit again keeps it for another
-    JOBS_KEEP. Returns (jobs deleted, results deleted).
+    JOBS_KEEP. PR overlays go after JOBS_KEEP. Returns (jobs, results, PR overlays) deleted.
     """
     with conn.transaction():
         jobs = conn.execute(
@@ -46,7 +46,10 @@ def prune(conn: Conn) -> tuple[int, int]:
             "                WHERE j.repo = r.repo AND j.sha = r.sha AND j.analyser = r.analyser)",
             (ANALYSER_VERSION, RESULTS_KEEP),
         ).rowcount
-    return jobs, results
+        prs = conn.execute(
+            "DELETE FROM pr_results WHERE created < now() - %s::interval", (JOBS_KEEP,)
+        ).rowcount
+    return jobs, results, prs
 
 
 def main() -> int:
@@ -58,8 +61,8 @@ def main() -> int:
     while True:
         try:
             with psycopg.connect(dsn, autocommit=True) as conn:
-                jobs, results = prune(conn)
-            log.info("pruned jobs=%d results=%d", jobs, results)
+                jobs, results, prs = prune(conn)
+            log.info("pruned jobs=%d results=%d prs=%d", jobs, results, prs)
             with contextlib.suppress(OSError):
                 Path(os.environ.get("AFTERGLOW_ALIVE_FILE", ALIVE_FILE)).touch()
             time.sleep(EVERY_S)

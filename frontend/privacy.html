@@ -31,6 +31,9 @@
           count one person's name spellings once). No names, no email addresses, no file contents. Results are cached for
           reuse by anyone who asks for the same repository and commit. A result is deleted once it is more than 30 days
           old and nobody has asked for that repository at that commit in the last 7 days.</li>
+        <li><strong>Pull request overlays</strong>: for an open pull request someone asked about, the paths of the files
+          it changes and whether each was added, changed, deleted or renamed, from GitHub's public test merge of it. No
+          file contents, no titles, descriptions, authors or comments. Deleted after 7 days.</li>
         <li><strong>Job records</strong>: repository name, commit, status, time, and the IP pseudonym above. The
           pseudonym is kept only while the job is queued or running (it enforces two active jobs per client); when the
           job finishes or fails it is overwritten with zeros. Finished job records are deleted after 7 days.</li>

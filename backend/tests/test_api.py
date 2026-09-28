@@ -26,11 +26,12 @@ from app.limits import Gate, RateLimiter
 from app.main import create_app
 from app.notify import ALL, Hub, listen
 from app.settings import Settings
-from core.schema import ANALYSER_VERSION, Result
+from core.schema import ANALYSER_VERSION, PrResult, Result
 from worker import queue
 from worker.git import Caps
 
 from .gitfixture import C, make_repo
+from .test_pr import pr_repo
 
 ADMIN = os.environ.get("AFTERGLOW_TEST_ADMIN_URL", "")
 API = os.environ.get("AFTERGLOW_TEST_API_URL", "")
@@ -270,6 +271,9 @@ def test_lost_worker_job_is_failed(client: TestClient) -> None:
         ("API", "DELETE FROM jobs"),
         ("API", "INSERT INTO results (repo, sha, analyser, body) VALUES ('a/b', repeat('a', 40), 1, '')"),
         ("API", "DELETE FROM results"),
+        ("API", "INSERT INTO pr_results (repo, pr, merge, body) VALUES ('a/b', 1, repeat('a', 40), '')"),
+        ("WORKER", "DELETE FROM pr_results"),
+        ("MAINT", "SELECT body FROM pr_results"),
         ("API", "CREATE TABLE x (y int)"),
         ("WORKER", "INSERT INTO jobs (id, repo, client) VALUES (gen_random_uuid(), 'a/b', repeat('0', 32))"),
         ("WORKER", "DELETE FROM jobs"),
@@ -329,7 +333,7 @@ def test_retention_deletes_old_jobs_and_unused_results(client: TestClient, tmp_p
             "VALUES (gen_random_uuid(), 'a/wait', repeat('0', 32), now() - interval '8 days')"
         )
     with psycopg.connect(MAINT, autocommit=True) as conn:
-        assert maint.prune(conn) == (1, 2)
+        assert maint.prune(conn) == (1, 2, 0)
     with psycopg.connect(ADMIN) as conn:
         jobs = sorted(r[0] for r in conn.execute("SELECT repo FROM jobs"))
         results = sorted(r[0] for r in conn.execute("SELECT repo FROM results"))
@@ -486,3 +490,35 @@ def test_badge(client: TestClient, tmp_path: Path) -> None:
         assert client.get(f"/api/v1/badges/{bad}").status_code == 404
     with psycopg.connect(ADMIN, autocommit=True) as conn:
         assert conn.execute("SELECT count(*) FROM jobs").fetchone() == (1,)  # a badge never queues work
+
+
+def test_pr_overlay_flow(client: TestClient, tmp_path: Path) -> None:
+    for bad in (0, -1, 10_000_001, "1", True, 1.5, None):
+        assert post_pr(client, {"repo": "acme/orbit", "pr": bad})[1] == {"error": "invalid_pr"}
+    assert post_pr(client, {"repo": "acme/orbit"})[1] == {"error": "invalid_repo"}  # exact keys
+    status, a = post(client, {"repo": "acme/orbit"})  # an analysis and a PR of the same repo coexist
+    status, body = post_pr(client, {"repo": "Acme/Orbit", "pr": 1}, ip="198.51.100.3")
+    assert (status, body["status"]) == (202, "queued") and body["id"] != a["id"]
+    job = body["id"]
+    assert client.get(f"/api/v1/prs/{job}").status_code == 409
+    assert client.get(f"/api/v1/analyses/{job}").status_code == 404  # a PR job is not an analysis
+    assert client.get(f"/api/v1/prs/{a['id']}").status_code == 404  # and the other way round
+    url = pr_repo(tmp_path)
+    with psycopg.connect(WORKER, autocommit=True) as conn:
+        while (claimed := queue.claim(conn)) is not None:
+            if claimed[2] == 1:
+                queue.run_job(
+                    conn, claimed[0], claimed[1], Caps(allow_file_protocol=True), str(tmp_path), url=url, pr=1
+                )
+    r = client.get(f"/api/v1/prs/{job}")
+    assert r.status_code == 200
+    res = PrResult.model_validate_json(r.content)
+    assert res.pr == 1 and {c.path for c in res.changes} == {"a.py", "b.py", "c.py", "new.py"}
+    status, again = post_pr(client, {"repo": "acme/orbit", "pr": 1}, ip="198.51.100.4")
+    assert (status, again["status"]) == (200, "done")  # fresh overlay reused, no new work
+    assert client.get(f"/api/v1/prs/{again['id']}").status_code == 200
+
+
+def post_pr(client: TestClient, body: object, ip: str = "203.0.113.9") -> tuple[int, dict[str, str]]:
+    r = client.post("/api/v1/prs", content=json.dumps(body).encode(), headers={**HEADERS, "x-real-ip": ip})
+    return r.status_code, r.json()

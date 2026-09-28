@@ -66,6 +66,13 @@ Browser (static SPA) --https--> Caddy (TLS, CSP and headers, static files, body 
   trigger on `jobs`, carrying only the job id), with a 2 s re-check as a fallback.
 - `GET /api/v1/analyses/{id}` -> `200` result, `409 not_ready`, `422 <reason>` for failed jobs, `404` unknown.
   Ids are 32 lower-case hex characters (random UUIDv4).
+- `POST /api/v1/prs` body `{"repo":"owner/name","pr":<1..10000000>}` (same headers, limits and job quota as analyses)
+  -> `202`/`200 {"id","status"}`; `400 invalid_pr` for anything but an integer in range. Progress on the same
+  `/analyses/{id}/events` stream. `GET /api/v1/prs/{id}` -> `200 {repo, pr, merge, base, truncated, changes[{path,
+  status, old?, href?}]}` (status: added/modified/deleted/renamed; at most 3,000 paths), `409`, `422 pr_not_found`
+  when GitHub has no test merge (closed, merged, conflicting or missing PR). The worker fetches only
+  `refs/pull/<n>/merge` at depth 2 without blobs from github.com and compares it with its first parent (exact
+  renames by blob id). A fresh overlay (< 10 min) is reused; overlays are deleted after 7 days.
 - `GET /api/v1/badges/{owner}/{name}.svg` -> `200 image/svg+xml`, a README badge: towers for the 48 most-changed
   files of the newest stored result (height = changes, amber = hotspot), or a "not analysed yet" placeholder.
   Never starts an analysis. Same repo parser (`404` otherwise), per-client read limit, renders capped at 60/min per

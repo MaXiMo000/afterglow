@@ -2,7 +2,8 @@
  * App controller: hero -> loading (real SSE progress) -> story (A4) -> city with the explore tools (A5), plus the
  * 2D table fallback. The effects pass (A6) builds on this.
  */
-import { ApiError, fetchResult, followProgress, startAnalysis, type Progress } from '../lib/api';
+import { ApiError, fetchPr, fetchResult, followProgress, startAnalysis, startPr, type Progress } from '../lib/api';
+import { overlay } from '../lib/pr';
 import { beforeWindow } from '../lib/history';
 import { parseRepo, repoFromPath, repoPath, type RepoRef } from '../lib/repo';
 import { validateResult, type Result } from '../lib/result';
@@ -83,7 +84,7 @@ export class App {
   private readonly cam = new OrbitCamera();
   private readonly P: Params = {
     t: 1, fog: FOG, hot: 0.5, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.035, ca: 1,
-    arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0, weather: 0, risk: 0,
+    arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0, weather: 0, risk: 0, pr: 0,
   }; // prettier-ignore
   private time = 0;
   private last = 0;
@@ -96,6 +97,8 @@ export class App {
   private walker: Walker | null = null; // walk mode (docs/ROADMAP.md #3)
   private hintsText = '';
   private tour = -1; // position in insights.hotspots during a J/K tour
+  private prOn = false; // a PR overlay is shown (docs/ROADMAP.md #7)
+  private prAbort: AbortController | null = null;
   private weatherGoal = 0; // weather layer: 1 on; P.weather eases toward it
   private typesGoal = 0; // colour by file type: 1 on; P.types eases toward it
   private ptrs = new Map<number, { x: number; y: number; t: number }>();
@@ -244,7 +247,8 @@ export class App {
     this.renderHonesty();
     if (this.typesGoal) this.setTypes(true, false);
     if (this.weatherGoal) this.setWeather(true, false);
-    this.setWhatIf(-1, false); // a new world starts with every light on // keep the mode across repositories; its legend is per result
+    this.setWhatIf(-1, false); // a new world starts with every light on
+    this.clearPr(false); // keep the mode across repositories; its legend is per result
     if (!this.demo) {
       setText($('#hudRepo'), r.meta.repo);
       $('#hudRepo').title = r.meta.repo; // full name on hover when the slot truncates it
@@ -596,6 +600,12 @@ export class App {
       case 'tourPrev':
         this.tourStep(id === 'tourNext' ? 1 : -1);
         break;
+      case 'pr': {
+        const d = $('#prDialog') as HTMLDialogElement;
+        ($('#prInput') as HTMLInputElement).value = '';
+        d.showModal();
+        break;
+      }
       case 'weather':
         this.setWeather(!this.weatherGoal);
         break;
@@ -708,6 +718,67 @@ export class App {
     setText($('#placeName'), name);
     setText($('#placeSub'), `${r.dirs[f.dir]?.name ?? ''} · ${why} · J next, K previous`);
     this.announce(`Hotspot ${this.tour + 1} of ${list.length}: ${f.path}, ${why}.`);
+  }
+
+  /** PR overlay (docs/ROADMAP.md #7): queue it like an analysis, then light up the buildings it touches. */
+  private async showPr(n: number): Promise<void> {
+    const r = this.result;
+    if (!r || this.demo || n > 10_000_000) return;
+    this.clearPr(false);
+    const abort = new AbortController();
+    this.prAbort = abort;
+    const say = (t: string): void => {
+      this.toast(t);
+      this.announce(t);
+    };
+    say(`Fetching the files PR #${n} changes from GitHub\u2026`);
+    try {
+      const { id, done } = await startPr(r.meta.repo, n);
+      if (!done) await followProgress(id, (p) => p.status === 'queued' && p.ahead ? this.toast(`PR #${n}: ${fmt(p.ahead)} ahead in the queue`) : undefined, abort.signal);
+      const p = await fetchPr(id);
+      if (abort.signal.aborted || this.result !== r || p.repo !== r.meta.repo) return;
+      const o = overlay(r, p);
+      this.renderer?.setPr(o.marks);
+      this.prOn = true;
+      const row = (cls: string, t: string): HTMLElement => {
+        const d = el('div');
+        const i = el('i', null, cls);
+        i.setAttribute('aria-hidden', 'true');
+        d.append(i, document.createTextNode(t));
+        return d;
+      };
+      const extra = [
+        o.fresh ? `${fmt(o.fresh)} new ${o.fresh === 1 ? 'file' : 'files'} (not in the city yet)` : '',
+        o.unseen ? `${fmt(o.unseen)} changed ${o.unseen === 1 ? 'file is' : 'files are'} not drawn (beyond the file cap, or newer than this analysis)` : '',
+        p.truncated ? `Only the first ${fmt(p.changes.length)} changed paths were read` : '',
+      ].filter(Boolean);
+      $('#prLegend').replaceChildren(
+        el('strong', `PR #${n}`),
+        row('pr-ch', `Changed: ${fmt(o.changed)} ${o.changed === 1 ? 'building' : 'buildings'}`),
+        row('pr-go', `Deleted or moved away: ${fmt(o.gone)}`),
+        ...extra.map((t) => el('p', t)),
+        el('p', `GitHub's test merge ${p.merge.slice(0, 7)} against its base ${p.base.slice(0, 7)}; the city is at ${r.meta.sha.slice(0, 7)}. File names only. Esc to clear.`, 'sub'),
+      );
+      $('#prLegend').hidden = false;
+      this.prAbort = null;
+      say(`PR #${n}: ${fmt(o.changed)} changed, ${fmt(o.gone)} deleted or moved away${o.fresh ? `, ${fmt(o.fresh)} new` : ''}.`);
+    } catch (e) {
+      if (abort.signal.aborted) return;
+      this.prAbort = null;
+      const code = e instanceof ApiError ? e.code : 'unavailable';
+      say(code === 'pr_not_found'
+        ? `GitHub has no test merge for PR #${n}: it may be closed, merged, have conflicts, or not exist. Only open, mergeable PRs can be shown.`
+        : (ERROR_TEXT[code] ?? 'The PR could not be loaded. Please try again.'));
+    }
+  }
+
+  private clearPr(announce: boolean): void {
+    this.prAbort?.abort();
+    this.prAbort = null;
+    if (!this.prOn && !announce) return;
+    this.prOn = false;
+    $('#prLegend').hidden = true;
+    if (announce) this.announce('PR overlay cleared.');
   }
 
   /** Bus-factor what-if (docs/ROADMAP.md #6): lights go out in the districts nobody else knows. -1 clears it. */
@@ -1073,6 +1144,11 @@ export class App {
     $('#btnNew').addEventListener('click', () => this.goHome());
     $('#btnShare').addEventListener('click', () => this.run('share'));
     $('#btnBadge').addEventListener('click', () => void this.copyBadge());
+    // `submit` fires synchronously with the button press (a dialog's `close` event is queued behind rendering).
+    $('#prDialog form').addEventListener('submit', (e) => {
+      const v = ($('#prInput') as HTMLInputElement).value.trim();
+      if ((e as SubmitEvent).submitter?.getAttribute('value') === 'show' && /^[1-9][0-9]{0,7}$/.test(v)) void this.showPr(Number(v));
+    });
     $('#brandHome').addEventListener('click', (e) => {
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return; // let the browser open a new tab
       e.preventDefault();
@@ -1095,6 +1171,7 @@ export class App {
         if (this.walker) return this.setWalk(false);
         if (this.compare) return this.setCompare(null);
         if (this.typesGoal) return this.setTypes(false);
+        if (this.prOn || this.prAbort) return this.clearPr(true);
         if (this.insights.whatIf >= 0) return this.setWhatIf(-1);
         if (this.weatherGoal) return this.setWeather(false);
         if (this.selected >= 0 || this.P.focus >= 0) return this.select(-1);
@@ -1477,6 +1554,8 @@ export class App {
     this.lastPose = { pos, tgt };
     P.focusAmt += (this.focusGoal - P.focusAmt) * (1 - Math.exp(-dt * 5));
     P.weather = reduced ? this.weatherGoal : P.weather + (this.weatherGoal - P.weather) * (1 - Math.exp(-dt * 2)); // slow fade in
+    const prGoal = this.prOn ? 1 : 0;
+    P.pr = reduced ? prGoal : P.pr + (prGoal - P.pr) * (1 - Math.exp(-dt * 4));
     const riskGoal = this.insights.whatIf >= 0 ? 1 : 0;
     P.risk = reduced ? riskGoal : P.risk + (riskGoal - P.risk) * (1 - Math.exp(-dt * 3)); // lights fade out, not snap
     P.types = reduced ? this.typesGoal : P.types + (this.typesGoal - P.types) * (1 - Math.exp(-dt * 5)); // cross-fade

@@ -12,7 +12,7 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -25,7 +25,7 @@ from app.limits import Gate, RateLimiter, client_id
 from app.notify import ALL, Hub
 from app.settings import Settings
 from core.repo import InvalidRepoError, parse_repo
-from core.schema import ANALYSER_VERSION, Result
+from core.schema import ANALYSER_VERSION, PrResult, Result
 
 MAX_BODY = 1024
 MAX_QUEUE = 50  # queued jobs overall before new work is refused with 503
@@ -51,8 +51,9 @@ class ValidatedBodies:
     ~0.2 s, which would stall every other request and progress stream on the event loop.
     """
 
-    def __init__(self, max_entries: int = 512) -> None:
+    def __init__(self, max_entries: int = 512, model: type[Result] | type[PrResult] = Result) -> None:
         self.max_entries = max_entries
+        self.model = model
         self._seen: OrderedDict[bytes, None] = OrderedDict()
         self._lock = threading.Lock()
 
@@ -62,7 +63,7 @@ class ValidatedBodies:
             if digest in self._seen:
                 self._seen.move_to_end(digest)
                 return
-        Result.model_validate_json(body)  # raises ValidationError
+        self.model.model_validate_json(body)  # raises ValidationError
         with self._lock:
             self._seen[digest] = None
             if len(self._seen) > self.max_entries:
@@ -77,6 +78,7 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
     read_limit = RateLimiter(rate=240, per=60)
     streams = Gate(per_key=4, total=200, max_age=SSE_MAX_S + 30)
     validated = ValidatedBodies()
+    validated_prs = ValidatedBodies(128, PrResult)
     badge_renders = RateLimiter(rate=60, per=60)  # cache misses parse a whole result: bounded globally
     badges: OrderedDict[tuple[str, str], bytes] = OrderedDict()
     run_stats: list[tuple[float, tuple[float, int] | None]] = []  # (read at, db.run_stats())
@@ -101,8 +103,8 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
         origin = request.headers.get("origin")
         return origin is None or origin == settings.public_origin
 
-    @router.post("/analyses")
-    async def create(request: Request) -> Response:
+    async def read_json(request: Request) -> tuple[str, dict[str, object]] | JSONResponse:
+        """Request checks shared by every POST: CSRF controls, size, rate limits, a JSON object body."""
         # SECURITY T10: JSON only; custom header required (cross-origin needs CORS, which we never grant);
         # Origin checked when present.
         if request.headers.get("content-type", "").split(";")[0].strip() != "application/json":
@@ -120,15 +122,15 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
             return _err("too_large", 413)
         try:
             payload = json.loads(raw)
-            if (
-                not isinstance(payload, dict)
-                or set(payload) != {"repo"}
-                or not isinstance(payload["repo"], str)
-            ):
-                raise ValueError
-            repo = parse_repo(payload["repo"])
-        except (ValueError, InvalidRepoError):
+        except ValueError:
             return _err("invalid_repo", 400)
+        if not isinstance(payload, dict):
+            return _err("invalid_repo", 400)
+        return client, payload
+
+    async def enqueue(
+        client: str, create: Callable[[db.Conn], Awaitable[tuple[uuid.UUID, str]]]
+    ) -> JSONResponse:
         if pool is None:
             return _err("unavailable", 503, 30)
         async with pool.connection() as conn:
@@ -136,10 +138,42 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
                 return _err("too_many_jobs", 429, 30)
             if await db.queue_depth(conn) >= MAX_QUEUE:
                 return _err("busy", 503, 30)
-            job_id, status = await db.create_job(conn, repo.slug, client)
+            job_id, status = await create(conn)
         return JSONResponse(
             {"id": job_id.hex, "status": status}, status_code=200 if status == "done" else 202
         )
+
+    def repo_of(payload: dict[str, object], keys: set[str]) -> str | None:
+        if set(payload) != keys or not isinstance(payload.get("repo"), str):
+            return None
+        try:
+            return parse_repo(str(payload["repo"])).slug
+        except InvalidRepoError:
+            return None
+
+    @router.post("/analyses")
+    async def create(request: Request) -> Response:
+        got = await read_json(request)
+        if isinstance(got, JSONResponse):
+            return got
+        client, payload = got
+        if (slug := repo_of(payload, {"repo"})) is None:
+            return _err("invalid_repo", 400)
+        return await enqueue(client, lambda conn: db.create_job(conn, slug, client))
+
+    @router.post("/prs")
+    async def create_pr(request: Request) -> Response:
+        """PR overlay (docs/ROADMAP.md #7): the files an open PR changes. Same limits as an analysis."""
+        got = await read_json(request)
+        if isinstance(got, JSONResponse):
+            return got
+        client, payload = got
+        if (slug := repo_of(payload, {"repo", "pr"})) is None:
+            return _err("invalid_repo", 400)
+        pr = payload["pr"]
+        if not isinstance(pr, int) or isinstance(pr, bool) or not 1 <= pr <= 10_000_000:
+            return _err("invalid_pr", 400)
+        return await enqueue(client, lambda conn: db.create_pr_job(conn, slug, pr, client))
 
     async def load_job(request: Request, job_id: str) -> db.Job | JSONResponse:
         if wait := read_limit.check(client_of(request)):
@@ -158,6 +192,8 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
         job = await load_job(request, job_id)
         if isinstance(job, JSONResponse):
             return job
+        if job.kind != "analysis":
+            return _err("not_found", 404)
         if job.status == "failed":
             return _err(job.reason or "failed", 422)
         if job.status != "done" or job.sha is None:
@@ -178,6 +214,31 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
             body,
             media_type="application/json",
             headers={"ETag": etag, "Cache-Control": "public, max-age=31536000, immutable"},
+        )
+
+    @router.get("/prs/{job_id}")
+    async def pr_result(request: Request, job_id: str) -> Response:
+        job = await load_job(request, job_id)
+        if isinstance(job, JSONResponse):
+            return job
+        if job.kind != "pr" or job.pr is None:
+            return _err("not_found", 404)
+        if job.status == "failed":
+            return _err(job.reason or "failed", 422)
+        if job.status != "done" or job.sha is None:
+            return _err("not_ready", 409)
+        assert pool is not None  # noqa: S101 - load_job returned a job, so the pool exists  # nosec B101
+        async with pool.connection() as conn:
+            body = await db.get_pr_body(conn, job.repo, job.pr, job.sha)
+        if body is None:
+            return _err("not_found", 404)
+        try:
+            await run_in_threadpool(validated_prs.check, body)
+        except ValidationError:
+            return _err("internal", 500)
+        # Immutable per job: the job id names one test merge. No ETag needed (the body is small).
+        return Response(
+            body, media_type="application/json", headers={"Cache-Control": "private, max-age=3600"}
         )
 
     @router.get("/analyses/{job_id}/events")

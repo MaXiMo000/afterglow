@@ -5,6 +5,9 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- PR overlay (`N`): enter an open pull request's number and the buildings it changes light up (deleted ones in red),
+  from GitHub's test merge through the existing github.com-only egress (file names only). **Upgrading:** apply
+  `deploy/db/upgrades/0004-pr-overlay.sql` before starting the new containers (see `docs/DEPLOY.md`).
 - Bus-factor "what if" (Insights, Bus factor): pick a contributor and the districts nobody else knows go dark.
   Analyser 5 (`dirs[].owners`, top 5 authors per district by commit share); cached results are recomputed.
 - Weather (`Z`): rain over the busiest districts of the last 12 months and low haze over quiet ones, with a legend

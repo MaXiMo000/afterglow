@@ -1,5 +1,6 @@
 /** Same-origin API client (docs/PLAN.md section 4). Only fixed paths and a validated 32-hex id are ever used. */
 import type { RepoRef } from './repo';
+import { validatePr, type Pr } from './pr';
 import { validateResult, type Result } from './result';
 
 export type Stage = 'queued' | 'cloning' | 'counting' | 'parsing' | 'sizing' | 'scoring' | 'done' | 'failed';
@@ -90,6 +91,27 @@ export function followProgress(id: string, onProgress: (p: Progress) => void, si
       if (es.readyState === EventSource.CLOSED) reject(new ApiError('unavailable'));
     };
   });
+}
+
+/** Queue a PR overlay (docs/ROADMAP.md #7). Same request rules as an analysis. */
+export async function startPr(repo: string, pr: number): Promise<{ id: string; done: boolean }> {
+  const res = await fetch('/api/v1/prs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Afterglow': '1' },
+    body: JSON.stringify({ repo, pr }),
+    credentials: 'omit',
+  });
+  if (res.status !== 200 && res.status !== 202) throw await errorOf(res);
+  const body = (await res.json()) as { id?: unknown; status?: unknown };
+  if (typeof body.id !== 'string' || !ID.test(body.id)) throw new ApiError('bad_response');
+  return { id: body.id, done: body.status === 'done' };
+}
+
+export async function fetchPr(id: string): Promise<Pr> {
+  if (!ID.test(id)) throw new ApiError('bad_response');
+  const res = await fetch(`/api/v1/prs/${id}`, { credentials: 'omit' });
+  if (res.status !== 200) throw await errorOf(res);
+  return validatePr(await res.json());
 }
 
 export async function fetchResult(id: string): Promise<Result> {

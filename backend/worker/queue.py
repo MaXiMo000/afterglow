@@ -17,9 +17,10 @@ import psycopg
 from psycopg.rows import TupleRow
 
 from core.repo import parse_repo
-from core.schema import ANALYSER_VERSION, Result
+from core.schema import ANALYSER_VERSION, PrResult, Result
 from worker.analyse import analyse
 from worker.git import AnalysisError, Caps, Git
+from worker.pr import analyse_pr
 
 log = logging.getLogger("afterglow.worker")
 Conn = psycopg.Connection[TupleRow]
@@ -31,7 +32,8 @@ LOST_AFTER = "90 seconds"
 ALIVE_FILE = "/scratch/.alive"  # touched while the loop runs; the container health check reads its age
 
 
-def claim(conn: Conn) -> tuple[str, str] | None:
+def claim(conn: Conn) -> tuple[str, str, int | None] | None:
+    """(job id, repo, PR number for a PR overlay job) of the oldest queued job, now running."""
     with conn.transaction():
         conn.execute(
             "UPDATE jobs SET status = 'failed', stage = 'failed', reason = 'worker_lost', updated = now() "
@@ -42,9 +44,9 @@ def claim(conn: Conn) -> tuple[str, str] | None:
             "UPDATE jobs SET status = 'running', stage = 'cloning', updated = now(), started = now() "
             "WHERE id = ("
             "  SELECT id FROM jobs WHERE status = 'queued' ORDER BY created FOR UPDATE SKIP LOCKED LIMIT 1"
-            ") RETURNING id::text, repo"
+            ") RETURNING id::text, repo, pr"
         ).fetchone()
-    return (row[0], row[1]) if row else None
+    return (row[0], row[1], row[2]) if row else None
 
 
 def finish_done(conn: Conn, job: str, repo: str, sha: str, body: bytes | None) -> None:
@@ -59,6 +61,18 @@ def finish_done(conn: Conn, job: str, repo: str, sha: str, body: bytes | None) -
             "UPDATE jobs SET status = 'done', stage = 'done', sha = %s, analyser = %s, updated = now() "
             "WHERE id = %s",
             (sha, ANALYSER_VERSION, job),
+        )
+
+
+def finish_pr(conn: Conn, job: str, res: PrResult) -> None:
+    with conn.transaction():
+        conn.execute(
+            "INSERT INTO pr_results (repo, pr, merge, body) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
+            (res.repo, res.pr, res.merge, res.model_dump_json(exclude_none=True).encode()),
+        )
+        conn.execute(
+            "UPDATE jobs SET status = 'done', stage = 'done', sha = %s, updated = now() WHERE id = %s",
+            (res.merge, job),
         )
 
 
@@ -90,6 +104,7 @@ def run_job(
     scratch_root: str | None,
     url: str | None = None,
     alive: str | None = None,
+    pr: int | None = None,
 ) -> None:
     last = 0.0
 
@@ -109,6 +124,19 @@ def run_job(
         )
 
     repo = parse_repo(slug)  # re-validated here too: the queue is a trust boundary
+    if pr is not None:
+        try:
+            with tempfile.TemporaryDirectory(dir=scratch_root) as tmp:
+                res = analyse_pr(repo, pr, Path(tmp), caps, url=url, heartbeat=heartbeat)
+            finish_pr(conn, job, res)
+            log.info("job %s %s pr %d done", job, slug, pr)
+        except AnalysisError as exc:
+            finish_failed(conn, job, exc.reason)
+            log.info("job %s %s pr %d failed %s", job, slug, pr, exc.reason)
+        except Exception:
+            finish_failed(conn, job, "internal")
+            log.exception("job %s %s pr %d crashed", job, slug, pr)
+        return
     try:
         with tempfile.TemporaryDirectory(dir=scratch_root) as tmp:
             if url is None:
@@ -148,4 +176,4 @@ def serve(dsn: str, caps: Caps, scratch_root: str | None) -> None:
             if claimed is None:
                 time.sleep(POLL_S)
                 continue
-            run_job(conn, claimed[0], claimed[1], caps, scratch_root, alive=alive)
+            run_job(conn, claimed[0], claimed[1], caps, scratch_root, alive=alive, pr=claimed[2])

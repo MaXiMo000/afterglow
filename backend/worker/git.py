@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import shutil
 import signal
 import subprocess  # nosec B404 - argv lists only, see Git._spawn
@@ -97,6 +98,8 @@ def _dir_size(path: Path) -> int:
 
 
 HEARTBEAT_S = 5.0
+_SHA = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+_PR_REF = re.compile(r"refs/pull/[1-9][0-9]{0,7}/merge")  # built from a validated int, checked again here
 
 
 class Git:
@@ -193,6 +196,13 @@ class Git:
         """
         if len(sha) not in (40, 64) or any(c not in "0123456789abcdef" for c in sha):
             raise AnalysisError("git_failed")
+        return self.fetch_ref(url, dest, sha, 1)
+
+    def fetch_ref(self, url: str, dest: str, ref: str, depth: int, *extra: str) -> Path:
+        """Bare repo holding `ref` (a validated sha or `refs/pull/<n>/merge`) to `depth` commits as
+        refs/heads/pinned, watched like `clone`. `extra` adds fetch options such as --filter=blob:none."""
+        if not (_SHA.fullmatch(ref) or _PR_REF.fullmatch(ref)) or not 1 <= depth <= 10:
+            raise AnalysisError("git_failed")
         self._remaining()
         target = self.scratch / dest
         init = self._spawn(["init", "--quiet", "--bare", str(target)])
@@ -204,8 +214,8 @@ class Git:
             raise AnalysisError("git_failed")
         self._watch(
             self._spawn(
-                ["--git-dir", str(target), "fetch", "--quiet", "--depth=1", "--no-tags",
-                 "--no-recurse-submodules", "--no-write-fetch-head", "--", url, f"{sha}:refs/heads/pinned"]
+                ["--git-dir", str(target), "fetch", "--quiet", f"--depth={depth}", "--no-tags", *extra,
+                 "--no-recurse-submodules", "--no-write-fetch-head", "--", url, f"{ref}:refs/heads/pinned"]
             )
         )  # fmt: skip
         return target
@@ -256,8 +266,14 @@ class Git:
 
     def remote_head(self, url: str) -> str | None:
         """HEAD sha of a remote without cloning (cache check). None if the remote has no HEAD."""
+        return self.remote_ref(url, "HEAD")
+
+    def remote_ref(self, url: str, ref: str) -> str | None:
+        """Sha of one ref (`HEAD` or a validated PR ref) on a remote without cloning; None if it has none."""
+        if ref != "HEAD" and not _PR_REF.fullmatch(ref):
+            raise AnalysisError("git_failed")
         with tempfile.TemporaryFile(dir=self.scratch) as out:
-            proc = self._spawn(["ls-remote", "--", url, "HEAD"], stdout=out)
+            proc = self._spawn(["ls-remote", "--", url, ref], stdout=out)
             try:
                 self._wait(proc)
             finally:

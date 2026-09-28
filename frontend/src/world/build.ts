@@ -10,7 +10,7 @@ import type { Result } from '../lib/result';
 import { fileTypes, type FileTypes } from './types';
 
 export const CELL = 1.6;
-/** Floats per building instance: iA(x,z,w,d) iB(h,birth,last,activity) iC(palette,seed,hot,dead) iD(district,type,what-if risk,0). */
+/** Floats per building instance: iA(x,z,w,d) iB(h,birth,last,activity) iC(palette,seed,hot,dead) iD(district,type,what-if risk,PR mark). */
 export const INST = 16;
 
 export type District = {

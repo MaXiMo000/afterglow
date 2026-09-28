@@ -13,6 +13,17 @@ CREATE TABLE results (
 );
 CREATE INDEX results_recent ON results (repo, created DESC);
 
+-- PR overlays (ROADMAP #7): the files a public PR changes (paths and change kinds only), keyed by GitHub's test merge.
+CREATE TABLE pr_results (
+  repo      text    NOT NULL CHECK (repo ~ '^[a-z0-9-]{1,39}/[a-z0-9._-]{1,100}$'),
+  pr        integer NOT NULL CHECK (pr BETWEEN 1 AND 10000000),
+  merge     text    NOT NULL CHECK (merge ~ '^([0-9a-f]{40}|[0-9a-f]{64})$'),
+  body      bytea   NOT NULL CHECK (octet_length(body) <= 8 * 1024 * 1024),  -- schema-validated JSON
+  created   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (repo, pr, merge)
+);
+CREATE INDEX pr_results_recent ON pr_results (repo, pr, created DESC);
+
 CREATE TABLE jobs (
   id        uuid PRIMARY KEY,                       -- 122 random bits from the API; never sequential
   repo      text NOT NULL CHECK (repo ~ '^[a-z0-9-]{1,39}/[a-z0-9._-]{1,100}$'),
@@ -25,15 +36,20 @@ CREATE TABLE jobs (
   reason    text CHECK (reason ~ '^[a-z_]{1,32}$'),
   sha       text,
   analyser  integer,
+  kind      text NOT NULL DEFAULT 'analysis' CHECK (kind IN ('analysis', 'pr')),  -- pr: PR overlay (ROADMAP #7)
+  pr        integer CHECK (pr BETWEEN 1 AND 10000000),
   created   timestamptz NOT NULL DEFAULT now(),
   updated   timestamptz NOT NULL DEFAULT now(),
   started   timestamptz,                            -- claimed by a worker; run time feeds the queue wait estimate
   FOREIGN KEY (repo, sha, analyser) REFERENCES results (repo, sha, analyser),
   CHECK (status <> 'done' OR sha IS NOT NULL),
-  CHECK (status <> 'failed' OR reason IS NOT NULL)
+  CHECK (status <> 'failed' OR reason IS NOT NULL),
+  CONSTRAINT jobs_pr_kind CHECK ((kind = 'pr') = (pr IS NOT NULL)),
+  -- A PR job's sha is the test merge, not a result: analyser stays NULL, so the results foreign key is skipped.
+  CONSTRAINT jobs_pr_no_analyser CHECK (kind = 'analysis' OR analyser IS NULL)
 );
--- One active job per repository (SECURITY T11: dedupe).
-CREATE UNIQUE INDEX jobs_one_active_per_repo ON jobs (repo) WHERE status IN ('queued', 'running');
+-- One active job per repository, and per PR of it (SECURITY T11: dedupe).
+CREATE UNIQUE INDEX jobs_one_active_per_repo ON jobs (repo, (coalesce(pr, 0))) WHERE status IN ('queued', 'running');
 CREATE INDEX jobs_queue ON jobs (created) WHERE status = 'queued';
 CREATE INDEX jobs_client_active ON jobs (client) WHERE status IN ('queued', 'running');
 
@@ -68,18 +84,21 @@ REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 
 GRANT USAGE ON SCHEMA public TO afterglow_api, afterglow_worker;
-GRANT SELECT, INSERT (id, repo, client, status, stage, sha, analyser) ON jobs TO afterglow_api;
+GRANT SELECT, INSERT (id, repo, client, status, stage, sha, analyser, kind, pr) ON jobs TO afterglow_api;
 GRANT SELECT (id, repo, status, stage, progress, total, reason, sha, analyser, client, created) ON jobs TO afterglow_api;
 GRANT SELECT ON results TO afterglow_api;
+GRANT SELECT ON pr_results TO afterglow_api;
 
 GRANT SELECT ON jobs TO afterglow_worker;
 GRANT UPDATE (status, stage, progress, total, reason, sha, analyser, updated, started) ON jobs TO afterglow_worker;
 GRANT SELECT, INSERT ON results TO afterglow_worker;
+GRANT SELECT, INSERT ON pr_results TO afterglow_worker;
 
 -- Retention (backend/app/maint.py): the only role that can delete. It cannot insert or update anything.
 GRANT USAGE ON SCHEMA public TO afterglow_maint;
 GRANT SELECT (repo, sha, analyser, status, updated), DELETE ON jobs TO afterglow_maint;
 GRANT SELECT (repo, sha, analyser, created), DELETE ON results TO afterglow_maint;
+GRANT SELECT (created), DELETE ON pr_results TO afterglow_maint;
 
 -- A stuck statement or an abandoned transaction must not hold connections or locks for long.
 ALTER ROLE afterglow_api SET statement_timeout = '10s';

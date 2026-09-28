@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 import re
 import unicodedata
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
@@ -21,6 +21,7 @@ MAX_PATH = 512
 MAX_HREF = 6_144  # MAX_PATH characters of up to 4 UTF-8 bytes, each percent-encoded
 MAX_REMOVALS = 10_000
 MAX_OWNERS = 5
+MAX_PR_PATHS = 3_000
 MAX_FILES = 50_000
 MAX_DIRS = 2_000
 MAX_PEOPLE = 1_000
@@ -184,3 +185,26 @@ class Result(_Strict):
         if self.removals != sorted(self.removals) or len(self.removals) > removed:
             raise ValueError("removals")
         return self
+
+
+Sha = Annotated[str, Field(pattern=r"^([0-9a-f]{40}|[0-9a-f]{64})$")]
+Href = Annotated[str, Field(max_length=MAX_HREF, pattern=r"^[A-Za-z0-9%._~/-]+$")]
+
+
+class PrChange(_Strict):
+    path: SafeStr
+    status: Literal["added", "modified", "deleted", "renamed"]
+    old: SafeStr | None = None  # renamed only: the path before
+    href: Href | None = None  # as File.href: the real path when `path` is only its display form
+
+
+class PrResult(_Strict):
+    """Files a pull request changes (docs/ROADMAP.md #7): GitHub's test merge compared with its first parent.
+    File names and change kinds only, never contents."""
+
+    repo: Annotated[str, Field(pattern=r"^[a-z0-9-]{1,39}/[a-z0-9._-]{1,100}$")]
+    pr: Annotated[int, Field(ge=1, le=10_000_000)]
+    merge: Sha  # GitHub's test merge commit
+    base: Sha  # its first parent: the base branch it was merged onto
+    truncated: bool  # more than MAX_PR_PATHS changed paths: the first MAX_PR_PATHS (git's order) are kept
+    changes: Annotated[list[PrChange], Field(max_length=MAX_PR_PATHS)]

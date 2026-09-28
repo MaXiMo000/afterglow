@@ -31,7 +31,9 @@ export type Params = { t: number; fog: number; hot: number; focus: number; focus
   /** Weather layer, 0..1 (eased). */
   weather: number;
   /** Bus-factor what-if highlight, 0..1 (eased); which buildings is set with setRisk. */
-  risk: number };
+  risk: number;
+  /** PR overlay, 0..1 (eased); which buildings is set with setPr. */
+  pr: number };
 
 const FOG_COL: V3 = [0.075, 0.17, 0.19];
 const MOON: V3 = [-0.42, 0.36, -0.83];
@@ -347,9 +349,18 @@ export class Renderer {
 
   /** Mark the buildings of these districts for the what-if highlight (instance slot iD.z). */
   setRisk(dirs: ReadonlySet<number>): void {
+    this.setSlot(14, (o) => (dirs.has(this.world!.inst[o + 12]!) ? 1 : 0));
+  }
+
+  /** Mark buildings for the PR overlay (instance slot iD.w): 1 changed, 2 deleted or moved away. */
+  setPr(marks: ReadonlyMap<number, number>): void {
+    this.setSlot(15, (o) => marks.get(o / INST) ?? 0);
+  }
+
+  private setSlot(k: number, value: (offset: number) => number): void {
     const w = this.world;
     if (!w || !this.instVB) return;
-    for (let o = 0; o < w.inst.length; o += INST) w.inst[o + 14] = dirs.has(w.inst[o + 12]!) ? 1 : 0;
+    for (let o = 0; o < w.inst.length; o += INST) w.inst[o + k] = value(o);
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instVB);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, w.inst);
@@ -543,6 +554,8 @@ export class Renderer {
     gl.uniform3fv(u['uPal']!, PAL);
     gl.uniform1f(u['uType']!, P.types);
     gl.uniform1f(u['uRisk']!, P.risk);
+    gl.uniform1f(u['uPr']!, P.pr);
+    gl.uniform1f(u['uMotion']!, P.motion);
     gl.uniform1f(u['uWeather']!, this.tier.rain ? P.weather : 0);
     gl.uniform3fv(u['uTypeCol']!, TYPE_COL);
     gl.uniform3fv(u['uCmp']!, refl ? [0, 0, 0] : P.cmp);

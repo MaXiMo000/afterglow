@@ -179,6 +179,37 @@ test('photo mode saves a PNG poster', async ({ page }) => {
   expect(d.suggestedFilename()).toBe('afterglow-acme-orbit.png');
 });
 
+test('N overlays a pull request: dialog, request, legend, Esc; a missing PR explains itself', async ({ page }) => {
+  await openCity(page);
+  const PR = 'f'.repeat(32);
+  let body = '';
+  await page.route('**/api/v1/prs', (r) => ((body = r.request().postData() ?? ''), r.fulfill({ status: 200, json: { id: PR, status: 'done' } })));
+  await page.route(`**/api/v1/prs/${PR}`, (r) =>
+    r.fulfill({ status: 200, json: { repo: 'acme/orbit', pr: 42, merge: 'c'.repeat(40), base: 'd'.repeat(40), truncated: false,
+      changes: [{ path: 'core/f0.py', status: 'modified' }, { path: 'tests/f1.py', status: 'deleted' }, { path: 'new.py', status: 'added' }] } }),
+  ); // prettier-ignore
+  await key(page, 'n');
+  await expect(page.locator('#prDialog')).toBeVisible();
+  await page.fill('#prInput', '42');
+  await page.keyboard.press('Enter');
+  const legend = page.locator('#prLegend');
+  await expect(legend).toContainText('PR #42');
+  await expect(legend).toContainText('Changed: 1 building');
+  await expect(legend).toContainText('Deleted or moved away: 1');
+  await expect(legend).toContainText('1 new file');
+  expect(JSON.parse(body)).toEqual({ repo: 'acme/orbit', pr: 42 });
+  await key(page, 'Escape');
+  await expect(legend).toBeHidden();
+  await page.unroute('**/api/v1/prs');
+  await page.route('**/api/v1/prs', (r) => r.fulfill({ status: 200, json: { id: PR, status: 'done' } }));
+  await page.unroute(`**/api/v1/prs/${PR}`);
+  await page.route(`**/api/v1/prs/${PR}`, (r) => r.fulfill({ status: 422, json: { error: 'pr_not_found' } }));
+  await key(page, 'n');
+  await page.fill('#prInput', '7');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#announce')).toContainText('GitHub has no test merge for PR #7');
+});
+
 test('O records an orbit video (WebM download); Esc cancels a recording', async ({ page }) => {
   test.slow(); // the orbit clip is 12 s of real time
   await openCity(page);
