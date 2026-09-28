@@ -5,6 +5,8 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- Keys: Share moved from S to U, so S walks backward again (S was swallowed by Share). A unit test keeps actions
+  off movement keys.
 - Queue: a queued job shows an estimated wait next to its position, from the median run time of recent jobs and the
   number of live workers, labelled an estimate. **Upgrading:** apply `deploy/db/upgrades/0003-queue-wait.sql` before
   starting the new worker (see `docs/DEPLOY.md`).

@@ -33,7 +33,7 @@ export const KEYMAP: readonly KeyDef[] = [
   { id: 'photo', keys: ['P'], label: 'Photo mode (save a PNG)', group: 'View' },
   { id: 'arcs', keys: ['G'], label: 'Coupling arcs on / off', group: 'View' },
   { id: 'lanterns', keys: ['L'], label: 'Lanterns (people) on / off', group: 'View' },
-  { id: 'share', keys: ['S'], label: 'Copy a share link to this view', group: 'View' },
+  { id: 'share', keys: ['U'], label: 'Copy a share link (URL) to this view', group: 'View' },
   { id: 'story', keys: ['B'], label: 'Back to the story', group: 'View' },
 ];
 

@@ -157,10 +157,10 @@ test('reduced motion: the cinematic view holds still (no auto-orbit)', async ({ 
   await expect(page.locator('body')).toHaveClass(/mode-city/);
   await page.keyboard.press('5');
   await expect(page.locator('#announce')).toHaveText('View: Cinematic auto-orbit');
-  await page.keyboard.press('s');
+  await page.keyboard.press('u');
   const first = page.url();
   await page.waitForTimeout(1500);
-  await page.keyboard.press('s');
+  await page.keyboard.press('u');
   expect(page.url()).toBe(first); // the share link encodes the camera, so any drift would change it
 });
 
