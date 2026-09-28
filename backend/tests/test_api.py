@@ -546,3 +546,26 @@ def test_previous_analysis(client: TestClient, tmp_path: Path) -> None:
     assert r.status_code == 200
     assert Result.model_validate_json(r.content).meta.sha == "b" * 40
     assert client.get(f"/api/v1/analyses/{'0' * 32}/previous").status_code == 404
+
+
+def test_featured_refresh_picks_the_stalest_only_when_idle(client: TestClient) -> None:
+    slugs = ("f/one", "f/two", "f/three")
+
+    async def pick() -> str | None:
+        async with await psycopg.AsyncConnection.connect(API) as conn:
+            return await db.stalest_featured(conn, slugs)
+
+    assert asyncio.run(pick()) == "f/one"  # none analysed yet: list order
+    with psycopg.connect(ADMIN, autocommit=True) as conn:
+        for repo, age in (("f/one", "1 day"), ("f/two", "9 days")):
+            conn.execute(
+                "INSERT INTO results (repo, sha, analyser, body, created) VALUES (%s, %s, %s, '{}', now() - %s::interval)",
+                (repo, "a" * 40, ANALYSER_VERSION, age),
+            )
+        conn.execute(  # f/three failed today: not retried until tomorrow
+            "INSERT INTO jobs (id, repo, client, status, stage, reason) "
+            "VALUES (gen_random_uuid(), 'f/three', repeat('0', 32), 'failed', 'failed', 'not_found')"
+        )
+    assert asyncio.run(pick()) == "f/two"  # f/one is fresh, f/three failed recently
+    post(client, {"repo": "busy/repo"})
+    assert asyncio.run(pick()) is None  # a visitor's job is queued: wait

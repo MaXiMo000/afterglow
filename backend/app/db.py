@@ -16,6 +16,7 @@ from core.schema import ANALYSER_VERSION
 Conn = AsyncConnection[TupleRow]
 FRESH_FOR = "1 hour"  # a result younger than this is served without re-analysing
 PR_FRESH_FOR = "10 minutes"  # PRs move faster: a PR overlay is reused for this long
+FEATURED_STALE = "7 days"  # a featured repository older than this is re-analysed when the queue is idle
 STALL_AFTER = "5 minutes"
 RUN_SAMPLE = 20
 LIVE_WITHIN = "90 seconds"  # worker.queue.LOST_AFTER: a running job silent for longer has no live worker
@@ -178,6 +179,31 @@ async def get_job(conn: Conn, job_id: uuid.UUID) -> Job | None:
     )
     row = await cur.fetchone()
     return Job(*row) if row else None
+
+
+async def stalest_featured(conn: Conn, slugs: tuple[str, ...]) -> str | None:
+    """The featured repository most in need of a fresh analysis (ROADMAP #10), or None.
+
+    Only while nothing is queued or running, so visitors never wait behind it; skips repositories whose
+    newest result is younger than FEATURED_STALE and ones that failed in the last day (a typo or a deleted
+    repository must not loop). Oldest (or missing) result first, then list order.
+    """
+    if not slugs:
+        return None
+    cur = await conn.execute(
+        "SELECT s.repo FROM unnest(%s::text[]) WITH ORDINALITY AS s(repo, pos) "
+        "WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE status IN ('queued', 'running')) "
+        "AND NOT EXISTS (SELECT 1 FROM results r WHERE r.repo = s.repo AND r.analyser = %s "
+        "                AND r.created > now() - %s::interval) "
+        "AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.repo = s.repo AND j.status = 'failed' "
+        "                AND j.created > now() - interval '1 day') "
+        "ORDER BY (SELECT max(r.created) FROM results r WHERE r.repo = s.repo AND r.analyser = %s) "
+        "NULLS FIRST, s.pos "
+        "LIMIT 1",
+        (list(slugs), ANALYSER_VERSION, FEATURED_STALE, ANALYSER_VERSION),
+    )
+    row = await cur.fetchone()
+    return str(row[0]) if row else None
 
 
 async def previous_result(conn: Conn, repo: str, sha: str) -> bytes | None:

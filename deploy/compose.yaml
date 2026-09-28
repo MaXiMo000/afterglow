@@ -44,6 +44,9 @@ services:
       AFTERGLOW_PUBLIC_ORIGIN: ${AFTERGLOW_PUBLIC_ORIGIN:-https://localhost:8443}
       AFTERGLOW_DATABASE_URL: postgresql://afterglow_api:${AFTERGLOW_DB_API_PASSWORD:?run scripts/dev-env.sh}@db/afterglow
       AFTERGLOW_IP_KEY: ${AFTERGLOW_IP_KEY:?run scripts/dev-env.sh}
+      # Start-page gallery (docs/ROADMAP.md #10): up to 12 owner/name, comma-separated. Override in deploy/.env;
+      # set it to empty to hide the gallery.
+      AFTERGLOW_FEATURED: ${AFTERGLOW_FEATURED-MaXiMo000/afterglow,MaXiMo000/tidewatch,MaXiMo000/playhead,MaXiMo000/parity,MaXiMo000/loom,MaXiMo000/portfolio,fastapi/fastapi,pallets/flask,sveltejs/svelte,vitejs/vite,tokio-rs/tokio,excalidraw/excalidraw}
     tmpfs: [/tmp]
     networks: [backend]
     depends_on:

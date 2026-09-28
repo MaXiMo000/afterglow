@@ -27,6 +27,8 @@ log = logging.getLogger("afterglow")
 
 # Safe reason codes only: never echo exception text, paths or input back to the client (SECURITY T14).
 READY_CACHE_S = 5.0
+FEATURED_EVERY_S = 600.0  # featured refresh check (one job at most per check, only when the queue is idle)
+FEATURED_CLIENT = "0" * 32  # the service itself, not a visitor
 _REASONS = {
     400: "bad_request",
     404: "not_found",
@@ -54,19 +56,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     hub = Hub()
 
+    async def refresh_featured(p: AsyncConnectionPool) -> None:
+        """Keep the start-page gallery's analyses fresh (ROADMAP #10) without ever making visitors wait."""
+        while True:
+            await asyncio.sleep(FEATURED_EVERY_S)
+            try:
+                async with p.connection() as conn:
+                    if slug := await db.stalest_featured(conn, cfg.featured):
+                        await db.create_job(conn, slug, FEATURED_CLIENT)
+                        log.info("featured refresh queued %s", slug)
+            except Exception as exc:  # the next check retries; a failed refresh must not take the API down
+                log.warning("featured refresh: %s", type(exc).__name__)
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        listener = None
+        tasks: list[asyncio.Task[None]] = []
         if pool is not None:
             await pool.open()
-            listener = asyncio.create_task(listen(cfg.database_url, hub))
+            tasks.append(asyncio.create_task(listen(cfg.database_url, hub)))
+            if cfg.featured:
+                tasks.append(asyncio.create_task(refresh_featured(pool)))
         try:
             yield
         finally:
-            if listener is not None:
-                listener.cancel()
+            for task in tasks:
+                task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
-                    await listener
+                    await task
             if pool is not None:
                 await pool.close()
 

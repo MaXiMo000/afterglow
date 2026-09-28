@@ -800,6 +800,45 @@ export class App {
     }
   }
 
+  /** Start-page gallery (docs/ROADMAP.md #10): skyline tiles from the badge route, each opening that city. */
+  private async loadFeatured(): Promise<void> {
+    let repos: unknown;
+    try {
+      const res = await fetch('/api/v1/featured', { credentials: 'omit' });
+      if (!res.ok) return;
+      repos = ((await res.json()) as { repos?: unknown }).repos;
+    } catch {
+      return; // no gallery: the start page works the same without it
+    }
+    if (!Array.isArray(repos)) return;
+    const tiles = repos.slice(0, 12).flatMap((raw) => {
+      const ref = typeof raw === 'string' ? parseRepo(raw) : null; // same strict parser as the form
+      if (!ref) return [];
+      const slug = `${ref.owner}/${ref.name}`.toLowerCase();
+      const a = el('a');
+      a.href = `/${slug}`; // validated owner/name only (SECURITY T5)
+      a.setAttribute('aria-label', `Open the city of ${slug}`);
+      const img = el('img');
+      img.src = `/api/v1/badges/${slug}.svg`;
+      img.alt = '';
+      img.width = 176;
+      img.height = 53;
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      a.append(img);
+      a.addEventListener('click', (e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return; // new tab/window: the link works as is
+        e.preventDefault();
+        ($('#repoInput') as HTMLInputElement).value = slug;
+        void this.analyse(slug);
+      });
+      return [a];
+    });
+    if (!tiles.length) return;
+    $('#featured .strip').replaceChildren(...tiles);
+    $('#featured').hidden = false;
+  }
+
   /** "core / api" for the current drilled-in city. */
   private drillPath(): string {
     const top = this.drillStack[0];
@@ -1242,6 +1281,7 @@ export class App {
       e.preventDefault();
       void this.analyse(($('#repoInput') as HTMLInputElement).value);
     });
+    void this.loadFeatured();
     for (const b of document.querySelectorAll<HTMLButtonElement>('.samples button')) {
       b.addEventListener('click', () => {
         ($('#repoInput') as HTMLInputElement).value = b.dataset['repo'] ?? '';

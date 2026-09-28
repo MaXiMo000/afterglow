@@ -54,3 +54,13 @@ def test_api_responses_are_not_cached_by_default(client: TestClient) -> None:
 def test_readyz_without_database_is_unavailable(client: TestClient) -> None:
     r = client.get("/readyz")
     assert (r.status_code, r.json()) == (503, {"status": "unavailable"})
+
+
+def test_featured_lists_the_configured_repositories(prod_settings: Settings) -> None:
+    s = Settings(
+        **{**{f: getattr(prod_settings, f) for f in prod_settings.__slots__}, "featured": ("a/b", "c/d")}
+    )
+    c = TestClient(create_app(s), base_url="https://afterglow.test")
+    r = c.get("/api/v1/featured")
+    assert r.status_code == 200 and r.json() == {"repos": ["a/b", "c/d"]}
+    assert "max-age=300" in r.headers["cache-control"]

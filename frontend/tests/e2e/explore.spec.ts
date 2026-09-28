@@ -247,6 +247,23 @@ test('6 shows what changed since the previous analysis, or says there is none', 
   await expect(legend).toBeHidden();
 });
 
+test('start page: featured cities strip, safe links, and nothing when the API has none', async ({ page }) => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="96"><rect width="320" height="96" fill="#0b0f24"/></svg>';
+  await page.route('**/api/v1/badges/**', (r) => r.fulfill({ status: 200, contentType: 'image/svg+xml', body: svg }));
+  await page.route('**/api/v1/featured', (r) => r.fulfill({ status: 200, json: { repos: ['acme/orbit', 'javascript:alert(1)', '../x', 'Pallets/Flask'] } }));
+  await page.goto('/?quality=simple');
+  const tiles = page.locator('#featured a');
+  await expect(tiles).toHaveCount(2); // invalid entries are dropped by the same parser as the form
+  await expect(tiles.nth(0)).toHaveAttribute('href', '/acme/orbit');
+  await expect(tiles.nth(1)).toHaveAttribute('href', '/pallets/flask');
+  await expect(tiles.nth(0)).toHaveAttribute('aria-label', 'Open the city of acme/orbit');
+  await page.unroute('**/api/v1/featured');
+  await page.route('**/api/v1/featured', (r) => r.fulfill({ status: 503, json: { error: 'unavailable' } }));
+  await page.reload();
+  await expect(page.locator('#heroTitle')).toBeVisible();
+  await expect(page.locator('#featured')).toBeHidden();
+});
+
 test('O records an orbit video (WebM download); Esc cancels a recording', async ({ page }) => {
   test.slow(); // the orbit clip is 12 s of real time
   await openCity(page);

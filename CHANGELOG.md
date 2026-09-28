@@ -5,6 +5,8 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- Featured cities on the start page: a strip of skyline tiles (`AFTERGLOW_FEATURED`, up to 12), kept fresh by the
+  API when the queue is idle.
 - District drill-down (`Enter`, or the inspector button): open a district as its own city of sub-folders, drill again,
   `Backspace` climbs out.
 - Fixed: Enter or other keys that close a dialog (the search palette) no longer also act on the city.

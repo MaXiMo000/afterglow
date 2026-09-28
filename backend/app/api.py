@@ -332,6 +332,15 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
 
+    @router.get("/featured")
+    async def featured(request: Request) -> Response:
+        """Start-page gallery (ROADMAP #10): the configured repositories, in order (tiles use the badges)."""
+        if wait := read_limit.check(client_of(request)):
+            return _err("rate_limited", 429, wait)
+        return JSONResponse(
+            {"repos": list(settings.featured)}, headers={"Cache-Control": "public, max-age=300"}
+        )
+
     @router.get("/badges/{owner}/{file}")
     async def badge_svg(request: Request, owner: str, file: str) -> Response:
         """SVG skyline for READMEs, from the newest stored result. Never starts an analysis."""

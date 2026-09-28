@@ -127,6 +127,17 @@ docker compose -f deploy/compose.yaml --profile worker up -d --build --wait
 Apply it before starting the new containers: the new API queues jobs against the widened dedupe index, and the
 worker and retention service use the new `pr_results` table. Safe to run twice.
 
+### The start page's featured cities
+`deploy/compose.yaml` sets a default list. To change it, add one line to `deploy/.env` (up to 12, comma-separated,
+`owner/name` only; an empty value hides the strip) and restart the API:
+```bash
+echo 'AFTERGLOW_FEATURED=owner/one,owner/two,fastapi/fastapi' >> deploy/.env
+docker compose -f deploy/compose.yaml --profile worker up -d --wait api
+```
+A typo stops the API from starting (the health check fails and `docker compose logs api` says which setting).
+The API analyses featured repositories on its own when the queue is idle, oldest first, one every 10 minutes at
+most; a new list fills in over the next hour or two.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |

@@ -11,7 +11,10 @@ from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlsplit
 
+from core.repo import InvalidRepoError, parse_repo
+
 Env = Literal["dev", "prod"]
+MAX_FEATURED = 12
 
 
 class ConfigError(ValueError):
@@ -25,6 +28,7 @@ class Settings:
     public_origin: str
     database_url: str = ""  # empty: DB-backed routes answer 503 (unit tests of the app shell)
     ip_key: bytes = b""  # HMAC key for client-IP pseudonyms; raw IPs are never stored
+    featured: tuple[str, ...] = ()  # start-page gallery (ROADMAP #10): canonical owner/name slugs
 
     @property
     def is_prod(self) -> bool:
@@ -52,6 +56,23 @@ def _parse_origin(raw: str, env: Env) -> str:
     if env == "prod" and parts.scheme != "https":
         raise ConfigError("AFTERGLOW_PUBLIC_ORIGIN must use https in prod")
     return f"{parts.scheme}://{parts.netloc}"
+
+
+def _parse_featured(raw: str) -> tuple[str, ...]:
+    """Comma-separated owner/name list; every entry must pass the same parser as user input (fail closed)."""
+    out: list[str] = []
+    for item in (s.strip() for s in raw.split(",")):
+        if not item:
+            continue
+        try:
+            slug = parse_repo(item).slug
+        except InvalidRepoError:
+            raise ConfigError("AFTERGLOW_FEATURED must list owner/name repositories") from None
+        if slug not in out:
+            out.append(slug)
+    if len(out) > MAX_FEATURED:
+        raise ConfigError(f"AFTERGLOW_FEATURED lists more than {MAX_FEATURED} repositories")
+    return tuple(out)
 
 
 def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
@@ -85,4 +106,5 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         public_origin=_parse_origin(origin_raw, env),
         database_url=db_raw,
         ip_key=ip_key,
+        featured=_parse_featured(source.get("AFTERGLOW_FEATURED", "")),
     )

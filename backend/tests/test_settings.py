@@ -74,3 +74,17 @@ def test_weak_or_bad_ip_key_rejected(key: str) -> None:
 def test_bad_database_url_rejected(url: str) -> None:
     with pytest.raises(ConfigError):
         load_settings({**BASE, "AFTERGLOW_DATABASE_URL": url})
+
+
+def test_featured_list_is_parsed_like_user_input() -> None:
+    s = load_settings({**BASE, "AFTERGLOW_FEATURED": " Acme/Orbit, pallets/flask ,acme/orbit,, "})
+    assert s.featured == ("acme/orbit", "pallets/flask")  # canonical, deduplicated, order kept
+    assert load_settings(BASE).featured == ()
+
+
+@pytest.mark.parametrize(
+    "bad", ["https://github.com/a/b", "a/b/c", "../x", "a", ",".join(f"o/r{i}" for i in range(13))]
+)
+def test_featured_list_fails_closed(bad: str) -> None:
+    with pytest.raises(ConfigError):
+        load_settings({**BASE, "AFTERGLOW_FEATURED": bad})

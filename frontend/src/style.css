@@ -81,6 +81,15 @@ main > section { position: fixed; z-index: var(--z-panel); }
 .samples { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font: var(--size-xs) var(--font-mono); color: var(--color-faint); }
 .samples button { background: none; border: 0; border-bottom: 1px dashed var(--color-faint); color: var(--color-dim); padding: 0 0 1px; font: inherit; }
 .samples button:hover { color: var(--color-amber); border-color: var(--color-amber); }
+/* Featured cities (ROADMAP #10): a quiet strip of skyline tiles (the README badge art) under the samples. */
+.featured { display: grid; gap: 8px; font: var(--size-xs) var(--font-mono); color: var(--color-faint); min-width: 0; }
+.featured .strip { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x proximity; padding: 4px 2px 8px; scrollbar-width: thin; scrollbar-color: rgba(236, 230, 219, 0.22) transparent; }
+.featured a { flex: none; scroll-snap-align: start; border-radius: 6px; line-height: 0; opacity: 0.82;
+  transition: opacity var(--motion-base) var(--motion-ease-out), transform var(--motion-base) var(--motion-ease-out), box-shadow var(--motion-base) var(--motion-ease-out); }
+.featured a:hover, .featured a:focus-visible { opacity: 1; transform: translateY(-2px); box-shadow: 0 6px 22px rgba(255, 150, 80, 0.28); outline: none; }
+.featured a:focus-visible { box-shadow: 0 0 0 2px var(--color-amber), 0 6px 22px rgba(255, 150, 80, 0.28); }
+.featured img { width: 176px; height: 53px; border-radius: 6px; display: block; }
+@media (prefers-reduced-motion: reduce) { .featured a { transition: none; } .featured a:hover, .featured a:focus-visible { transform: none; } }
 .ghost { align-self: flex-start; background: none; border: 0; border-bottom: 1px solid var(--color-line); color: var(--color-dim);
   font: var(--size-xs) var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; padding: 6px 0; }
 .ghost:hover { color: var(--color-text); }

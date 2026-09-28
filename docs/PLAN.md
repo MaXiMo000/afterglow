@@ -75,6 +75,10 @@ Browser (static SPA) --https--> Caddy (TLS, CSP and headers, static files, body 
   when GitHub has no test merge (closed, merged, conflicting or missing PR). The worker fetches only
   `refs/pull/<n>/merge` at depth 2 without blobs from github.com and compares it with its first parent (exact
   renames by blob id). A fresh overlay (< 10 min) is reused; overlays are deleted after 7 days.
+- `GET /api/v1/featured` -> `{"repos": ["owner/name", ...]}` from `AFTERGLOW_FEATURED` (up to 12, parsed like user input
+  at startup; invalid config refuses to start). Every 10 min, only while nothing is queued or running, the API
+  queues the one featured repository whose newest result is oldest and over 7 days (skipping any that failed in the
+  last day), so featured cities stay fresh and within retention without visitors ever waiting behind them.
 - `GET /api/v1/badges/{owner}/{name}.svg` -> `200 image/svg+xml`, a README badge: towers for the 48 most-changed
   files of the newest stored result (height = changes, amber = hotspot), or a "not analysed yet" placeholder.
   Never starts an analysis. Same repo parser (`404` otherwise), per-client read limit, renders capped at 60/min per
