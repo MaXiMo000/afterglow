@@ -110,6 +110,24 @@ test('every explore feature is reachable by keyboard alone', async ({ page }) =>
   await expect(page.locator('body')).toHaveClass(/mode-story/);
 });
 
+test('walk mode: X enters, keys move, Esc leaves; camera flights take over', async ({ page }) => {
+  await openCity(page);
+  await key(page, 'x');
+  await expect(page.locator('body')).toHaveClass(/walking/);
+  await expect(page.locator('#reticle')).toBeVisible();
+  await expect(page.locator('#announce')).toContainText('Walk mode.');
+  await page.keyboard.down('w');
+  await page.waitForTimeout(400);
+  await page.keyboard.up('w');
+  await key(page, 'Escape');
+  await expect(page.locator('body')).not.toHaveClass(/walking/);
+  await expect(page.locator('#announce')).toHaveText('Left walk mode');
+  await key(page, 'x');
+  await key(page, 'j'); // the hotspot tour flies the orbit camera: walking ends
+  await expect(page.locator('body')).not.toHaveClass(/walking/);
+  await expect(page.locator('#placeEy')).toHaveText('Hotspot 1 of 2');
+});
+
 test('hotspot tour: J and K step through the hotspots and wrap around', async ({ page }) => {
   await openCity(page);
   await key(page, 'j');

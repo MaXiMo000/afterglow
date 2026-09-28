@@ -18,6 +18,7 @@ import { actionFor, KEYMAP, type ActionId } from './keymap';
 import { Palette, type Item } from './palette';
 import { compareCounts, Inspector, Insights, MiniMap, renderHelp, Timeline } from './panels';
 import { Story } from './story';
+import { NEAR, Walker } from './walk';
 import { drawTreemap, honestyLines, renderSummary, renderTable } from './table';
 
 type Mode = 'hero' | 'loading' | 'story' | 'city';
@@ -90,6 +91,8 @@ export class App {
   private lanterns: Float32Array | null = null;
   private selected = -1;
   private focusGoal = 0;
+  private walker: Walker | null = null; // walk mode (docs/ROADMAP.md #3)
+  private hintsText = '';
   private tour = -1; // position in insights.hotspots during a J/K tour
   private typesGoal = 0; // colour by file type: 1 on; P.types eases toward it
   private ptrs = new Map<number, { x: number; y: number; t: number }>();
@@ -128,7 +131,12 @@ export class App {
     (i) => this.select(i, true),
     (d) => this.flyToDistrict(d),
   );
-  private readonly minimap = new MiniMap((x, z) => this.cam.flyTo({ ...this.cam.goal, x, z }, 0.8, reducedMotion()));
+  private readonly minimap = new MiniMap((x, z) => {
+    if (!this.walker) return this.cam.flyTo({ ...this.cam.goal, x, z }, 0.8, reducedMotion());
+    this.walker.x = x; // walking: the map is a teleport
+    this.walker.z = z;
+    this.walker.resolve(this.P.t);
+  });
   private readonly timeline = new Timeline((t) => this.scrub(t));
   private readonly canvas = $('#gl') as HTMLCanvasElement;
   private readonly body = document.body;
@@ -257,6 +265,7 @@ export class App {
     this.mode = m;
     this.body.classList.remove('mode-hero', 'mode-loading', 'mode-story', 'mode-city');
     this.body.classList.add(`mode-${m}`);
+    if (m !== 'city') this.setWalk(false, true);
     $('#hero').hidden = m !== 'hero';
     $('#loading').hidden = m !== 'loading';
     $('#city').hidden = m !== 'city';
@@ -518,7 +527,12 @@ export class App {
     const r = this.result;
     if (!w || !r) return;
     const reduced = reducedMotion();
+    // Camera flights take over from walking.
+    if (this.walker && /^(home|reset|frame|preset\d)$/.test(id)) this.setWalk(false);
     switch (id) {
+      case 'walk':
+        this.setWalk(!this.walker);
+        break;
       case 'home':
         this.cam.autoOrbit = false;
         this.cam.flyTo(this.cam.home(w.radius), 0.9, reduced);
@@ -616,6 +630,47 @@ export class App {
     this.tT = t;
     this.playing = false;
     if (reducedMotion()) this.P.t = t;
+  }
+
+  /**
+   * Walk mode (docs/ROADMAP.md #3): drop to street level where the orbit camera is looking, facing the same way.
+   * Leaving puts the orbit camera over the spot you walked to. `quiet` skips the camera hand-over (mode changes).
+   */
+  private setWalk(on: boolean, quiet = false): void {
+    const w = this.world;
+    const from = this.lastPose;
+    if (on) {
+      if (!w || this.mode !== 'city' || this.walker) return;
+      const f = from ? [from.tgt[0] - from.pos[0], from.tgt[2] - from.pos[2]] : [0, -1];
+      const len = Math.hypot(f[0]!, f[1]!) || 1;
+      // Land on the first open ground back along the view line (districts are packed tight), facing what the
+      // orbit camera was looking at: the first view is that skyline, not a wall.
+      const g = this.cam.goal;
+      const k = new Walker(w, g.x, g.z, Math.atan2(-f[0]!, -f[1]!));
+      for (let back = 0; back <= w.radius * 1.3; back += 1) {
+        k.x = g.x - (f[0]! / len) * back;
+        k.z = g.z - (f[1]! / len) * back;
+        if (k.clearance(k.x, k.z, this.P.t) >= 2.5) break;
+      }
+      this.walker = k;
+      this.walker.resolve(this.P.t);
+      this.cam.autoOrbit = false;
+      this.body.classList.add('walking');
+      this.hintsText ||= $('#hints').textContent ?? '';
+      setText($('#hints'), 'W A S D walk \u00b7 Shift run \u00b7 mouse or arrows look \u00b7 click to capture the mouse \u00b7 X to leave');
+      this.announce('Walk mode. W A S D to walk, Shift to run, arrow keys or the mouse to look, X or Escape to leave.');
+    } else {
+      const k = this.walker;
+      if (!k) return;
+      this.walker = null;
+      if (document.pointerLockElement) document.exitPointerLock();
+      this.body.classList.remove('walking');
+      setText($('#hints'), this.hintsText);
+      if (quiet) return;
+      this.cam.flyTo({ yaw: k.yaw, pitch: 0.5, dist: 34, x: k.x, y: 4, z: k.z }, 0.01, true);
+      this.announce('Left walk mode');
+    }
+    if (from && !quiet) this.blend = { pos: [...from.pos], tgt: [...from.tgt], fov: this.fov, k: 0 };
   }
 
   /** Hotspot tour (docs/ROADMAP.md #2): fly to the next/previous hotspot, in the insights list order, and say why. */
@@ -898,6 +953,7 @@ export class App {
         // Back out one level: photo -> table -> panels/selection/compare -> story -> start page.
         if (this.photo) return this.togglePhoto();
         if (!$('#tableView').hidden) return this.openTable(false);
+        if (this.walker) return this.setWalk(false);
         if (this.compare) return this.setCompare(null);
         if (this.typesGoal) return this.setTypes(false);
         if (this.selected >= 0 || this.P.focus >= 0) return this.select(-1);
@@ -929,8 +985,14 @@ export class App {
   /** Continuous keyboard movement while keys are held (frame-rate independent). */
   private keyMove(dt: number, shift: boolean): void {
     if (!this.held.size) return;
-    const s = (shift ? 2 : 1) * dt * 60;
     const h = this.held;
+    if (this.walker) {
+      const on = (...k: string[]): number => (k.some((x) => h.has(x)) ? 1 : 0);
+      const input = { forward: on('w') - on('s'), strafe: on('d') - on('a'), turn: on('arrowright', 'e') - on('arrowleft', 'q'), look: on('arrowup') - on('arrowdown'), run: shift };
+      this.walker.step(dt, input, this.P.t);
+      return;
+    }
+    const s = (shift ? 2 : 1) * dt * 60;
     if (h.has('w')) this.cam.walk(s * 0.5, 0);
     if (h.has('s')) this.cam.walk(-s * 0.5, 0);
     if (h.has('a')) this.cam.walk(0, -s * 0.5);
@@ -947,6 +1009,15 @@ export class App {
     const c = this.canvas;
     c.addEventListener('pointerdown', (e) => {
       if (this.mode !== 'city') return;
+      if (this.walker) {
+        const mid = c.getBoundingClientRect();
+        if (document.pointerLockElement === c) {
+          // Mouse captured: clicking selects the building under the centre dot.
+          void this.pickAt(mid.left + mid.width / 2, mid.top + mid.height / 2).then((i) => this.select(i));
+          return;
+        }
+        if (e.pointerType === 'mouse') void c.requestPointerLock()?.catch(() => undefined); // drag-to-look still works
+      }
       c.setPointerCapture(e.pointerId);
       this.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now() });
       this.dragMoved = 0;
@@ -960,6 +1031,12 @@ export class App {
     });
     c.addEventListener('pointermove', (e) => {
       if (this.mode !== 'city') return;
+      if (this.walker && document.pointerLockElement === c) {
+        this.walker.look(e.movementX, e.movementY);
+        const mid = c.getBoundingClientRect();
+        this.hoverAt = { x: mid.left + mid.width / 2, y: mid.top + mid.height / 2 }; // aim to see what it is
+        return;
+      }
       const p = this.ptrs.get(e.pointerId);
       if (!p) {
         if (e.pointerType !== 'touch') this.hoverAt = { x: e.clientX, y: e.clientY };
@@ -974,7 +1051,8 @@ export class App {
       p.y = e.clientY;
       p.t = now;
       if (this.ptrs.size === 1) {
-        if (e.shiftKey || e.buttons === 2) this.cam.pan(dx, dy);
+        if (this.walker) this.walker.look(-dx, -dy); // drag the view, like grabbing the scene
+        else if (e.shiftKey || e.buttons === 2) this.cam.pan(dx, dy);
         else this.cam.orbit(dx, dy, dt);
       } else if (this.ptrs.size === 2) {
         const [a, b] = [...this.ptrs.values()];
@@ -997,7 +1075,7 @@ export class App {
     c.addEventListener('pointerup', up);
     c.addEventListener('pointercancel', up);
     c.addEventListener('dblclick', (e) => {
-      if (this.mode !== 'city') return;
+      if (this.mode !== 'city' || this.walker) return;
       void this.pickAt(e.clientX, e.clientY).then((i) => {
         if (i >= 0) this.select(i, true);
       });
@@ -1015,6 +1093,7 @@ export class App {
       (e) => {
         if (this.mode !== 'city') return;
         e.preventDefault();
+        if (this.walker) return; // no zoom on foot
         // Trackpad pinch arrives as ctrl+wheel with small deltas; both zoom toward the cursor.
         this.zoomAt(Math.exp(e.deltaY * (e.ctrlKey ? 0.01 : 0.0011)), e.clientX, e.clientY);
       },
@@ -1057,6 +1136,7 @@ export class App {
     }
     const f = r.files[i]!;
     const d = r.dirs[f.dir]!;
+    if (fly && this.walker) this.setWalk(false);
     this.P.focus = f.dir;
     this.focusGoal = 1;
     if (fly) this.flyToFile(i);
@@ -1128,7 +1208,8 @@ export class App {
   private cameraNow(pos?: Vec, tgt?: Vec, fov = this.fov) {
     const pose = pos && tgt ? { pos, tgt } : (this.lastPose ?? this.cam.pose());
     const far = Math.max(1200, (this.world?.radius ?? 100) * 6);
-    return buildCamera(pose.pos, pose.tgt, this.canvas.clientWidth, this.canvas.clientHeight, far, fov);
+    // Walking (and the blend out of it) puts the eye next to walls: a closer near plane stops them being cut open.
+    return buildCamera(pose.pos, pose.tgt, this.canvas.clientWidth, this.canvas.clientHeight, far, fov, this.walker || this.blend ? NEAR : 0.4);
   }
 
   /** Nothing is moving but ambient animation: render at a low rate to save battery (PLAN section 6, Idle). */
@@ -1205,7 +1286,8 @@ export class App {
       P.ca = 1 + 5 * sf.velocity;
       P.fade *= sf.fade;
     } else {
-      ({ pos, tgt } = this.cam.pose());
+      if (this.walker) this.walker.resolve(P.t); // a building born under the walker (history playing) pushes them out
+      ({ pos, tgt } = this.walker ? this.walker.pose() : this.cam.pose());
     }
     if (this.blend) {
       const b = this.blend;
@@ -1226,6 +1308,7 @@ export class App {
     } else if (this.mode === 'city' && w0 && this.selected >= 0) {
       focus = dist(pos, [w0.pos[this.selected * 3]!, w0.pos[this.selected * 3 + 1]!, w0.pos[this.selected * 3 + 2]!]);
     }
+    if (this.walker && this.selected < 0) focus = 14; // on foot: focus down the street, not on the look target
     P.focusDist += (focus - (P.focusDist || focus)) * (1 - Math.exp(-dt * 4)); // focus pulls glide, never snap
     P.dof = this.mode === 'story' ? 1 : this.mode === 'city' ? (this.photo ? 1 : 0.55) : 0.4;
     P.motion = reduced ? 0 : 1;

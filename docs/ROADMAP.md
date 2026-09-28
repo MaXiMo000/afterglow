@@ -13,7 +13,7 @@ Key map after this roadmap (actions must never take a movement key; `src/ui/keym
 |---|---------|------|--------|--------|-----------------|
 | 1 | Colour by file type (done) | S | no | no | no |
 | 2 | Hotspot tour keys (done) | S | no | no | no |
-| 3 | Walk mode | M | no | no | no |
+| 3 | Walk mode (done) | M | no | no | no |
 | 4 | Fly-through video export | S | no | no | no |
 | 5 | Weather as activity | M | no | no | no |
 | 6 | Bus-factor "what if" | M | worker | analyser 5 | no |

@@ -5,6 +5,8 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- Walk mode (`X`): explore the city on foot at street level with W A S D and mouse or arrow-key look; buildings
+  block the way and you slide along walls.
 - Hotspot tour: `J` / `K` fly to the next / previous hotspot with a caption of why it is hot.
 - Colour by file type (`Y`): buildings take their extension's colour, with a legend of the 8 most common types and
   their counts; the inspector and the table gain a Type column.
