@@ -151,6 +151,12 @@ html.story-scroll body { min-height: 100%; }
 #hints { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--foot-h, 44px) + var(--tl-h, 52px) + 22px); margin: 0;
   font: var(--size-xs) var(--font-mono); letter-spacing: 0.16em; color: var(--color-faint); text-transform: uppercase; white-space: nowrap; }
 
+/* video export (ROADMAP #4): a soft red dot while recording */
+body.recording #hud::after { content: ''; position: fixed; right: var(--gutter); top: calc(env(safe-area-inset-top, 0px) + 74px); width: 10px; height: 10px;
+  border-radius: 50%; background: var(--color-coral); box-shadow: 0 0 12px var(--color-coral); animation: rec-pulse 1.6s ease-in-out infinite; }
+@keyframes rec-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { body.recording #hud::after { animation: none; } }
+
 /* walk mode (ROADMAP #3): a soft centre dot to aim with while the mouse is captured */
 #reticle { display: none; position: fixed; left: 50%; top: 50%; width: 7px; height: 7px; margin: -4px 0 0 -4px; border-radius: 50%; pointer-events: none;
   border: 1px solid rgba(236, 230, 219, 0.7); box-shadow: 0 0 10px rgba(255, 180, 94, 0.45); }

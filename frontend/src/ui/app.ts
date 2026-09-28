@@ -115,6 +115,8 @@ export class App {
   private compare: { a: number; b: number } | null = null;
   private photo = false;
   private exportNext = false;
+  /** Video export in progress (docs/ROADMAP.md #4). */
+  private rec: { kind: 'orbit' | 'history'; rec: MediaRecorder; out: HTMLCanvasElement; ctx: CanvasRenderingContext2D; t0: number; dur: number; left: number; keep: boolean } | null = null;
   private pendingView: View | null = null;
   /** Screen to restore without a new history entry (reload, or Back/Forward onto another repository's entry). */
   private arrive: 'story' | 'city' | null = null;
@@ -266,6 +268,7 @@ export class App {
     this.body.classList.remove('mode-hero', 'mode-loading', 'mode-story', 'mode-city');
     this.body.classList.add(`mode-${m}`);
     if (m !== 'city') this.setWalk(false, true);
+    if (m !== 'city') this.stopRecording(false);
     $('#hero').hidden = m !== 'hero';
     $('#loading').hidden = m !== 'loading';
     $('#city').hidden = m !== 'city';
@@ -530,6 +533,9 @@ export class App {
     // Camera flights take over from walking.
     if (this.walker && /^(home|reset|frame|preset\d)$/.test(id)) this.setWalk(false);
     switch (id) {
+      case 'record':
+        this.startRecording(this.playing ? 'history' : 'orbit');
+        break;
       case 'walk':
         this.setWalk(!this.walker);
         break;
@@ -814,6 +820,28 @@ export class App {
     const ctx = out.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(src, 0, 0);
+    this.caption(ctx, w, h);
+    out.toBlob((blob) => {
+      if (!blob) return;
+      this.download(blob, 'png');
+      this.toast('PNG saved');
+    }, 'image/png');
+  }
+
+  private download(blob: Blob, ext: string): void {
+    const r = this.result;
+    if (!r) return;
+    const a = el('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `afterglow-${r.meta.repo.replace('/', '-')}.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+
+  /** Caption band for posters and videos: repo, commit, the date shown, and the data caveats (CLAUDE.md rule 6). */
+  private caption(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    const r = this.result;
+    if (!r) return;
     const pad = Math.round(w * 0.03);
     const g = ctx.createLinearGradient(0, h * 0.72, 0, h);
     g.addColorStop(0, 'rgba(6,10,17,0)');
@@ -833,15 +861,63 @@ export class App {
       h - pad,
       w - pad * 2,
     );
-    out.toBlob((blob) => {
-      if (!blob) return;
-      const a = el('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `afterglow-${r.meta.repo.replace('/', '-')}.png`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      this.toast('PNG saved');
-    }, 'image/png');
+  }
+
+  /**
+   * Record a WebM (docs/ROADMAP.md #4): a quarter orbit in 12 s, or the whole history in 20 s. Each rendered frame is
+   * copied with the caption onto a 2D canvas (<= 1280 px wide) that MediaRecorder captures; nothing leaves the browser.
+   */
+  private startRecording(kind: 'orbit' | 'history'): void {
+    if (!this.result || this.rec || this.mode !== 'city' || !this.renderer) return;
+    const out = document.createElement('canvas');
+    const mime = typeof MediaRecorder === 'undefined' || typeof out.captureStream !== 'function'
+      ? undefined
+      : ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find((m) => MediaRecorder.isTypeSupported(m));
+    if (!mime) {
+      this.toast('This browser cannot record video. Save PNG in photo mode still works.');
+      return;
+    }
+    const s = Math.min(1, 1280 / this.canvas.width);
+    out.width = Math.round((this.canvas.width * s) / 2) * 2; // even sizes: some encoders require them
+    out.height = Math.round((this.canvas.height * s) / 2) * 2;
+    const ctx = out.getContext('2d');
+    if (!ctx) return;
+    const rec = new MediaRecorder(out.captureStream(30), { mimeType: mime, videoBitsPerSecond: 6_000_000 });
+    const chunks: Blob[] = [];
+    rec.ondataavailable = (e) => void (e.data.size && chunks.push(e.data));
+    const state = { kind, rec, out, ctx, t0: performance.now(), dur: kind === 'orbit' ? 12 : 20, left: -1, keep: false };
+    rec.onstop = () => {
+      if (state.keep && chunks.length) {
+        this.download(new Blob(chunks, { type: 'video/webm' }), 'webm');
+        this.toast('Video saved');
+        this.announce('Video saved.');
+      }
+    };
+    if (this.walker && kind === 'orbit') this.setWalk(false);
+    this.cam.autoOrbit = false;
+    if (kind === 'history') {
+      this.tT = this.P.t = 0;
+      this.playing = false;
+    }
+    rec.start(1000);
+    this.rec = state;
+    this.body.classList.add('recording');
+    this.announce(`Recording a ${state.dur} second ${kind === 'orbit' ? 'orbit' : 'history'} video. Escape to cancel.`);
+  }
+
+  /** Finish (`keep`: download) or cancel the recording. */
+  private stopRecording(keep: boolean): void {
+    const s = this.rec;
+    if (!s) return;
+    this.rec = null;
+    s.keep = keep;
+    if (s.rec.state !== 'inactive') s.rec.stop();
+    this.body.classList.remove('recording');
+    this.cam.autoOrbit = this.photo; // photo mode's slow orbit resumes
+    if (!keep) {
+      this.toast('Recording cancelled');
+      this.announce('Recording cancelled.');
+    }
   }
 
   private paletteItems(): Item[] {
@@ -910,6 +986,8 @@ export class App {
     $('#btnPhoto').addEventListener('click', () => this.run('photo'));
     $('#btnHelp').addEventListener('click', () => this.run('help'));
     $('#btnSave').addEventListener('click', () => (this.exportNext = true));
+    $('#btnRecOrbit').addEventListener('click', () => this.startRecording('orbit'));
+    $('#btnRecHistory').addEventListener('click', () => this.startRecording('history'));
     $('#btnPhotoExit').addEventListener('click', () => this.togglePhoto());
     ($('#timeline .play') as HTMLButtonElement).addEventListener('click', () => this.run('play'));
     $('#timeline .track').addEventListener('keydown', (e) => {
@@ -951,6 +1029,7 @@ export class App {
       if (document.querySelector('dialog[open]')) return; // dialogs handle their own keys (Esc closes)
       if (e.key === 'Escape' || (e.key === 'Backspace' && !typing)) {
         // Back out one level: photo -> table -> panels/selection/compare -> story -> start page.
+        if (this.rec) return this.stopRecording(false);
         if (this.photo) return this.togglePhoto();
         if (!$('#tableView').hidden) return this.openTable(false);
         if (this.walker) return this.setWalk(false);
@@ -1220,6 +1299,7 @@ export class App {
       this.blend ||
       this.cam.flying ||
       this.exportNext ||
+      this.rec ||
       this.ptrs.size ||
       this.held.size
     );
@@ -1246,6 +1326,18 @@ export class App {
       P.fog = FOG;
       P.exposure = 1;
       this.keyMove(dt, this.held.has('shift'));
+      if (this.rec) {
+        // Drive the shot: a quarter turn, or history from start to HEAD. Full rate and a fixed resolution throughout.
+        const k = Math.min(1, (now - this.rec.t0) / 1000 / this.rec.dur);
+        if (this.rec.kind === 'orbit') this.cam.goal.yaw += (dt * Math.PI) / 2 / this.rec.dur;
+        else this.tT = k;
+        this.dyn.hold(10);
+        const left = Math.ceil(this.rec.dur * (1 - k));
+        if (left !== this.rec.left) {
+          this.rec.left = left;
+          this.toast(`Recording\u2026 ${left} s left (Esc to cancel)`);
+        }
+      }
       // History playback and scrubbing: P.t eases toward the target so scrubs glide, never jump.
       if (this.playing) {
         this.tT = Math.min(1, this.tT + (dt * SPEEDS[this.speedIdx]!) / PLAY_SECONDS);
@@ -1375,6 +1467,12 @@ export class App {
     if (this.exportNext) {
       this.exportNext = false;
       this.exportPng(); // same task as the render: the drawing buffer is still intact
+    }
+    const rec = this.rec;
+    if (rec) {
+      rec.ctx.drawImage(this.canvas, 0, 0, rec.out.width, rec.out.height); // same task: buffer still intact
+      this.caption(rec.ctx, rec.out.width, rec.out.height);
+      if (now - rec.t0 >= rec.dur * 1000) this.stopRecording(true);
     }
   };
 }

@@ -5,7 +5,7 @@
 export type ActionId =
   | 'home' | 'reset' | 'frame' | 'preset1' | 'preset2' | 'preset3' | 'preset4' | 'preset5'
   | 'play' | 'slower' | 'faster' | 'stepBack' | 'stepFwd' | 'timeline' | 'compare' | 'palette' | 'insights'
-  | 'photo' | 'minimap' | 'arcs' | 'lanterns' | 'help' | 'table' | 'share' | 'story' | 'types' | 'tourNext' | 'tourPrev' | 'walk'; // prettier-ignore
+  | 'photo' | 'minimap' | 'arcs' | 'lanterns' | 'help' | 'table' | 'share' | 'story' | 'types' | 'tourNext' | 'tourPrev' | 'walk' | 'record'; // prettier-ignore
 
 export type KeyDef = { id: ActionId; keys: string[]; label: string; group: 'Camera' | 'Time' | 'Panels' | 'View' };
 
@@ -37,6 +37,7 @@ export const KEYMAP: readonly KeyDef[] = [
   { id: 'arcs', keys: ['G'], label: 'Coupling arcs on / off', group: 'View' },
   { id: 'lanterns', keys: ['L'], label: 'Lanterns (people) on / off', group: 'View' },
   { id: 'types', keys: ['Y'], label: 'Colour by file type on / off', group: 'View' },
+  { id: 'record', keys: ['O'], label: 'Record a video: the history if it is playing, else an orbit', group: 'View' },
   { id: 'share', keys: ['U'], label: 'Copy a share link (URL) to this view', group: 'View' },
   { id: 'story', keys: ['B'], label: 'Back to the story', group: 'View' },
 ];

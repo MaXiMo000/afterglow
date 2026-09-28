@@ -172,6 +172,21 @@ test('photo mode saves a PNG poster', async ({ page }) => {
   expect(d.suggestedFilename()).toBe('afterglow-acme-orbit.png');
 });
 
+test('O records an orbit video (WebM download); Esc cancels a recording', async ({ page }) => {
+  test.slow(); // the orbit clip is 12 s of real time
+  await openCity(page);
+  await key(page, 'o');
+  await expect(page.locator('body')).toHaveClass(/recording/);
+  await key(page, 'Escape');
+  await expect(page.locator('body')).not.toHaveClass(/recording/);
+  await expect(page.locator('#announce')).toHaveText('Recording cancelled.');
+  const download = page.waitForEvent('download', { timeout: 30_000 });
+  await key(page, 'o');
+  const d = await download;
+  expect(d.suggestedFilename()).toBe('afterglow-acme-orbit.webm');
+  await expect(page.locator('#announce')).toHaveText('Video saved.');
+});
+
 test('a share link restores repo, camera and time', async ({ page }) => {
   await mock(page, ID);
   await page.goto('/?quality=simple#v=1&r=acme/orbit&c=1.000,0.500,80.000,0.000,0.000&t=0.5000');
