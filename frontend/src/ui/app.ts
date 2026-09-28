@@ -24,6 +24,7 @@ import { compareCounts, Inspector, Insights, MiniMap, renderHelp, Timeline, what
 import { orphaned } from '../world/whatif';
 import { Story } from './story';
 import { NEAR, Walker } from './walk';
+import { Ambience } from './sound';
 import { drawTreemap, honestyLines, renderSummary, renderTable } from './table';
 
 type Mode = 'hero' | 'loading' | 'story' | 'city';
@@ -96,6 +97,9 @@ export class App {
   private lanterns: Float32Array | null = null;
   private selected = -1;
   private focusGoal = 0;
+  private readonly sound = new Ambience(); // ambient sound (docs/ROADMAP.md #13): off until the user turns it on
+  private soundAt = 0;
+  private peakCommits = 1;
   private walker: Walker | null = null; // walk mode (docs/ROADMAP.md #3)
   private hintsText = '';
   private tour = -1; // position in insights.hotspots during a J/K tour
@@ -259,6 +263,7 @@ export class App {
       }
     }
     renderSummary(r, $('#summaryBody'));
+    this.peakCommits = Math.max(1, ...r.timeline.map((m) => m.commits));
     this.renderHonesty();
     if (this.typesGoal) this.setTypes(true, false);
     if (this.weatherGoal) this.setWeather(true, false);
@@ -739,6 +744,7 @@ export class App {
     const i = list[this.tour]!;
     const f = r.files[i]!;
     this.select(i, true);
+    this.sound.chime(this.tour);
     const name = f.path.slice(f.path.lastIndexOf('/') + 1);
     const why = `${fmt(f.changes_12m)} changes in the last 12 months`;
     setText($('#placeEy'), `Hotspot ${this.tour + 1} of ${list.length}`);
@@ -798,6 +804,18 @@ export class App {
         ? `GitHub has no test merge for PR #${n}: it may be closed, merged, have conflicts, or not exist. Only open, mergeable PRs can be shown.`
         : (ERROR_TEXT[code] ?? 'The PR could not be loaded. Please try again.'));
     }
+  }
+
+  /** Commits around the month shown (three months), relative to the busiest month: drives the ambient pad. */
+  private activityAt(t: number): number {
+    const r = this.result;
+    const w = this.world;
+    if (!r || !w || !r.timeline.length) return 0;
+    const when = w.t0 + t * (w.t1 - w.t0);
+    let i = r.timeline.findIndex((m) => m.t > when) - 1;
+    if (i < 0) i = when >= r.timeline[0]!.t ? r.timeline.length - 1 : 0;
+    const near = r.timeline.slice(Math.max(0, i - 1), i + 2);
+    return near.reduce((n, m) => n + m.commits, 0) / near.length / this.peakCommits;
   }
 
   /** Start-page gallery (docs/ROADMAP.md #10): skyline tiles from the badge route, each opening that city. */
@@ -1336,6 +1354,12 @@ export class App {
     $('#btnShare').addEventListener('click', () => this.run('share'));
     $('#btnBadge').addEventListener('click', () => void this.copyBadge());
     $('#btnEmbed').addEventListener('click', () => void this.copyEmbed());
+    const soundSel = $('#sound') as HTMLSelectElement;
+    soundSel.addEventListener('change', () => {
+      this.sound.set(soundSel.value === 'on'); // a user gesture: the only way sound ever starts
+      this.announce(this.sound.on ? 'Sound on.' : 'Sound off.');
+    });
+    addEventListener('visibilitychange', () => this.sound.visible(!document.hidden));
     // `submit` fires synchronously with the button press (a dialog's `close` event is queued behind rendering).
     $('#prDialog form').addEventListener('submit', (e) => {
       const v = ($('#prInput') as HTMLInputElement).value.trim();
@@ -1754,6 +1778,10 @@ export class App {
     P.pr = reduced ? prGoal : P.pr + (prGoal - P.pr) * (1 - Math.exp(-dt * 4));
     const riskGoal = this.insights.whatIf >= 0 ? 1 : 0;
     P.risk = reduced ? riskGoal : P.risk + (riskGoal - P.risk) * (1 - Math.exp(-dt * 3)); // lights fade out, not snap
+    if (this.sound.on && now - this.soundAt > 500) {
+      this.soundAt = now;
+      this.sound.activity(this.activityAt(P.t));
+    }
     P.types = reduced ? this.typesGoal : P.types + (this.typesGoal - P.types) * (1 - Math.exp(-dt * 5)); // cross-fade
     const C = this.cameraNow(pos, tgt, fov);
     this.lastVP = C.vp;

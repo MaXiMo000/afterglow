@@ -23,7 +23,7 @@ Key map after this roadmap (actions must never take a movement key; `src/ui/keym
 | 10 | Gallery of featured cities (done: list in AFTERGLOW_FEATURED, no table) | M | API + maint | new table | which repos |
 | 11 | Two cities side by side | L | no | no | no |
 | 12 | Interactive embed (done; header change approved by the owner 2026-09-29) | M | Caddy | no | **yes: loosens `frame-ancestors`** |
-| 13 | Ambient sound | S | no | no | **yes: sound at all; check `autoplay=()`** |
+| 13 | Ambient sound (done; autoplay=() unchanged) | S | no | no | **yes: sound at all; check `autoplay=()`** |
 
 ## 1. Colour by file type
 - **What:** `Y` cycles colour modes: default (heat) -> file type -> default. Types are the repo's 8 most common

@@ -5,6 +5,8 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- Ambient sound (`?` panel, off by default): a synthesised pad that follows the history's activity and a chime on the
+  hotspot tour. No audio files; nothing plays until you turn it on; no header change.
 - Embeddable city: `/embed/owner/name` shows the newest stored analysis in an iframe on any https site ("Copy embed
   code" in the `?` panel). Only that page may be framed; everything else keeps `frame-ancestors 'none'` and
   `X-Frame-Options: DENY`.

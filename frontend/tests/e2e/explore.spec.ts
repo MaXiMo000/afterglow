@@ -281,6 +281,29 @@ test('embed page: read-only city for other sites, with a link to the full city',
   expect(posts).toEqual([]); // never starts an analysis or changes anything
 });
 
+test('sound: off by default, nothing plays until the user turns it on, then off again', async ({ page }) => {
+  await page.addInitScript(() => {
+    const Orig = window.AudioContext;
+    (window as unknown as { __n: number }).__n = 0;
+    window.AudioContext = class extends Orig {
+      constructor(o?: AudioContextOptions) {
+        super(o);
+        (window as unknown as { __n: number }).__n++;
+      }
+    };
+  });
+  await openCity(page);
+  await key(page, 'j');
+  expect(await page.evaluate(() => (window as unknown as { __n: number }).__n)).toBe(0); // no audio without consent
+  await key(page, '?');
+  await expect(page.locator('#sound')).toHaveValue('off');
+  await page.selectOption('#sound', 'on');
+  await expect(page.locator('#announce')).toHaveText('Sound on.');
+  expect(await page.evaluate(() => (window as unknown as { __n: number }).__n)).toBe(1);
+  await page.selectOption('#sound', 'off');
+  await expect(page.locator('#announce')).toHaveText('Sound off.');
+});
+
 test('O records an orbit video (WebM download); Esc cancels a recording', async ({ page }) => {
   test.slow(); // the orbit clip is 12 s of real time
   await openCity(page);
