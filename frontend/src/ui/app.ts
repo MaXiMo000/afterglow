@@ -14,6 +14,8 @@ import { clamp, lerp, smoothstep } from '../render/math';
 import { DynRes } from '../render/dynres';
 import { Renderer, RendererError, TIERS, type Params } from '../render/renderer';
 import { buildWorld, type World } from '../world/build';
+import { pair, pairStats, PAIR_MAX_FILES, type Pair } from '../world/pair';
+import { project } from '../render/math';
 import { TYPE_COLOURS } from '../world/types';
 import { weather } from '../world/weather';
 import { buildCamera, OrbitCamera, orbitFromPose, rayThrough, type Preset } from './camera';
@@ -143,10 +145,13 @@ export class App {
   private readonly held = new Set<string>();
   private readonly palette = new Palette();
   private readonly inspector = new Inspector(
-    (i) => this.select(i),
+    (i) => this.select(i >= 0 ? i + this.inspectorBase : i), // the inspector works in its own repository's indices
     (d) => this.drillInto(d),
   );
   /** Drill-down (docs/ROADMAP.md #9): the parent cities, outermost first, and the current city's district prefixes. */
+  /** Two cities side by side (docs/ROADMAP.md #11): the pair on screen, and the file offset of B's buildings. */
+  private pairState: Pair | null = null;
+  private inspectorBase = 0;
   private drillStack: { result: Result; prefixes: string[] | null; from: number }[] = [];
   private prefixes: string[] | null = null;
   private readonly insights = new Insights(
@@ -232,15 +237,16 @@ export class App {
     }
   }
 
-  private show(r: Result, drilling = false): void {
+  private show(r: Result, drilling = false, world?: World): void {
     if (!drilling) {
       this.drillStack = [];
       this.prefixes = null;
+      this.setPairUi(null);
     }
     this.dyn.hold(); // building the world and first frames are slow: not a reason to lower quality
     this.result = r;
     this.resultId = null;
-    this.world = buildWorld(r);
+    this.world = world ?? buildWorld(r);
     this.hotDirs = new Set(r.insights.hotspots.map((i) => r.files[i]!.dir));
     this.lanterns = new Float32Array(this.world.lanterns.length * 3);
     this.cam.frame(this.world.radius);
@@ -284,7 +290,10 @@ export class App {
     const m = r.meta;
     const items: HTMLElement[] = [];
     if (this.demo) items.push(el('span', `Background: ${m.repo}, a real analysis from ${fmtDate(m.generated_at)} (not live).`));
-    else items.push(el('span', `${m.repo} @ ${m.sha.slice(0, 7)}`), el('span', `analysed ${fmtDate(m.generated_at)}`));
+    else if (this.pairState) {
+      const { a, b } = this.pairState;
+      items.push(el('span', `${a.meta.repo} @ ${a.meta.sha.slice(0, 7)} (west) \u00b7 ${b.meta.repo} @ ${b.meta.sha.slice(0, 7)} (east)`));
+    } else items.push(el('span', `${m.repo} @ ${m.sha.slice(0, 7)}`), el('span', `analysed ${fmtDate(m.generated_at)}`));
     items.push(el('span', `${fmt(m.files)} files \u00b7 ${fmt(m.commits)} commits \u00b7 ${fmt(m.people)} people`));
     for (const line of honestyLines(r)) items.push(el('span', line, line.startsWith('Bus') ? undefined : 'warn'));
     if (this.world?.heightFromChanges) items.push(el('span', 'Heights show change counts (line counts unavailable).', 'warn'));
@@ -384,6 +393,7 @@ export class App {
   /** One level back (city -> story -> start page): through browser history when we added the entry. */
   private back(): void {
     while (this.drillStack.length) this.drillOut(true); // the story and start page belong to the whole city
+    if (this.pairState) this.leavePair(true);
     if (history.state?.back) return history.back(); // popstate applies the screen
     if (this.mode === 'city' && this.result && !this.demo && this.renderer) {
       this.enterStory(true, false);
@@ -408,6 +418,7 @@ export class App {
   private onPop(state: { v?: string } | null): void {
     const v = state?.v ?? 'hero';
     if (v !== 'city') while (this.drillStack.length) this.drillOut(true); // story and start page show the whole city
+    if (v !== 'city' && this.pairState) this.leavePair(true);
     const loaded = !!this.result && !this.demo;
     const linked = repoFromPath(location.pathname);
     if ((v === 'story' || v === 'city') && linked && (!loaded || `${linked.owner}/${linked.name}`.toLowerCase() !== this.result!.meta.repo)) {
@@ -493,6 +504,8 @@ export class App {
       this.show(r);
       this.resultId = id;
       this.announce(`Loaded ${r.meta.repo}: ${fmt(r.meta.files)} files.`);
+      const vs = new URLSearchParams(location.search).get('vs'); // a shared side-by-side link
+      if (vs) queueMicrotask(() => void this.startPair(vs));
       const view = this.pendingView;
       this.pendingView = null;
       if (!this.renderer) {
@@ -624,11 +637,19 @@ export class App {
         this.tourStep(id === 'tourNext' ? 1 : -1);
         break;
       case 'pr': {
+        if (this.pairState) {
+          this.toast('Leave the side-by-side view (Esc) to overlay a pull request.');
+          break;
+        }
         const d = $('#prDialog') as HTMLDialogElement;
         ($('#prInput') as HTMLInputElement).value = '';
         d.showModal();
         break;
       }
+      case 'pair':
+        if (this.pairState) this.leavePair();
+        else this.openPairDialog();
+        break;
       case 'drill': {
         const d = this.selected >= 0 ? r.files[this.selected]!.dir : this.P.focus;
         if (d >= 0) this.drillInto(d);
@@ -757,6 +778,7 @@ export class App {
   private async showPr(n: number): Promise<void> {
     const r = this.result;
     if (!r || this.demo || n > 10_000_000) return;
+    if (this.pairState) return this.toast('Leave the side-by-side view (Esc) to overlay a pull request.');
     this.clearPr(false);
     const abort = new AbortController();
     this.prAbort = abort;
@@ -857,6 +879,126 @@ export class App {
     $('#featured').hidden = false;
   }
 
+  private openPairDialog(): void {
+    const r = this.result;
+    if (!r || this.demo) return;
+    if (this.drillStack.length) return this.toast('Climb out to the whole city (Backspace) first.');
+    ($('#vsInput') as HTMLInputElement).value = '';
+    ($('#vsDialog') as HTMLDialogElement).showModal();
+  }
+
+  /** Analyse (or reuse) a second repository and show both cities side by side (docs/ROADMAP.md #11). */
+  private async startPair(raw: string): Promise<void> {
+    const a = this.pairState?.a ?? this.result;
+    const ref = parseRepo(raw.trim()); // the same strict parser as the form (SECURITY T1)
+    if (!a || this.demo || !ref) return this.toast('That does not look like owner/name.');
+    const slug = `${ref.owner}/${ref.name}`.toLowerCase();
+    if (slug === a.meta.repo) return this.toast('Pick a different repository to compare with.');
+    const say = (t: string): void => {
+      this.toast(t);
+      this.announce(t);
+    };
+    say(`Building ${slug} to compare\u2026`);
+    try {
+      const { id, done } = await startAnalysis(ref);
+      if (!done) await followProgress(id, (p) => this.toast(`${slug}: ${STAGE_TEXT[p.stage] ?? p.stage}`));
+      const b = await fetchResult(id);
+      if (this.result !== a && this.pairState?.a !== a) return; // the user moved on meanwhile
+      if (!b.files.length) return say(`${slug} has no files to draw.`);
+      if (a.files.length + b.files.length > PAIR_MAX_FILES) {
+        return say(`Too many buildings to show side by side (${fmt(a.files.length + b.files.length)}); together they must stay under ${fmt(PAIR_MAX_FILES)}.`);
+      }
+      this.enterPair(a, b);
+    } catch (e) {
+      const code = e instanceof ApiError ? e.code : 'unavailable';
+      say(ERROR_TEXT[code] ?? 'The second repository could not be loaded.');
+    }
+  }
+
+  private enterPair(a: Result, b: Result): void {
+    if (this.walker) this.setWalk(false, true);
+    const id = this.resultId;
+    const from = this.lastPose;
+    const p = pair(a, b);
+    this.show(p.result, true, p.world);
+    this.pairState = p;
+    this.resultId = id;
+    this.setPairUi(p);
+    this.renderHonesty();
+    if (this.mode !== 'city') this.enterCity(false);
+    // Face the two islands square on (west left, east right) and frame both.
+    this.cam.flyTo({ ...this.cam.home(p.world.radius), yaw: 0, pitch: 0.62 }, 0.01, true);
+    if (from) this.blend = { pos: [...from.pos], tgt: [...from.tgt], fov: this.fov, k: 0 };
+    this.select(-1);
+    const url = new URL(location.href);
+    url.searchParams.set('vs', b.meta.repo);
+    history.replaceState(history.state, '', `${url.pathname}${url.search.replace('%2F', '/')}${url.hash}`);
+    this.announce(`Comparing ${a.meta.repo} (west) with ${b.meta.repo} (east), on one calendar. Esc returns to ${a.meta.repo}.`);
+  }
+
+  /** Back to the first repository's own city; `quiet` skips the announcement (leaving the city altogether). */
+  private leavePair(quiet = false): void {
+    const p = this.pairState;
+    if (!p) return;
+    const id = this.resultId;
+    const from = this.lastPose;
+    this.show(p.a); // also clears the pair UI
+    this.resultId = id;
+    if (from && !quiet) this.blend = { pos: [...from.pos], tgt: [...from.tgt], fov: this.fov, k: 0 };
+    this.select(-1);
+    const url = new URL(location.href);
+    url.searchParams.delete('vs');
+    history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    if (!quiet) this.announce(`Back to ${p.a.meta.repo}.`);
+  }
+
+  /** The comparison panel and island labels; null hides them. */
+  private setPairUi(p: Pair | null): void {
+    this.pairState = p;
+    this.inspectorBase = 0;
+    for (const id of ['#pairA', '#pairB', '#pairLegend']) $(id).hidden = !p;
+    if (!p) return;
+    setText($('#pairA'), p.a.meta.repo);
+    setText($('#pairB'), p.b.meta.repo);
+    const sa = pairStats(p.a);
+    const sb = pairStats(p.b);
+    const table = el('table');
+    const head = el('tr');
+    head.append(el('th', ''), el('th', p.a.meta.repo), el('th', p.b.meta.repo));
+    table.append(head, ...sa.map((s, i) => {
+      const tr = el('tr');
+      tr.append(el('td', s.label), el('td', fmt(s.value)), el('td', fmt(sb[i]!.value)));
+      return tr;
+    }));
+    const caveats = [...honestyLines(p.a).map((l) => `${p.a.meta.repo}: ${l}`), ...honestyLines(p.b).map((l) => `${p.b.meta.repo}: ${l}`)].filter((l) => !l.includes('Bus factor is'));
+    // Collapsible (native <details>: keyboard and screen-reader ready), open by default only where it has room.
+    const box = el('details');
+    box.open = innerWidth >= 1100;
+    box.append(
+      el('summary', 'Side by side'),
+      table,
+      ...caveats.map((c) => el('p', c, 'sub')),
+      el('p', 'Left and right, one calendar, one height scale. Esc: back to the first city.', 'sub'),
+    );
+    $('#pairLegend').replaceChildren(box);
+  }
+
+  private placePairLabels(vp: Float32Array | number[]): void {
+    const p = this.pairState;
+    if (!p) return;
+    const rect = this.canvas.getBoundingClientRect();
+    for (const [id, x] of [['#pairA', p.centres[0]], ['#pairB', p.centres[1]]] as const) {
+      const s = project(vp as never, [x, 16, 0], rect.width, rect.height);
+      const e = $(id);
+      if (!s) {
+        e.hidden = true;
+        continue;
+      }
+      e.hidden = false;
+      e.style.transform = `translate(${(rect.left + s.x).toFixed(1)}px, ${(rect.top + s.y).toFixed(1)}px) translate(-50%, -100%)`;
+    }
+  }
+
   /** "core / api" for the current drilled-in city. */
   private drillPath(): string {
     const top = this.drillStack[0];
@@ -874,6 +1016,7 @@ export class App {
   private drillInto(d: number): void {
     const r = this.result;
     if (!r || this.demo || this.mode !== 'city' || !r.dirs[d]) return;
+    if (this.pairState) return this.toast('Leave the side-by-side view (Esc) to open a district as a city.');
     const prefix = this.prefixes ? this.prefixes[d]! : topPrefix(r.dirs[d].name);
     const next = drill(r, d, prefix);
     if (next.result.dirs.length < 2 && next.result.files.length < 2) return this.toast('This district has a single file: nothing to open.');
@@ -911,6 +1054,7 @@ export class App {
     if (!r || this.demo) return;
     if (this.overlayKind === 'since') return this.clearPr(true);
     if (this.drillStack.length) return this.toast('Climb out to the whole city (Backspace) to compare with the previous analysis.');
+    if (this.pairState) return this.toast('Leave the side-by-side view (Esc) to compare with the previous analysis.');
     if (!id) return this.toast('Load a repository first.');
     this.clearPr(false);
     const abort = new AbortController();
@@ -1088,9 +1232,9 @@ export class App {
     const r = this.result;
     const repo = r ? parseRepo(r.meta.repo) : null;
     if (!repo) return;
-    if (this.drillStack.length) {
-      // A drilled-in camera means nothing in the whole city a link opens: share the repository itself.
-      const plain = `${location.origin}${repoPath(repo)}`;
+    if (this.drillStack.length || this.pairState) {
+      // A drilled-in or side-by-side camera means nothing in the city a link opens: share the view itself.
+      const plain = `${location.origin}${repoPath(repo)}${this.pairState ? `?vs=${this.pairState.b.meta.repo}` : ''}`;
       try {
         await navigator.clipboard.writeText(plain);
         this.toast('Link copied (it opens the whole city)');
@@ -1189,7 +1333,7 @@ export class App {
     ctx.fillRect(0, h * 0.7, w, h * 0.3);
     ctx.fillStyle = '#ece6db';
     ctx.font = `italic ${Math.round(h * 0.06)}px "Cormorant Garamond", Georgia, serif`;
-    ctx.fillText(r.meta.repo, pad, h - pad * 2.2);
+    ctx.fillText(this.pairState ? `${this.pairState.a.meta.repo}  vs  ${this.pairState.b.meta.repo}` : r.meta.repo, pad, h - pad * 2.2);
     ctx.font = `${Math.round(h * 0.018)}px "IBM Plex Mono", monospace`;
     ctx.fillStyle = '#a9bbbd';
     const t = this.world ? this.world.t0 + this.P.t * (this.world.t1 - this.world.t0) : r.meta.span[1];
@@ -1354,6 +1498,10 @@ export class App {
     $('#btnShare').addEventListener('click', () => this.run('share'));
     $('#btnBadge').addEventListener('click', () => void this.copyBadge());
     $('#btnEmbed').addEventListener('click', () => void this.copyEmbed());
+    $('#vsDialog form').addEventListener('submit', (e) => {
+      const v = ($('#vsInput') as HTMLInputElement).value;
+      if ((e as SubmitEvent).submitter?.getAttribute('value') === 'show') void this.startPair(v);
+    });
     const soundSel = $('#sound') as HTMLSelectElement;
     soundSel.addEventListener('change', () => {
       this.sound.set(soundSel.value === 'on'); // a user gesture: the only way sound ever starts
@@ -1395,6 +1543,7 @@ export class App {
         if (this.selected >= 0 || this.P.focus >= 0) return this.select(-1);
         if (this.insights.open) return this.run('insights');
         if (this.drillStack.length) return this.drillOut();
+        if (this.pairState) return this.leavePair();
         if ((this.mode === 'city' && !this.demo) || this.mode === 'story') {
           e.preventDefault();
           return this.back();
@@ -1567,9 +1716,10 @@ export class App {
       this.P.focus = -1;
       this.focusGoal = 0;
       this.inspector.hide();
-      setText($('#placeEy'), this.drillStack.length ? 'Inside' : 'Exploring');
-      setText($('#placeName'), this.drillStack.length ? this.drillPath() : 'the whole city');
-      setText($('#placeSub'), this.drillStack.length ? 'Backspace climbs out' : '');
+      const pp = this.pairState;
+      setText($('#placeEy'), pp ? 'Comparing' : this.drillStack.length ? 'Inside' : 'Exploring');
+      setText($('#placeName'), pp ? 'two cities' : this.drillStack.length ? this.drillPath() : 'the whole city');
+      setText($('#placeSub'), pp ? `left: ${pp.a.meta.repo} · right: ${pp.b.meta.repo}` : this.drillStack.length ? 'Backspace climbs out' : '');
       return;
     }
     const f = r.files[i]!;
@@ -1578,7 +1728,10 @@ export class App {
     this.P.focus = f.dir;
     this.focusGoal = 1;
     if (fly) this.flyToFile(i);
-    this.inspector.show(r, i);
+    const pp = this.pairState;
+    this.inspectorBase = pp && i >= pp.split ? pp.split : 0;
+    if (pp) this.inspector.show(i >= pp.split ? pp.b : pp.a, i - this.inspectorBase); // links and partners of the right repository
+    else this.inspector.show(r, i);
     setText($('#placeEy'), 'District');
     setText($('#placeName'), d.name);
     setText($('#placeSub'), this.districtLine(d));
@@ -1785,6 +1938,7 @@ export class App {
     P.types = reduced ? this.typesGoal : P.types + (this.typesGoal - P.types) * (1 - Math.exp(-dt * 5)); // cross-fade
     const C = this.cameraNow(pos, tgt, fov);
     this.lastVP = C.vp;
+    if (this.pairState && this.mode === 'city') this.placePairLabels(C.vp);
 
     const w = this.world;
     if (w && this.lanterns) {

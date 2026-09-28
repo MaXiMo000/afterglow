@@ -41,6 +41,8 @@
     <div id="stage">
       <canvas id="gl" aria-hidden="true"></canvas>
       <div id="scrim" aria-hidden="true"></div>
+      <p class="pair-label" id="pairA" aria-hidden="true" hidden></p>
+      <p class="pair-label" id="pairB" aria-hidden="true" hidden></p>
     </div>
 
     <header id="hud">
@@ -135,6 +137,7 @@
         <div id="weatherLegend" hidden></div>
         <div id="riskLegend" hidden></div>
         <div id="prLegend" hidden></div>
+        <div id="pairLegend" hidden></div>
       </div>
       <canvas id="minimap" role="img" aria-label="Mini-map of districts and the camera" hidden></canvas>
       <div id="photoBar" hidden>
@@ -163,6 +166,15 @@
     <dialog id="palette" aria-label="Search">
       <input role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="palList" aria-label="Search files, districts, people, or an action" placeholder="Search files, districts, people, or an action" spellcheck="false" autocomplete="off" />
       <ul id="palList" role="listbox" aria-label="Results"></ul>
+    </dialog>
+    <dialog id="vsDialog" aria-labelledby="vsTitle">
+      <form method="dialog" class="prform">
+        <h2 id="vsTitle">Compare side by side</h2>
+        <p class="sub">A second public repository, built as its own city next to this one, on the same calendar.</p>
+        <label for="vsInput">github.com /</label>
+        <input id="vsInput" maxlength="140" placeholder="owner/name" required autocomplete="off" spellcheck="false">
+        <div class="actions"><button class="go" value="show">Build both</button><button class="ghost" value="cancel" formnovalidate>Cancel</button></div>
+      </form>
     </dialog>
     <dialog id="prDialog" aria-labelledby="prTitle">
       <form method="dialog" class="prform">

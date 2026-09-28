@@ -304,6 +304,32 @@ test('sound: off by default, nothing plays until the user turns it on, then off 
   await expect(page.locator('#announce')).toHaveText('Sound off.');
 });
 
+test('7 compares two repositories side by side; Esc returns to the first', async ({ page }) => {
+  const OTHER = 'c'.repeat(32);
+  const other = result() as { meta: { repo: string; sha: string } };
+  other.meta.repo = 'acme/other';
+  other.meta.sha = 'c'.repeat(40);
+  await openCity(page);
+  await page.unroute('**/api/v1/analyses');
+  await page.route('**/api/v1/analyses', (r) =>
+    r.fulfill({ status: 200, json: { id: (r.request().postData() ?? '').includes('acme/other') ? OTHER : ID, status: 'done' } }),
+  );
+  await page.route(`**/api/v1/analyses/${OTHER}`, (r) => r.fulfill({ status: 200, json: other }));
+  await key(page, '7');
+  await page.fill('#vsInput', 'acme/other');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#pairLegend')).toContainText('acme/other');
+  await expect(page.locator('#placeName')).toHaveText('two cities');
+  await expect(page).toHaveURL(/vs=acme\/other/);
+  await expect(page.locator('#pairB')).toHaveText('acme/other');
+  await key(page, 'n'); // repository-specific tools ask to leave first
+  await expect(page.locator('#toast')).toContainText('Leave the side-by-side view');
+  await key(page, 'Escape');
+  await expect(page.locator('#announce')).toHaveText('Back to acme/orbit.');
+  await expect(page.locator('#pairLegend')).toBeHidden();
+  await expect(page).not.toHaveURL(/vs=/);
+});
+
 test('O records an orbit video (WebM download); Esc cancels a recording', async ({ page }) => {
   test.slow(); // the orbit clip is 12 s of real time
   await openCity(page);

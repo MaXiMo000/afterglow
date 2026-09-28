@@ -5,6 +5,8 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- Two cities side by side (`7`, or `?vs=owner/name`): compare two repositories on neighbouring islands, one calendar,
+  one height scale, with a comparison panel.
 - Ambient sound (`?` panel, off by default): a synthesised pad that follows the history's activity and a chime on the
   hotspot tour. No audio files; nothing plays until you turn it on; no header change.
 - Embeddable city: `/embed/owner/name` shows the newest stored analysis in an iframe on any https site ("Copy embed
