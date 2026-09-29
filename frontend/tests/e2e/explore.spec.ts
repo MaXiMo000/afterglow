@@ -90,7 +90,7 @@ test('every explore feature is reachable by keyboard alone', async ({ page }) =>
   for (const k of ['w', 'a', 's', 'd', 'q', 'e', 'ArrowLeft', 'ArrowUp', '+', '-']) await key(page, k);
 
   // Share link goes in the URL (and the clipboard when allowed).
-  await key(page, 's');
+  await key(page, 'u');
   await expect(page).toHaveURL(/#v=1&r=acme\/orbit&c=[\d.,-]+&t=[\d.]+$/);
 
   // Photo mode hides the UI; Esc leaves it.

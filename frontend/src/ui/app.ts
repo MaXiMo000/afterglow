@@ -876,7 +876,7 @@ export class App {
     });
     if (!tiles.length) return;
     $('#featured .strip').replaceChildren(...tiles);
-    $('#featured').hidden = false;
+    $('#featured').classList.add('ready');
   }
 
   private openPairDialog(): void {
