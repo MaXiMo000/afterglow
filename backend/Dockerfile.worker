@@ -6,7 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_
     AFTERGLOW_SCRATCH=/scratch AFTERGLOW_STORE=/store
 WORKDIR /srv
 
+# upgrade: Debian security fixes land before the python base image is rebuilt (Trivy gate, SECURITY.md).
 RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
