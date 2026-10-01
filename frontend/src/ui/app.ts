@@ -876,7 +876,7 @@ export class App {
     });
     if (!tiles.length) return;
     $('#featured .strip').replaceChildren(...tiles);
-    $('#featured').classList.add('ready');
+    $('#examples').classList.add('has-featured'); // the strip takes the "Try" row's place
   }
 
   private openPairDialog(): void {

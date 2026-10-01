@@ -82,10 +82,16 @@ main > section { position: fixed; z-index: var(--z-panel); }
 .samples button { background: none; border: 0; border-bottom: 1px dashed var(--color-faint); color: var(--color-dim); padding: 0 0 1px; font: inherit; }
 .samples button:hover { color: var(--color-amber); border-color: var(--color-amber); }
 /* Featured cities (ROADMAP #10): a quiet strip of skyline tiles (the README badge art) under the samples. */
-/* The space is reserved from the first paint (no layout shift when the list arrives, CLS 0); the strip stays invisible
-   and out of the accessibility tree until tiles load, and for good if there are none. */
-.featured { display: grid; align-content: start; gap: 8px; height: 88px; font: var(--size-xs) var(--font-mono); color: var(--color-faint); min-width: 0; }
-.featured:not(.ready) { visibility: hidden; }
+/* Examples slot (ROADMAP #10): the "Try" links, replaced by the featured strip once its tiles load. Where the strip can
+   show, the slot's height is fixed from the first paint, so the swap moves nothing (CLS 0). Where it would not fit
+   (measured: wide windows under 760 px tall, narrow ones under 880 px), the start page stays exactly as before. */
+.examples { display: grid; align-content: start; min-width: 0; }
+.featured { display: none; gap: 8px; font: var(--size-xs) var(--font-mono); color: var(--color-faint); min-width: 0; }
+@media (min-width: 700px) and (min-height: 760px), (min-height: 880px) {
+  .examples { height: 88px; }
+  .examples.has-featured .samples { display: none; }
+  .examples.has-featured .featured { display: grid; }
+}
 .featured .strip { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x proximity; padding: 4px 2px 8px; scrollbar-width: thin; scrollbar-color: rgba(236, 230, 219, 0.22) transparent; }
 .featured a { flex: none; scroll-snap-align: start; border-radius: 6px; line-height: 0; opacity: 0.82;
   transition: opacity var(--motion-base) var(--motion-ease-out), transform var(--motion-base) var(--motion-ease-out), box-shadow var(--motion-base) var(--motion-ease-out); }
