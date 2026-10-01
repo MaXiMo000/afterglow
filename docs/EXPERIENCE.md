@@ -52,6 +52,11 @@ switch on and off over tens of seconds (a slow glow, never a flicker).
 | `?` | Help overlay | `Esc` | Back out one level (palette, photo, selection, explore) |
 Gamepad not required. All controls need visible focus states and tooltips with the key.
 
+Touch has no Esc, so nothing may depend on it: every legend has a close button (x), and walk mode, recording and a
+district opened as a city show a "Leave walk mode" / "Stop recording" / "Climb out" button under the place name.
+In photo mode the exit button stops a recording first, as Esc does. Dialogs have Cancel or Close and close on a
+backdrop tap.
+
 ## 5. Features that make it useful
 - **Inspector drawer** for a selected file: path, size, created, last change, changes per quarter sparkline, authors (pseudonymous), coupled files, "open on GitHub" link (validated `https://github.com/<owner>/<repo>/blob/<sha>/<path-encoded>`).
 - **Compare mode**: two dates -> show added / removed / heated / cooled buildings with a legend and counts. Removed files are counted (exactly, from their commit times; by whole month only past the newest 10,000 removals or in analyser 3 results, and the legend says so) but not drawn: they have no place in the city at HEAD.

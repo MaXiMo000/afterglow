@@ -165,6 +165,7 @@ html.story-scroll body { min-height: 100%; }
 #city { inset: 0; pointer-events: none; }
 /* --foot-h and --tl-h are measured by the app (ResizeObserver), so nothing overlaps at any width. */
 #place { position: absolute; left: var(--gutter); bottom: calc(var(--foot-h, 44px) + var(--tl-h, 52px) + 22px); max-width: 24rem; text-shadow: 0 2px 20px rgba(0, 0, 0, 0.7); }
+#btnLeave { margin-top: 10px; pointer-events: auto; }
 #place h2 { font: 400 var(--size-xl) / 1 var(--font-serif); margin: 6px 0 4px; overflow-wrap: anywhere; }
 #hints { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--foot-h, 44px) + var(--tl-h, 52px) + 22px); margin: 0;
   font: var(--size-xs) var(--font-mono); letter-spacing: 0.16em; color: var(--color-faint); text-transform: uppercase; white-space: nowrap; }
@@ -242,6 +243,11 @@ kbd { font: var(--size-xs) var(--font-mono); padding: 0 5px; border: 1px solid v
 /* Legends stack in one column so any mix of modes (compare or type colour, plus weather) never overlaps. */
 #legends { position: fixed; z-index: var(--z-hud); left: var(--gutter); top: calc(env(safe-area-inset-top, 0px) + 70px); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
 #legends > * { pointer-events: auto; }
+/* Each legend has a close button (touch has no Esc): top right, a 28px target, the heading keeps clear of it. */
+#legends > * { position: relative; }
+#legends .x { position: absolute; right: 4px; top: 4px; width: 28px; height: 28px; padding: 0; border: 0; display: grid; place-items: center; border-radius: var(--radius-sm); font-size: 18px; line-height: 1; color: var(--color-dim); }
+#legends .x:hover { color: var(--color-text); }
+#legends strong, #legends summary { padding-right: 24px; }
 #compareLegend { display: grid; gap: 6px; padding: 12px 14px;
   font-size: var(--size-sm); background: var(--color-glass); border: 1px solid var(--color-line); border-radius: var(--radius-md); backdrop-filter: blur(10px); max-width: 320px; }
 #compareLegend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: -1px; }

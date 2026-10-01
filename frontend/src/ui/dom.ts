@@ -29,3 +29,12 @@ export function ago(epoch: number, now: number): string {
 }
 
 export const reducedMotion = (): boolean => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** A legend's close button: every mode a key turns on can be turned off by touch too (touch has no Esc). */
+export function closer(label: string, off: () => void): HTMLButtonElement {
+  const b = el('button', '×', 'ghost x');
+  b.type = 'button';
+  b.setAttribute('aria-label', label);
+  b.addEventListener('click', off);
+  return b;
+}

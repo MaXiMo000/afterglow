@@ -19,7 +19,7 @@ import { project } from '../render/math';
 import { TYPE_COLOURS } from '../world/types';
 import { weather } from '../world/weather';
 import { buildCamera, OrbitCamera, orbitFromPose, rayThrough, type Preset } from './camera';
-import { $, ago, el, fmt, fmtDate, reducedMotion, setText } from './dom';
+import { $, ago, closer, el, fmt, fmtDate, reducedMotion, setText } from './dom';
 import { actionFor, KEYMAP, type ActionId } from './keymap';
 import { Palette, type Item } from './palette';
 import { compareCounts, Inspector, Insights, MiniMap, renderHelp, Timeline, whatIfSentence } from './panels';
@@ -734,6 +734,7 @@ export class App {
       this.walker.resolve(this.P.t);
       this.cam.autoOrbit = false;
       this.body.classList.add('walking');
+      this.syncLeave();
       this.hintsText ||= $('#hints').textContent ?? '';
       setText($('#hints'), 'W A S D walk \u00b7 Shift run \u00b7 mouse or arrows look \u00b7 click to capture the mouse \u00b7 X to leave');
       this.announce('Walk mode. W A S D to walk, Shift to run, arrow keys or the mouse to look, X or Escape to leave.');
@@ -743,6 +744,7 @@ export class App {
       this.walker = null;
       if (document.pointerLockElement) document.exitPointerLock();
       this.body.classList.remove('walking');
+      this.syncLeave();
       setText($('#hints'), this.hintsText);
       if (quiet) return;
       this.cam.flyTo({ yaw: k.yaw, pitch: 0.5, dist: 34, x: k.x, y: 4, z: k.z }, 0.01, true);
@@ -809,6 +811,7 @@ export class App {
         p.truncated ? `Only the first ${fmt(p.changes.length)} changed paths were read` : '',
       ].filter(Boolean);
       $('#prLegend').replaceChildren(
+        closer('Clear the pull request overlay', () => this.clearPr(true)),
         el('strong', `PR #${n}`),
         row('pr-ch', `Changed: ${fmt(o.changed)} ${o.changed === 1 ? 'building' : 'buildings'}`),
         row('pr-go', `Deleted or moved away: ${fmt(o.gone)}`),
@@ -980,7 +983,7 @@ export class App {
       ...caveats.map((c) => el('p', c, 'sub')),
       el('p', 'Left and right, one calendar, one height scale. Esc: back to the first city.', 'sub'),
     );
-    $('#pairLegend').replaceChildren(box);
+    $('#pairLegend').replaceChildren(closer(`Leave the side-by-side view, back to ${p.a.meta.repo}`, () => this.leavePair()), box);
   }
 
   private placePairLabels(vp: Float32Array | number[]): void {
@@ -1024,6 +1027,7 @@ export class App {
     const from = this.lastPose;
     const id = this.resultId;
     this.drillStack.push({ result: r, prefixes: this.prefixes, from: d });
+    this.syncLeave();
     this.prefixes = next.prefixes;
     this.show(next.result, true);
     this.resultId = id;
@@ -1036,6 +1040,7 @@ export class App {
   private drillOut(quiet = false): void {
     const top = this.drillStack.pop();
     if (!top) return;
+    this.syncLeave();
     const from = this.lastPose;
     const id = this.resultId;
     this.prefixes = top.prefixes;
@@ -1082,6 +1087,7 @@ export class App {
       };
       const when = fmtDate(prev.meta.generated_at);
       $('#prLegend').replaceChildren(
+        closer('Clear the since overlay', () => this.clearPr(true)),
         el('strong', `Since ${when}`),
         row('pr-new', `New since then: ${fmt(s.fresh)} ${s.fresh === 1 ? 'file' : 'files'}`),
         row('pr-ch', `Changed again: ${fmt(s.again)} ${s.again === 1 ? 'file' : 'files'} (${fmt(s.changes)} changes)`),
@@ -1126,7 +1132,7 @@ export class App {
     const i = el('i', null, 'risk');
     i.setAttribute('aria-hidden', 'true');
     row.append(i, document.createTextNode('Lights out: no one else has 10%+ of the commits'));
-    box.replaceChildren(el('strong', `What if ${r.people[this.insights.whatIf]!.handle} left?`), el('p', text), row, el('p', 'Commit share in the analysed history, not ownership. Esc to clear.', 'sub'));
+    box.replaceChildren(closer('Clear the what-if', () => this.setWhatIf(-1)), el('strong', `What if ${r.people[this.insights.whatIf]!.handle} left?`), el('p', text), row, el('p', 'Commit share in the analysed history, not ownership. Esc to clear.', 'sub'));
     box.hidden = false;
     if (announce) this.announce(text);
   }
@@ -1155,7 +1161,7 @@ export class App {
     };
     const rain = w.rain.length ? `Rain: the ${fmt(w.rain.length)} busiest ${w.rain.length === 1 ? 'district' : 'districts'} by changes in the last 12 months` : 'No rain: no district changed in the last 12 months';
     const fog = w.fog.length ? `Fog: ${fmt(w.fog.length)} quiet ${w.fog.length === 1 ? 'district' : 'districts'} (no change in 2 years)` : 'No fog: no quiet districts';
-    box.replaceChildren(el('strong', 'Weather'), row('rain', rain), row('fog', fog), el('p', 'Decoration tied to those numbers, nothing more. Z to turn off.', 'sub'));
+    box.replaceChildren(closer('Turn weather off', () => this.setWeather(false)), el('strong', 'Weather'), row('rain', rain), row('fog', fog), el('p', 'Decoration tied to those numbers, nothing more. Z to turn off.', 'sub'));
     box.hidden = false;
     if (announce) this.announce(`Weather on. ${rain}. ${fog}.`);
   }
@@ -1183,7 +1189,7 @@ export class App {
         p.append(sw, el('span', label, 'ext'), el('span', fmt(n), 'num'));
         return p;
       });
-    box.replaceChildren(el('strong', 'Colour by file type'), ...rows, el('p', 'By file extension, not language detection. Y to turn off.', 'sub'));
+    box.replaceChildren(closer('Turn colour by file type off', () => this.setTypes(false)), el('strong', 'Colour by file type'), ...rows, el('p', 'By file extension, not language detection. Y to turn off.', 'sub'));
     box.hidden = false;
     if (announce) {
       const top = t.labels.slice(0, 3).filter((l, i) => l && t.counts[i]).map((l, i) => `${l} ${fmt(t.counts[i]!)}`);
@@ -1213,6 +1219,7 @@ export class App {
       return p;
     };
     box.replaceChildren(
+      closer('Stop comparing dates', () => this.setCompare(null)),
       el('strong', `Compare ${fmtDate(at(c.a))} \u2192 ${fmtDate(at(c.b))}`),
       row('c-added', 'Added in this window', n.added),
       row('c-last', 'Last changed in this window', n.lastIn),
@@ -1384,8 +1391,21 @@ export class App {
     }
     rec.start(1000);
     this.rec = state;
+    this.syncLeave();
     this.body.classList.add('recording');
     this.announce(`Recording a ${state.dur} second ${kind === 'orbit' ? 'orbit' : 'history'} video. Escape to cancel.`);
+  }
+
+  /**
+   * The on-screen way out of the modes Esc leaves (walk, recording, a district opened as a city): touch has no Esc.
+   * In photo mode the photo bar's exit button stops a recording first, as Esc does.
+   */
+  private syncLeave(): void {
+    const label = this.rec ? 'Stop recording' : this.walker ? 'Leave walk mode' : this.drillStack.length ? 'Climb out' : '';
+    const b = $('#btnLeave');
+    b.hidden = !label;
+    setText(b, label);
+    setText($('#btnPhotoExit'), this.rec ? 'Stop recording (Esc)' : 'Exit photo mode (Esc)');
   }
 
   /** Finish (`keep`: download) or cancel the recording. */
@@ -1396,6 +1416,7 @@ export class App {
     s.keep = keep;
     if (s.rec.state !== 'inactive') s.rec.stop();
     this.body.classList.remove('recording');
+    this.syncLeave();
     this.cam.autoOrbit = this.photo; // photo mode's slow orbit resumes
     if (!keep) {
       this.toast('Recording cancelled');
@@ -1472,7 +1493,8 @@ export class App {
     $('#btnSave').addEventListener('click', () => (this.exportNext = true));
     $('#btnRecOrbit').addEventListener('click', () => this.startRecording('orbit'));
     $('#btnRecHistory').addEventListener('click', () => this.startRecording('history'));
-    $('#btnPhotoExit').addEventListener('click', () => this.togglePhoto());
+    $('#btnPhotoExit').addEventListener('click', () => (this.rec ? this.stopRecording(false) : this.togglePhoto()));
+    $('#btnLeave').addEventListener('click', () => (this.rec ? this.stopRecording(false) : this.walker ? this.setWalk(false) : this.drillOut()));
     ($('#timeline .play') as HTMLButtonElement).addEventListener('click', () => this.run('play'));
     $('#timeline .track').addEventListener('keydown', (e) => {
       const k = (e as KeyboardEvent).key;

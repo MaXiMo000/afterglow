@@ -5,6 +5,9 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- Touch: every mode a key turns on now has an on-screen way off. Legends (PR, changes since, what-if, weather,
+  file types, compare dates, side by side) have a close button; walk mode, recording and a district opened as a city
+  show a "Leave walk mode" / "Stop recording" / "Climb out" button under the place name.
 - Two cities side by side (`7`, or `?vs=owner/name`): compare two repositories on neighbouring islands, one calendar,
   one height scale, with a comparison panel.
 - Ambient sound (`?` panel, off by default): a synthesised pad that follows the history's activity and a chime on the
