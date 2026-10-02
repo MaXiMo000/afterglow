@@ -32,7 +32,8 @@ function walk(dir) {
 
 const problems = [];
 for (const file of walk(DIST)) {
-  const text = readFileSync(file, 'utf8');
+  // rel=canonical names this site's own public URL for search engines; nothing is fetched from it.
+  const text = readFileSync(file, 'utf8').replace(/<link rel="canonical" href="https:\/\/[^"]*" \/>/g, '');
   const rules = file.endsWith('.js') ? JS_SINKS : file.endsWith('.html') ? HTML_RULES : [];
   for (const [re, label] of rules) {
     if (re.test(text)) problems.push(`${file}: ${label}`);

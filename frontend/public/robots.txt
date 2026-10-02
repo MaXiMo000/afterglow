@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /embed/
+
+Sitemap: https://afterglow.name/sitemap.xml
