@@ -5,7 +5,7 @@ description = "Afterglow API and analysis worker"
 requires-python = ">=3.12,<3.13"
 license = "MIT"
 dependencies = [
-  "fastapi>=0.141.1",
+  "fastapi>=0.142.2",
   "uvicorn>=0.53.0",
   "psycopg[binary]>=3.3.6",
   "psycopg-pool>=3.3.2",
