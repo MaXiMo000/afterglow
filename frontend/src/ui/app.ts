@@ -204,6 +204,13 @@ export class App {
     this.canvas.addEventListener('webglcontextlost', () => this.fallback('The 3D view stopped (graphics context lost).'));
     const shared = decodeView(location.hash);
     const linked = repoFromPath(location.pathname);
+    // Caddy serves this one index.html for every /owner/name, so a static canonical would mark each repo page as a
+    // copy of the start page. Name the page itself instead (lower-cased like the server's names, so case variants merge).
+    const canon = document.createElement('link');
+    canon.rel = 'canonical';
+    const canonRepo = shared?.repo ?? linked;
+    canon.href = `${location.origin}${canonRepo ? repoPath(canonRepo).toLowerCase() : '/'}`;
+    document.head.append(canon);
     const st = (history.state as { v?: string } | null)?.v;
     if (st === 'story' || st === 'city') this.arrive = st; // a reload: show that screen again, don't add an entry
     if (shared) {
