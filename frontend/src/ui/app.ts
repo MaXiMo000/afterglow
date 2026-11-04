@@ -726,7 +726,8 @@ export class App {
         this.openTable($('#tableView').hasAttribute('hidden'));
         break;
       case 'help':
-        ($('#help') as HTMLDialogElement).showModal();
+        ($('#help') as HTMLDialogElement).showModal(); // focus lands on the title (autofocus), so it opens at the top
+        $('#help').scrollTop = 0;
         break;
       case 'photo':
         this.togglePhoto();
@@ -1311,7 +1312,7 @@ export class App {
       row('ruin', `Vines: no change in 2 years (${fmt(dead)})`),
     ];
     const fold = el('details');
-    fold.open = !matchMedia('(max-width: 760px), (max-height: 520px)').matches;
+    fold.open = !matchMedia('(max-width: 760px), (max-height: 700px)').matches; // folded where it would cover the city
     const plain = el('button', this.plain ? 'Show the Living City' : 'Show plain boxes', 'chip');
     plain.type = 'button';
     plain.setAttribute('aria-pressed', String(this.plain));
@@ -1319,6 +1320,7 @@ export class App {
       this.plain = !this.plain;
       this.announce(this.plain ? 'Plain boxes: every file the same shape' : 'Living City styles on');
       this.setKey(true, false);
+      ($('#livingLegend details') as HTMLDetailsElement).open = true; // it was open to be clicked: keep it open
       ($('#livingLegend button.chip') as HTMLButtonElement | null)?.focus();
     });
     fold.append(el('summary', 'City key'), ...rows, el('p', 'From paths, sizes and dates only, never file contents.', 'sub'), plain);

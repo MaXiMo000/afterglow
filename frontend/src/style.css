@@ -321,6 +321,7 @@ dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
 #vsDialog input:focus-visible, #prDialog input:focus-visible { outline: 2px solid var(--color-amber); outline-offset: 2px; }
 #vsDialog .actions, #prDialog .actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
 #help h2 { font: 400 var(--size-xl) var(--font-serif); margin: 0 0 8px; }
+#helpTitle:focus { outline: none; }
 #help details { margin-top: 14px; }
 #help summary { cursor: pointer; font: 500 var(--size-xs) var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-amber); }
 #help h3 { font: 500 var(--size-xs) var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-dim); margin: 16px 0 6px; }

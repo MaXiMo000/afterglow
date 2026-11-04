@@ -26,6 +26,9 @@ test('the city key is open by default, with real counts; 8 and the Key button to
   await expect(page.locator('#btnKey')).toHaveAttribute('aria-pressed', 'false');
   await page.locator('#btnKey').click();
   await expect(key).toBeVisible();
+  // The test window is 560 px tall: the key starts folded so it never covers the city; its title unfolds it.
+  expect(await key.locator('details').evaluate((d) => (d as HTMLDetailsElement).open)).toBe(false);
+  await key.locator('summary').click();
   await key.getByRole('button', { name: 'Show plain boxes' }).click();
   await expect(key.getByRole('button', { name: 'Show the Living City' })).toHaveAttribute('aria-pressed', 'true');
   // Closing it is remembered on this device.
