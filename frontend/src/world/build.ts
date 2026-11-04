@@ -1,5 +1,5 @@
 /**
- * Turn a validated analysis result into a renderable world (docs/PLAN.md section 1 table: building = file,
+ * Turn a validated analysis result into a renderable world (building = file,
  * height = size, lit windows = recent activity, beacon = hotspot, fog = quiet, lanterns = people, arcs = coupling).
  *
  * Nothing here is invented: every building is a real file at HEAD and every value comes from the result. The only
@@ -92,7 +92,7 @@ export function buildWorld(result: Result): World {
     d.x = Math.cos(a) * rad;
     d.z = Math.sin(a) * rad;
   });
-  // ponytail: O(n^2) relaxation; iterations shrink with district count so 2,000 districts stays under ~50 ms.
+  // Known limit: O(n^2) relaxation; iterations shrink with district count so 2,000 districts stays under ~50 ms.
   const iters = Math.max(20, Math.min(320, Math.floor(4e6 / Math.max(1, D.length * D.length))));
   const root = order[0] ?? 0;
   const separate = (gap: number): boolean => {

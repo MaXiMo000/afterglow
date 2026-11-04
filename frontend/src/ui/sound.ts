@@ -1,5 +1,5 @@
 /**
- * Ambient sound (docs/ROADMAP.md #13): off by default and only ever started by the user's own click (the site's
+ * Ambient sound: off by default and only ever started by the user's own click (the site's
  * `Permissions-Policy: autoplay=()` stays: nothing plays on its own). Synthesised with Web Audio, no audio files.
  *
  * A low pad whose brightness follows the repository's activity at the point in history on screen, and a soft
@@ -70,7 +70,7 @@ export class Ambience {
     filter.frequency.value = 300;
     filter.Q.value = 0.6;
     filter.connect(master);
-    // A warm, slightly detuned low chord (A1, E2, A2) under the filter.
+    // A warm, slightly detuned low chord (A1, E2) under the filter.
     for (const [f, detune] of [[55, -7], [82.41, 5], [110, 9]] as const) {
       const o = ctx.createOscillator();
       const g = ctx.createGain();

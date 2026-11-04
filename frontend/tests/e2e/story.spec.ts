@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-// A4 gate: chapter jumps and reverse scroll are seamless; wheel, keyboard, scrollbar (native scroll) all work;
+// gate: chapter jumps and reverse scroll are seamless; wheel, keyboard, scrollbar (native scroll) all work;
 // reduced motion gets native scrolling with static cards; deep links and scroll restore.
 const ID = 'c'.repeat(32);
 

@@ -5,6 +5,8 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- Repository: internal planning notes are no longer published; added SECURITY.md, CONTRIBUTING.md and .env.example.
+  The default start-page gallery lists well-known projects.
 - Touch: every mode a key turns on now has an on-screen way off. Legends (PR, changes since, what-if, weather,
   file types, compare dates, side by side) have a close button; walk mode, recording and a district opened as a city
   show a "Leave walk mode" / "Stop recording" / "Climb out" button under the place name.
@@ -66,7 +68,7 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
   - On histories past the commit cap, files untouched in the analysed window stay in the city, labelled "before".
   - Changes per quarter for the last two years, shown as a sparkline in the file inspector, with a "heating up" /
     "cooling down" trend there, in the hotspot list and in the screen-reader summary.
-  - Compare mode counts removed files. Result size grows ~14% (measured, `docs/PERF-LOG.md`), within budget.
+  - Compare mode counts removed files. Result size grows ~14% (measured), within budget.
 - Clean links: `afterglow.example/owner/name` opens that repository's story, and the address bar follows the loaded
   repository, so a copied URL is shareable as is.
 - Release: images are scanned before they are pushed.

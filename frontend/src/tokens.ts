@@ -1,5 +1,5 @@
 /**
- * Design tokens: the single source of truth (docs/EXPERIENCE.md section 7). `vite.config.ts` turns this into
+ * Design tokens: the single source of truth. `vite.config.ts` turns this into
  * `virtual:tokens.css` (CSS custom properties) at build time, so no style is ever injected at runtime.
  * Dark theme only, by design: the product is a night scene and every contrast pair is tuned against `ink`.
  */

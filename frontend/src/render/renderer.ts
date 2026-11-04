@@ -1,9 +1,9 @@
 /**
- * WebGL2 renderer, originally ported from the design prototype (see docs/PLAN.md section 3 for why raw WebGL2, not Three.js).
+ * WebGL2 renderer, originally ported from the design prototype (raw WebGL2, no engine: small bundle, full control of the draw budget).
  *
- * Additions over that prototype (EXPERIENCE section 9): shaders compile in parallel (KHR_parallel_shader_compile)
+ * Additions over that prototype: shaders compile in parallel (KHR_parallel_shader_compile)
  * and are polled instead of blocking; dynamic resolution holds the frame budget; hover/click use a GPU ID pass read
- * back asynchronously through a pixel-pack buffer; instance counts come from validated data only (SECURITY T21).
+ * back asynchronously through a pixel-pack buffer; instance counts come from validated data only.
  */
 import { mirrorY, rng, type M4, type V3 } from './math';
 import { SRC } from './shaders';
@@ -20,9 +20,9 @@ export const TIERS: readonly Tier[] = [
 
 export type Camera = { vp: M4; vpR: M4; pos: V3; posR: V3; right: V3; up: V3; fwd: V3; tanH: number; near: number; far: number };
 export type Params = { t: number; fog: number; hot: number; focus: number; focusAmt: number; hover: number; fade: number; exposure: number; grain: number; ca: number;
-  /** Explore toggles (A5): coupling arcs, lanterns, and compare mode [on, fromT, toT] in normalised history time. */
+  /** Explore toggles: coupling arcs, lanterns, and compare mode [on, fromT, toT] in normalised history time. */
   arcs: number; lanterns: number; cmp: [number, number, number];
-  /** Effects (A6): hover lift 0..1, selected file (-1 none), focus distance for depth of field (0 off), DOF amount,
+  /** Effects: hover lift 0..1, selected file (-1 none), focus distance for depth of field (0 off), DOF amount,
    *  motion 0/1 (reduced motion turns off ripples, heartbeat and trails), flow 0..1 = how fast history time is
    *  moving (growth glow, birth rings and half-grown heights only show while it moves). */
   lift: number; sel: number; focusDist: number; dof: number; motion: number; flow: number;
@@ -273,7 +273,7 @@ export class Renderer {
       this.buf(fc), this.attr(2, 3);
     });
     this.lanternCount = w.lanterns.length;
-    // A6: each lantern draws its head plus TRAIL fading samples of where it has been.
+    // each lantern draws its head plus TRAIL fading samples of where it has been.
     const pts = this.lanternCount * (1 + TRAIL);
     const lm = new Float32Array(pts * 4);
     const lc = new Float32Array(pts * 3);
@@ -294,7 +294,7 @@ export class Renderer {
       this.buf(lc), this.attr(2, 3);
     });
 
-    // Ripples and the selection ring share the building instance buffer (A6).
+    // Ripples and the selection ring share the building instance buffer.
     this.vaos.ripple = this.vao(() => {
       this.buf(new Float32Array([-1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, 1])), this.attr(0, 2);
       gl.bindBuffer(gl.ARRAY_BUFFER, instVB);
@@ -322,7 +322,7 @@ export class Renderer {
       this.buf(mist), this.attr(1, 4, 16, 0, 1);
     });
 
-    // Weather (ROADMAP #5): rain drops spread over the rainy districts by area (fog is a shader term, no geometry).
+    // Weather: rain drops spread over the rainy districts by area (fog is a shader term, no geometry).
     const wx = weather(w.result);
     const rainD = wx.rain.map((i) => w.dists[i]!).filter(Boolean);
     const area = rainD.reduce((s, d) => s + d.r * d.r, 0) || 1;
@@ -388,7 +388,7 @@ export class Renderer {
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
     const rbs: WebGLRenderbuffer[] = [];
     if (depth === 'texture') {
-      // Sampled by the depth-of-field pass (A6).
+      // Sampled by the depth-of-field pass.
       const d = gl.createTexture()!;
       gl.bindTexture(gl.TEXTURE_2D, d);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, w, h, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);

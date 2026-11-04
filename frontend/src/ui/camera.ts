@@ -1,5 +1,5 @@
 /**
- * Explore camera (EXPERIENCE section 3): orbit with inertia, pan, dolly, zoom toward the cursor, eased flights,
+ * Explore camera: orbit with inertia, pan, dolly, zoom toward the cursor, eased flights,
  * presets. Goals are set by input; the rendered pose follows with frame-rate-independent damping.
  * Pitch is clamped short of the poles (never flips) and the camera never goes under the water.
  */
@@ -57,7 +57,7 @@ export class OrbitCamera {
     this.flight = null;
   }
 
-  /** Eased flight to a goal (EXPERIENCE: 700-1000 ms, cancellable by any input). */
+  /** Eased flight to a goal (700-1000 ms, cancellable by any input). */
   flyTo(to: Orbit, dur = 0.85, reduced = false): void {
     this.spin = { yaw: 0, pitch: 0 };
     const target = this.clampOrbit({ ...to });

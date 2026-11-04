@@ -1,5 +1,5 @@
 /**
- * The explore key map (EXPERIENCE section 4). One definition drives the key bindings, the `?` help overlay and the
+ * The explore key map. One definition drives the key bindings, the `?` help overlay and the
  * palette's action list, so a key can never exist without being discoverable.
  */
 export type ActionId =

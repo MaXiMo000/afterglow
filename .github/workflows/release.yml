@@ -1,6 +1,6 @@
-# Release on a v* tag (SECURITY section 8): build the frontend bundle and the three images, publish the images to
+# Release on a v* tag: build the frontend bundle and the three images, publish the images to
 # GHCR by digest, generate CycloneDX SBOMs, attest build provenance for every artifact, and attach it all to a
-# GitHub release. Tags are created by the owner; nothing here runs on pull requests.
+# GitHub release. Tags are created by a maintainer; nothing here runs on pull requests.
 name: release
 
 on:
@@ -138,7 +138,7 @@ jobs:
             echo "Every file and image has a build provenance attestation:"
             echo '`gh attestation verify <file> --repo '"$GITHUB_REPOSITORY"'` or `gh attestation verify oci://<image@digest> --repo '"$GITHUB_REPOSITORY"'`'
             echo
-            echo "SBOMs are CycloneDX JSON. Security evidence: docs/SECURITY-EVIDENCE.md."
+            echo "SBOMs are CycloneDX JSON."
           } > notes.md
           gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md dist-release/*
 

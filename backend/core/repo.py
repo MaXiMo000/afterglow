@@ -1,4 +1,4 @@
-"""Repository names (SECURITY T1). Only `owner/name` is accepted; the clone URL is always built here."""
+"""Repository names. Only `owner/name` is accepted; the clone URL is always built here."""
 
 from __future__ import annotations
 

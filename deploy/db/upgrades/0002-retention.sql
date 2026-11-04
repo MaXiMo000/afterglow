@@ -5,7 +5,7 @@
 --   set -a; . deploy/.env; set +a
 --   docker compose -f deploy/compose.yaml exec -T db psql -U postgres -d afterglow -v ON_ERROR_STOP=1 \
 --     -v maint_pw="$AFTERGLOW_DB_MAINT_PASSWORD" < deploy/db/upgrades/0002-retention.sql
--- Same rule as init.sh: the password must be passed and at least 32 characters (SECURITY T18). Otherwise nothing
+-- Same rule as init.sh: the password must be passed and at least 32 characters. Otherwise nothing
 -- changes and psql exits non-zero, so a scripted upgrade cannot look successful.
 \if :{?maint_pw}
   SELECT length(:'maint_pw') >= 32 AS maint_pw_ok \gset

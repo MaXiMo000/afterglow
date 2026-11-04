@@ -1,4 +1,4 @@
-/** DOM helpers. Text only ever goes in through textContent (CLAUDE.md rule 2); Trusted Types enforce it. */
+/** DOM helpers. Text only ever goes in through textContent; Trusted Types enforce it. */
 
 export function $(sel: string): HTMLElement {
   const el = document.querySelector<HTMLElement>(sel);

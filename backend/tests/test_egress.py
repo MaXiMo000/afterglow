@@ -1,4 +1,4 @@
-"""Egress proxy allowlist (SECURITY T1, T4)."""
+"""Egress proxy allowlist."""
 
 from __future__ import annotations
 

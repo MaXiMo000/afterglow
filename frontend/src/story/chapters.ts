@@ -1,5 +1,5 @@
 /**
- * Story chapters, derived from the real analysis (EXPERIENCE section 2). A chapter exists only if the data
+ * Story chapters, derived from the real analysis. A chapter exists only if the data
  * supports it: no hotspots means no "hot streets" chapter, never a fabricated one.
  */
 import { beforeWindow, dirBeforeWindow } from '../lib/history';

@@ -1,5 +1,5 @@
 /**
- * District drill-down (docs/ROADMAP.md #9): one district of a result as a city of its own, its next folder level
+ * District drill-down: one district of a result as a city of its own, its next folder level
  * becoming the districts. Built only from the parent result's fields; what the parent cannot say per sub-folder
  * (bus factor, owners, people's areas) is left out rather than guessed, and the UI says so.
  */

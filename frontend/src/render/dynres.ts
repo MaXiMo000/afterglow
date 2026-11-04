@@ -1,9 +1,9 @@
 import { lerp } from './math';
 
 /**
- * Dynamic resolution (EXPERIENCE section 9): nudge the render scale to hold ~16.6 ms; step tiers only on sustained
+ * Dynamic resolution: nudge the render scale to hold ~16.6 ms; step tiers only on sustained
  * misses. Input is the rAF interval, which is capped by vsync, so a frame that keeps up reads ~16.7 ms at 60 Hz (never
- * below it): "healthy" therefore means "at or under the refresh interval", not "with headroom" (A7 fix: the old 14.5 ms
+ * below it): "healthy" therefore means "at or under the refresh interval", not "with headroom" (fix: the old 14.5 ms
  * threshold could never be met at 60 Hz, so one hitch lowered quality for the rest of the session).
  */
 export class DynRes {

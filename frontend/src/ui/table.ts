@@ -1,6 +1,6 @@
 /**
- * 2D fallback (no WebGL2, context loss, shader failure, or "View as table") and the screen-reader summary
- * (EXPERIENCE section 8). Same data as the city, no 3D required.
+ * 2D fallback (no WebGL2, context loss, shader failure, or "View as table") and the screen-reader summary.
+ * Same data as the city, no 3D required.
  */
 import { beforeWindow, dirBeforeWindow, shownTrend, trend, TREND_TEXT } from '../lib/history';
 import type { Result } from '../lib/result';
@@ -85,7 +85,7 @@ export function drawTreemap(r: Result, canvas: HTMLCanvasElement): void {
   }
 }
 
-/** Plain-language caveats that must accompany the data wherever it is shown (CLAUDE.md rule 6). */
+/** Plain-language caveats that must accompany the data wherever it is shown. */
 export function honestyLines(r: Result): string[] {
   const t = r.meta.truncated;
   const out: string[] = [];

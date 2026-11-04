@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { decodeView, encodeView } from './share';
 
-describe('share links (T15)', () => {
+describe('share links', () => {
   it('round-trips a view', () => {
     const v = { repo: { owner: 'pallets', name: 'flask' }, cam: { yaw: 7.5, pitch: 0.5, dist: 80, x: -3.25, z: 12 }, t: 0.5 };
     const back = decodeView(encodeView(v))!;

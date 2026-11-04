@@ -1,5 +1,5 @@
 /* Self-hosted faces with font-display: optional, all preloaded from index.html. With `swap`, the late font changed
-   the hero title's line count and moved the whole hero (CLS 0.29, A7). With `optional` a font that misses the first
+   the hero title's line count and moved the whole hero (CLS 0.29). With `optional` a font that misses the first
    paint is not swapped in; it is used from the next page load on. Files come from the pinned @fontsource packages. */
 @font-face {
   font-family: 'Cormorant Garamond';

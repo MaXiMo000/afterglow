@@ -1,4 +1,4 @@
-# Required checks on main: backend, frontend, gitleaks (scripts/harden-repo.sh). Keep these job names stable.
+# Required checks on main: backend, frontend, gitleaks. Keep these job names stable.
 name: ci
 
 on:

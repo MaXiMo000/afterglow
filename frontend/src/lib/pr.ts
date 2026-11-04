@@ -1,6 +1,6 @@
 /**
- * PR overlay (docs/ROADMAP.md #7): the server's list of files a pull request changes, checked strictly like the
- * analysis result (SECURITY T21), and matched to the city's buildings by path.
+ * PR overlay: the server's list of files a pull request changes, checked strictly like the
+ * analysis result, and matched to the city's buildings by path.
  */
 import type { Result } from './result';
 

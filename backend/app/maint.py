@@ -1,4 +1,4 @@
-"""Retention (frontend/privacy.html, SECURITY section 5): delete finished jobs and results nobody uses.
+"""Retention (frontend/privacy.html): delete finished jobs and results nobody uses.
 
 Runs in its own container as `afterglow_maint`, the only role that can delete (it cannot insert or update):
 `python -m app.maint`. The API and the worker keep their no-delete grants.

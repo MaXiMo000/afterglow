@@ -2,7 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { mock } from './fixture';
 
-// A7 gate: axe (WCAG 2.2 A/AA) is clean in every UI state, focus order is sensible and visible, dialogs hand focus
+// gate: axe (WCAG 2.2 A/AA) is clean in every UI state, focus order is sensible and visible, dialogs hand focus
 // back, and the screen-reader summary carries the real numbers. Contrast over the WebGL canvas cannot be computed by
 // axe (it reports those as "incomplete", not violations); the UI keeps text on its own dark scrims for that reason.
 const ID = 'a'.repeat(32);

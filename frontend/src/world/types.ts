@@ -1,5 +1,5 @@
 /**
- * File types for "colour by file type" (docs/ROADMAP.md #1): the repository's most common extensions, plus
+ * File types for "colour by file type": the repository's most common extensions, plus
  * "other" and "no extension". Derived from the path only: this is the extension, not language detection, and the
  * legend says so.
  */

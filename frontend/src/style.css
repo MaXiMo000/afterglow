@@ -81,8 +81,8 @@ main > section { position: fixed; z-index: var(--z-panel); }
 .samples { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font: var(--size-xs) var(--font-mono); color: var(--color-faint); }
 .samples button { background: none; border: 0; border-bottom: 1px dashed var(--color-faint); color: var(--color-dim); padding: 0 0 1px; font: inherit; }
 .samples button:hover { color: var(--color-amber); border-color: var(--color-amber); }
-/* Featured cities (ROADMAP #10): a quiet strip of skyline tiles (the README badge art) under the samples. */
-/* Examples slot (ROADMAP #10): the "Try" links, replaced by the featured strip once its tiles load. Where the strip can
+/* Featured cities: a quiet strip of skyline tiles (the README badge art) under the samples. */
+/* Examples slot: the "Try" links, replaced by the featured strip once its tiles load. Where the strip can
    show, the slot's height is fixed from the first paint, so the swap moves nothing (CLS 0). Where it would not fit
    (measured: wide windows under 760 px tall, narrow ones under 880 px), the start page stays exactly as before. */
 .examples { display: grid; align-content: start; min-width: 0; }
@@ -122,7 +122,7 @@ main > section { position: fixed; z-index: var(--z-panel); }
 #hero > :nth-child(4) { animation-delay: 270ms; }
 #hero > :nth-child(n + 5) { animation-delay: 360ms; }
 
-/* story (A4) */
+/* story */
 html.story-scroll, html.story-scroll body { overflow-y: auto; overflow-x: hidden; height: auto; }
 html.story-scroll body { min-height: 100%; }
 #scroller { position: relative; z-index: 0; width: 1px; pointer-events: none; }
@@ -170,7 +170,7 @@ html.story-scroll body { min-height: 100%; }
 #hints { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--foot-h, 44px) + var(--tl-h, 52px) + 22px); margin: 0;
   font: var(--size-xs) var(--font-mono); letter-spacing: 0.16em; color: var(--color-faint); text-transform: uppercase; white-space: nowrap; }
 
-/* video export (ROADMAP #4): a soft red dot while recording */
+/* video export: a soft red dot while recording */
 body.recording #hud::after { content: ''; position: fixed; right: var(--gutter); top: calc(env(safe-area-inset-top, 0px) + 74px); width: 10px; height: 10px;
   border-radius: 50%; background: var(--color-coral); box-shadow: 0 0 12px var(--color-coral); animation: rec-pulse 1.6s ease-in-out infinite; }
 @keyframes rec-pulse { 50% { opacity: 0.35; } }
@@ -179,14 +179,14 @@ body.recording #hud::after { content: ''; position: fixed; right: var(--gutter);
 /* With a building selected the place caption (and the hotspot tour line) needs the room; ? lists the same hints. */
 body.has-sel #hints { display: none; }
 
-/* walk mode (ROADMAP #3): a soft centre dot to aim with while the mouse is captured */
+/* walk mode: a soft centre dot to aim with while the mouse is captured */
 #reticle { display: none; position: fixed; left: 50%; top: 50%; width: 7px; height: 7px; margin: -4px 0 0 -4px; border-radius: 50%; pointer-events: none;
   border: 1px solid rgba(236, 230, 219, 0.7); box-shadow: 0 0 10px rgba(255, 180, 94, 0.45); }
 body.walking.mode-city #reticle { display: block; }
 body.walking #gl { cursor: crosshair; }
 body.photo #reticle { display: none !important; }
 
-/* explore panels (A5) */
+/* explore panels */
 kbd { font: var(--size-xs) var(--font-mono); padding: 0 5px; border: 1px solid var(--color-line); border-radius: 3px; color: var(--color-dim); margin-left: 4px; }
 .panel { position: fixed; z-index: var(--z-panel); background: var(--color-glass); border: 1px solid var(--color-line); border-radius: var(--radius-md);
   backdrop-filter: blur(12px); box-shadow: var(--shadow-panel); overflow: auto; animation: panel-in var(--motion-base) var(--motion-ease-out) both; }
@@ -264,7 +264,7 @@ kbd { font: var(--size-xs) var(--font-mono); padding: 0 5px; border: 1px solid v
 #typeLegend .num { color: var(--color-dim); font-variant-numeric: tabular-nums; }
 #weatherLegend, #riskLegend, #prLegend { max-width: 300px; }
 #prLegend p { margin: 0; }
-/* Two cities side by side (ROADMAP #11) */
+/* Two cities side by side */
 #pairLegend { max-width: 300px; }
 #pairLegend table { border-collapse: collapse; font-size: var(--size-xs); }
 #pairLegend th, #pairLegend td { padding: 3px 0 3px 12px; text-align: right; font-variant-numeric: tabular-nums; }
@@ -362,7 +362,7 @@ dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
 .noscript { position: fixed; inset: auto var(--gutter) 40px; z-index: var(--z-toast); }
 
 
-/* A6 motion language: mode changes and panels fade and rise instead of popping (disabled with reduced motion) */
+/* Motion language: mode changes and panels fade and rise instead of popping (disabled with reduced motion) */
 #hero, #loading, #city, #story, #tableView, .panel, #timeline, #compareLegend, #typeLegend, #weatherLegend, #riskLegend, #prLegend, #pairLegend, #minimap, #photoBar, #toast, #tip, .chip {
   transition-property: opacity, translate, display, overlay, border-color, background, transform;
   transition-duration: var(--motion-slow), var(--motion-slow), var(--motion-slow), var(--motion-slow), var(--motion-base), var(--motion-base), var(--motion-fast);

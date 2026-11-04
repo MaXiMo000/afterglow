@@ -1,5 +1,5 @@
 /**
- * Embeddable city (docs/ROADMAP.md #12), served at /embed/owner/name for other sites' iframes.
+ * Embeddable city, served at /embed/owner/name for other sites' iframes.
  *
  * Read-only by design, so being framed carries no clickjacking risk: it shows the newest stored analysis and never
  * starts one, has no forms and no state-changing requests. Plain wheel scrolls the host page (zoom is Ctrl+wheel,
@@ -24,7 +24,7 @@ async function main(): Promise<void> {
   if (!ref) return status('Not a repository address.');
   const slug = `${ref.owner}/${ref.name}`.toLowerCase();
   const open = $('open') as HTMLAnchorElement;
-  open.href = `/${slug}`; // same origin, validated owner/name (SECURITY T5)
+  open.href = `/${slug}`; // same origin, validated owner/name
   $('repo').textContent = slug;
   document.title = `${slug} - Afterglow city`;
 

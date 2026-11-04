@@ -1,4 +1,4 @@
-"""Every git invocation the worker makes (SECURITY T1-T3).
+"""Every git invocation the worker makes.
 
 Rules enforced here, for every call:
 - argv lists only, never a shell; repository names never reach argv except inside a URL built by core.repo.

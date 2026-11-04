@@ -1,6 +1,6 @@
 /**
- * App controller: hero -> loading (real SSE progress) -> story (A4) -> city with the explore tools (A5), plus the
- * 2D table fallback. The effects pass (A6) builds on this.
+ * App controller: hero -> loading (real SSE progress) -> story -> city with the explore tools, plus the
+ * 2D table fallback. The effects pass builds on this.
  */
 import { ApiError, fetchPr, fetchPrevious, fetchResult, followProgress, startAnalysis, startPr, type Progress } from '../lib/api';
 import { overlay } from '../lib/pr';
@@ -67,7 +67,7 @@ const ERROR_TEXT: Record<string, string> = {
   not_ready: 'The analysis is not finished yet. Please try again in a moment.',
 };
 const NO_RETRY = ['invalid_repo', 'not_found', 'empty_repo', 'no_files', 'too_large', 'unparseable'];
-const IDLE_FRAME_MS = 1000 / 30; // nothing moving: ambient animation only, at half rate (PLAN section 6, Idle)
+const IDLE_FRAME_MS = 1000 / 30; // nothing moving: ambient animation only, at half rate
 const ACTIVE_FOR_MS = 2000; // input keeps the full frame rate this long after it stops
 
 /** "2 ahead in the queue, estimated wait about 3 min": the wait is the server's estimate from recent jobs. */
@@ -99,10 +99,10 @@ export class App {
   private lanterns: Float32Array | null = null;
   private selected = -1;
   private focusGoal = 0;
-  private readonly sound = new Ambience(); // ambient sound (docs/ROADMAP.md #13): off until the user turns it on
+  private readonly sound = new Ambience(); // ambient sound: off until the user turns it on
   private soundAt = 0;
   private peakCommits = 1;
-  private walker: Walker | null = null; // walk mode (docs/ROADMAP.md #3)
+  private walker: Walker | null = null; // walk mode
   private hintsText = '';
   private tour = -1; // position in insights.hotspots during a J/K tour
   private prOn = false; // an overlay (PR, or changes since the previous analysis) is shown
@@ -124,20 +124,20 @@ export class App {
   private blend: { pos: Vec; tgt: Vec; fov: number; k: number } | null = null;
   private fov = 50;
   private lastPose: { pos: Vec; tgt: Vec } | null = null;
-  // Explore state (A5)
+  // Explore state
   private tT = 1; // target history position; P.t eases toward it
   private playing = false;
   private speedIdx = 0;
   private compare: { a: number; b: number } | null = null;
   private photo = false;
   private exportNext = false;
-  /** Video export in progress (docs/ROADMAP.md #4). */
+  /** Video export in progress. */
   private rec: { kind: 'orbit' | 'history'; rec: MediaRecorder; out: HTMLCanvasElement; ctx: CanvasRenderingContext2D; t0: number; dur: number; left: number; keep: boolean } | null = null;
   private pendingView: View | null = null;
   /** Screen to restore without a new history entry (reload, or Back/Forward onto another repository's entry). */
   private arrive: 'story' | 'city' | null = null;
   private prevT = 1;
-  private loadFrac = 0; // real analysis progress 0..1, drives the city un-building during loading (A6)
+  private loadFrac = 0; // real analysis progress 0..1, drives the city un-building during loading
   private lastRepo = '';
   private lastInput = -Infinity; // performance.now() of the latest pointer, wheel, key or scroll input
   private wasIdle = false;
@@ -148,8 +148,8 @@ export class App {
     (i) => this.select(i >= 0 ? i + this.inspectorBase : i), // the inspector works in its own repository's indices
     (d) => this.drillInto(d),
   );
-  /** Drill-down (docs/ROADMAP.md #9): the parent cities, outermost first, and the current city's district prefixes. */
-  /** Two cities side by side (docs/ROADMAP.md #11): the pair on screen, and the file offset of B's buildings. */
+  /** Drill-down: the parent cities, outermost first, and the current city's district prefixes. */
+  /** Two cities side by side: the pair on screen, and the file offset of B's buildings. */
   private pairState: Pair | null = null;
   private inspectorBase = 0;
   private drillStack: { result: Result; prefixes: string[] | null; from: number }[] = [];
@@ -336,7 +336,7 @@ export class App {
     this.hideTip();
   }
 
-  /** Scroll story for the loaded result (A4). Reduced motion gets the static-card path inside Story. */
+  /** Scroll story for the loaded result. Reduced motion gets the static-card path inside Story. */
   private enterStory(fromCity = false, push = true): void {
     if (!this.result || !this.world || this.demo) return;
     if (fromCity) this.startBlend();
@@ -370,7 +370,7 @@ export class App {
 
   private savedQuality(): string | null {
     try {
-      return localStorage.getItem('afterglow:quality'); // UI preference only (SECURITY T20 allows UI prefs)
+      return localStorage.getItem('afterglow:quality'); // UI preference only, nothing sensitive
     } catch {
       return null;
     }
@@ -536,7 +536,7 @@ export class App {
       const text = offline ? 'You appear to be offline. Check your connection and try again.' : (ERROR_TEXT[code] ?? 'Something went wrong. Please try again.');
       line(text, 'fail');
       this.announce(text);
-      // Empty/error state (A6): always offer a way forward, never a dead end.
+      // Empty/error state: always offer a way forward, never a dead end.
       const retry = !NO_RETRY.includes(code) || offline;
       $('#btnRetry').hidden = !retry;
       $('#loadActions').hidden = false;
@@ -577,7 +577,7 @@ export class App {
     }
   }
 
-  // ---------- explore actions (A5): one entry point for keys, palette and buttons ----------
+  // ---------- explore actions: one entry point for keys, palette and buttons ----------
   private run(id: ActionId): void {
     const w = this.world;
     const r = this.result;
@@ -718,7 +718,7 @@ export class App {
   }
 
   /**
-   * Walk mode (docs/ROADMAP.md #3): drop to street level where the orbit camera is looking, facing the same way.
+   * Walk mode: drop to street level where the orbit camera is looking, facing the same way.
    * Leaving puts the orbit camera over the spot you walked to. `quiet` skips the camera hand-over (mode changes).
    */
   private setWalk(on: boolean, quiet = false): void {
@@ -760,7 +760,7 @@ export class App {
     if (from && !quiet) this.blend = { pos: [...from.pos], tgt: [...from.tgt], fov: this.fov, k: 0 };
   }
 
-  /** Hotspot tour (docs/ROADMAP.md #2): fly to the next/previous hotspot, in the insights list order, and say why. */
+  /** Hotspot tour: fly to the next/previous hotspot, in the insights list order, and say why. */
   private tourStep(dir: 1 | -1): void {
     const r = this.result;
     const list = r?.insights.hotspots ?? [];
@@ -783,7 +783,7 @@ export class App {
     this.announce(`Hotspot ${this.tour + 1} of ${list.length}: ${f.path}, ${why}.`);
   }
 
-  /** PR overlay (docs/ROADMAP.md #7): queue it like an analysis, then light up the buildings it touches. */
+  /** PR overlay: queue it like an analysis, then light up the buildings it touches. */
   private async showPr(n: number): Promise<void> {
     const r = this.result;
     if (!r || this.demo || n > 10_000_000) return;
@@ -850,7 +850,7 @@ export class App {
     return near.reduce((n, m) => n + m.commits, 0) / near.length / this.peakCommits;
   }
 
-  /** Start-page gallery (docs/ROADMAP.md #10): skyline tiles from the badge route, each opening that city. */
+  /** Start-page gallery: skyline tiles from the badge route, each opening that city. */
   private async loadFeatured(): Promise<void> {
     let repos: unknown;
     try {
@@ -866,7 +866,7 @@ export class App {
       if (!ref) return [];
       const slug = `${ref.owner}/${ref.name}`.toLowerCase();
       const a = el('a');
-      a.href = `/${slug}`; // validated owner/name only (SECURITY T5)
+      a.href = `/${slug}`; // validated owner/name only
       a.setAttribute('aria-label', `Open the city of ${slug}`);
       const img = el('img');
       img.src = `/api/v1/badges/${slug}.svg`;
@@ -897,10 +897,10 @@ export class App {
     ($('#vsDialog') as HTMLDialogElement).showModal();
   }
 
-  /** Analyse (or reuse) a second repository and show both cities side by side (docs/ROADMAP.md #11). */
+  /** Analyse (or reuse) a second repository and show both cities side by side. */
   private async startPair(raw: string): Promise<void> {
     const a = this.pairState?.a ?? this.result;
-    const ref = parseRepo(raw.trim()); // the same strict parser as the form (SECURITY T1)
+    const ref = parseRepo(raw.trim()); // the same strict parser as the form
     if (!a || this.demo || !ref) return this.toast('That does not look like owner/name.');
     const slug = `${ref.owner}/${ref.name}`.toLowerCase();
     if (slug === a.meta.repo) return this.toast('Pick a different repository to compare with.');
@@ -1022,7 +1022,7 @@ export class App {
     return `${fmt(x.files)} files \u00b7 ${bus}${x.quiet ? ' \u00b7 quiet' : ''}`;
   }
 
-  /** Open district `d` of the current city as a city of its own (docs/ROADMAP.md #9). */
+  /** Open district `d` of the current city as a city of its own. */
   private drillInto(d: number): void {
     const r = this.result;
     if (!r || this.demo || this.mode !== 'city' || !r.dirs[d]) return;
@@ -1059,7 +1059,7 @@ export class App {
     this.announce(this.drillStack.length ? `Back in ${this.drillPath()}.` : 'Back in the whole city.');
   }
 
-  /** What changed since the previous stored analysis (docs/ROADMAP.md #8). 6 again turns it off. */
+  /** What changed since the previous stored analysis. 6 again turns it off. */
   private async showSince(): Promise<void> {
     const r = this.result;
     const id = this.resultId;
@@ -1122,7 +1122,7 @@ export class App {
     if (announce) this.announce('Overlay cleared.');
   }
 
-  /** Bus-factor what-if (docs/ROADMAP.md #6): lights go out in the districts nobody else knows. -1 clears it. */
+  /** Bus-factor what-if: lights go out in the districts nobody else knows. -1 clears it. */
   private setWhatIf(person: number, announce = true): void {
     const r = this.result;
     const box = $('#riskLegend');
@@ -1144,7 +1144,7 @@ export class App {
     if (announce) this.announce(text);
   }
 
-  /** Weather (docs/ROADMAP.md #5): decorative, but only where the data says, and the legend says what it means. */
+  /** Weather: decorative, but only where the data says, and the legend says what it means. */
   private setWeather(on: boolean, announce = true): void {
     const box = $('#weatherLegend');
     const r = this.result;
@@ -1173,7 +1173,7 @@ export class App {
     if (announce) this.announce(`Weather on. ${rain}. ${fog}.`);
   }
 
-  /** Colour by file type (docs/ROADMAP.md #1). Compare mode also recolours buildings, so the two never overlap. */
+  /** Colour by file type. Compare mode also recolours buildings, so the two never overlap. */
   private setTypes(on: boolean, announce = true): void {
     const box = $('#typeLegend');
     const w = this.world;
@@ -1282,7 +1282,7 @@ export class App {
     }
   }
 
-  /** Iframe snippet for the embeddable city (docs/ROADMAP.md #12): read-only, newest stored analysis. */
+  /** Iframe snippet for the embeddable city: read-only, newest stored analysis. */
   private async copyEmbed(): Promise<void> {
     const repo = this.result?.meta.repo; // validated `owner/name`, lower-case
     if (!repo || this.demo || !/^[a-z0-9-]{1,39}\/[a-z0-9._-]{1,100}$/.test(repo)) return this.toast('Load a repository first.');
@@ -1335,7 +1335,7 @@ export class App {
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }
 
-  /** Caption band for posters and videos: repo, commit, the date shown, and the data caveats (CLAUDE.md rule 6). */
+  /** Caption band for posters and videos: repo, commit, the date shown, and the data caveats. */
   private caption(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     const r = this.result;
     if (!r) return;
@@ -1361,7 +1361,7 @@ export class App {
   }
 
   /**
-   * Record a WebM (docs/ROADMAP.md #4): a quarter orbit in 12 s, or the whole history in 20 s. Each rendered frame is
+   * Record a WebM: a quarter orbit in 12 s, or the whole history in 20 s. Each rendered frame is
    * copied with the caption onto a 2D canvas (<= 1280 px wide) that MediaRecorder captures; nothing leaves the browser.
    */
   private startRecording(kind: 'orbit' | 'history'): void {
@@ -1835,7 +1835,7 @@ export class App {
     return buildCamera(pose.pos, pose.tgt, this.canvas.clientWidth, this.canvas.clientHeight, far, fov, this.walker || this.blend ? NEAR : 0.4);
   }
 
-  /** Nothing is moving but ambient animation: render at a low rate to save battery (PLAN section 6, Idle). */
+  /** Nothing is moving but ambient animation: render at a low rate to save battery. */
   private isIdle(now: number): boolean {
     return !(
       now - this.lastInput < ACTIVE_FOR_MS ||
@@ -1895,7 +1895,7 @@ export class App {
     } else if (this.mode !== 'story') {
       P.hot = 0.5;
       P.fog = FOG * 1.15;
-      // Loading is a scene (A6): the background city un-builds in step with real analysis progress.
+      // Loading is a scene: the background city un-builds in step with real analysis progress.
       const goal = this.mode === 'loading' ? 1 - 0.92 * this.loadFrac : 1;
       P.t = reduced ? goal : P.t + (goal - P.t) * (1 - Math.exp(-dt * 2.5));
       P.exposure = 1;
@@ -1934,7 +1934,7 @@ export class App {
       fov = lerp(b.fov, fov, e);
       if (b.k >= 1) this.blend = null;
     }
-    // A6 effects. Depth of field: story pulls focus onto each chapter's subject; the city focuses the selection or
+    // effects. Depth of field: story pulls focus onto each chapter's subject; the city focuses the selection or
     // the orbit target; the hero stays soft behind the text.
     const w0 = this.world;
     let focus = dist(pos, tgt);
@@ -1981,7 +1981,7 @@ export class App {
         const u = reduced ? 0 : smoothstep(0, 1, s - k);
         const a = L.wp[k % L.wp.length]!;
         const b = L.wp[(k + 1) % L.wp.length]!;
-        const o = i * 3; // written in place: no per-frame arrays in the hot path (EXPERIENCE section 9)
+        const o = i * 3; // written in place: no per-frame arrays in the hot path
         this.lanterns[o] = lerp(a[0], b[0], u);
         this.lanterns[o + 1] = lerp(a[1], b[1], u) + Math.sin(u * Math.PI) * 3.5;
         this.lanterns[o + 2] = lerp(a[2], b[2], u);

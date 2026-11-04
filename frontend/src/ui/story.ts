@@ -1,5 +1,5 @@
 /**
- * Scroll story UI (A4): chapter cards, rail, callout, progress, skip, keys, deep links, scroll restore.
+ * Scroll story UI: chapter cards, rail, callout, progress, skip, keys, deep links, scroll restore.
  * The page only scrolls when the user scrolls (or presses a chapter key): no automatic snapping.
  * Everything visual is computed from scroll progress p, never from elapsed time, so reverse scroll is symmetric.
  */

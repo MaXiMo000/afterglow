@@ -1,4 +1,4 @@
-"""Hostile repositories (SECURITY T2, T3, T5, T6). The author of the repo controls every byte we parse."""
+"""Hostile repositories. The author of the repo controls every byte we parse."""
 
 from __future__ import annotations
 

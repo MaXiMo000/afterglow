@@ -1,5 +1,5 @@
 /**
- * Client-side mirror of the server's repo validation (docs/PLAN.md section 4, SECURITY T1).
+ * Client-side mirror of the server's repo validation.
  * The server re-validates everything; this only gives fast feedback in the form.
  */
 const REPO_RE = /^([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100})$/;

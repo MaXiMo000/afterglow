@@ -1,5 +1,5 @@
-// Fails the build if the shipped bundle contains dynamic-code or HTML-injection sinks (CLAUDE.md rules 2-3,
-// SECURITY T8), inline scripts/styles in HTML, or runtime references to third-party origins (T20).
+// Fails the build if the shipped bundle contains dynamic-code or HTML-injection sinks (eval, innerHTML and the
+// like), inline scripts/styles in HTML, or runtime references to third-party origins.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 

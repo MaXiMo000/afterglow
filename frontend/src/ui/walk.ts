@@ -1,5 +1,5 @@
 /**
- * Walk mode (docs/ROADMAP.md #3): a first-person camera at street height that cannot pass through buildings.
+ * Walk mode: a first-person camera at street height that cannot pass through buildings.
  *
  * Every building stands in its own grid cell (world/build.ts places one file per CELL square, footprint < CELL), so
  * collision only looks at the 3x3 cells around the walker. Only buildings that exist at the current history time

@@ -1,4 +1,4 @@
-"""Immutable result store on disk, keyed by `owner/repo@sha` and analyser version (SECURITY T12).
+"""Immutable result store on disk, keyed by `owner/repo@sha` and analyser version.
 
 Only schema-valid results are written, and results are re-validated on read, so a corrupted or planted file
 is treated as a miss rather than served.

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-// A6 empty/error states: every failure offers a way forward, and empty data says so plainly.
+// empty/error states: every failure offers a way forward, and empty data says so plainly.
 const ID = 'b'.repeat(32);
 
 function result(files: unknown[]): unknown {

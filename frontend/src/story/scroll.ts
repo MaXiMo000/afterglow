@@ -1,7 +1,7 @@
 /**
- * ScrollEngine (EXPERIENCE section 1): Lenis behind a small interface so it stays replaceable.
+ * ScrollEngine: Lenis behind a small interface so it stays replaceable.
  * Driven from our own animation frame (autoRaf off), so the camera reads the smoothed value in the same frame
- * it is produced: camera latency to the smoothed scroll is 0 frames (docs/PLAN.md section 6).
+ * it is produced: camera latency to the smoothed scroll is 0 frames.
  * Reduced motion gets native scrolling: no smoothing, no hijack.
  */
 import Lenis from 'lenis';
@@ -27,7 +27,7 @@ export class LenisEngine implements ScrollEngine {
     lerp: SCROLL_CONFIG.lerp,
     wheelMultiplier: SCROLL_CONFIG.wheelMultiplier,
     touchMultiplier: SCROLL_CONFIG.touchMultiplier,
-    syncTouch: false, // touch keeps native momentum (EXPERIENCE: "touch handled natively")
+    syncTouch: false, // touch keeps native momentum
     smoothWheel: true,
   });
   progress(): number {

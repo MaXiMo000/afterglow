@@ -1,5 +1,5 @@
 /**
- * Weather as activity (docs/ROADMAP.md #5): which districts get rain and which get fog. Decorative, but tied to
+ * Weather as activity: which districts get rain and which get fog. Decorative, but tied to
  * real numbers, and the legend says which: rain = the busiest districts by changes in the last 12 months, fog =
  * districts with no change in 2 years (`dirs[].quiet`).
  */

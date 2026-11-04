@@ -1,4 +1,4 @@
-# Single public origin (docs/SECURITY.md section 6). Locally: https://localhost:8443 with Caddy's internal CA.
+# Single public origin. Locally: https://localhost:8443 with Caddy's internal CA.
 # The header set is asserted by deploy/check-headers.sh in CI; change both together.
 {
 	admin off
@@ -12,7 +12,7 @@
 	tls {$AFTERGLOW_TLS:internal}
 	encode zstd gzip
 
-	# Body cap (SECURITY T11). max_size only trips when a body is read, so also reject a declared
+	# Body cap. max_size only trips when a body is read, so also reject a declared
 	# Content-Length over the cap up front, whatever the route.
 	request_body {
 		max_size 16KB
@@ -34,11 +34,11 @@
 		Cross-Origin-Resource-Policy "same-origin"
 		Cross-Origin-Embedder-Policy "require-corp"
 		Permissions-Policy "accelerometer=(), autoplay=(), camera=(), clipboard-read=(), display-capture=(), encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), hid=(), idle-detection=(), magnetometer=(), microphone=(), midi=(), payment=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), usb=(), xr-spatial-tracking=()"
-		# HSTS without preload until the domain is stable (SECURITY T9).
+		# HSTS without preload until the domain is stable.
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	}
 
-	# Framing (SECURITY T9): nothing may frame the site, except the embeddable city (docs/ROADMAP.md #12), which any
+	# Framing: nothing may frame the site, except the embeddable city, which any
 	# https page may frame. It is read-only (no forms, no state-changing requests, never starts an analysis), so
 	# framing it offers nothing to click-jack. X-Frame-Options would override frame-ancestors there, so it is left off.
 	@embed path /embed/*

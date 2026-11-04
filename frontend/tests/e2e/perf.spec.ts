@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mock } from './fixture';
 
-// A7 budget gates that hold on any GPU (docs/PLAN.md section 6): draw calls per frame by tier, CLS 0, and no drawing
+// budget gates that hold on any GPU: draw calls per frame by tier, CLS 0, and no drawing
 // while the tab is hidden. Frame rate and heap are hardware-dependent and are measured by scripts/profile.mjs instead.
 const ID = 'b'.repeat(32);
 
@@ -96,7 +96,7 @@ test('a hidden tab draws nothing', async ({ page }) => {
   expect(await maxDraws(page, 30)).toBe(0);
 });
 
-test('an idle scene renders at a low rate (PLAN section 6: Idle)', async ({ page }) => {
+test('an idle scene renders at a low rate (idle budget)', async ({ page }) => {
   await countDraws(page);
   await page.goto('/?quality=simple');
   await page.waitForFunction(() => window.__draws.some((n) => n > 0), null, { timeout: 30_000 });

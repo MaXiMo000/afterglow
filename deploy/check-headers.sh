@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# SECURITY T8/T9/T14: assert the exact response header set served by Caddy. Fails on any missing or changed header.
+# Assert the exact response header set served by Caddy. Fails on any missing or changed header.
 # Usage: deploy/check-headers.sh [base-url]   (default https://localhost:8443)
 set -euo pipefail
 BASE="${1:-https://localhost:8443}"
 fail=0
 
 CSP="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types 'none'"
-# The embeddable city (ROADMAP #12) may be framed by https pages; the rest of the policy is identical.
+# The embeddable city may be framed by https pages; the rest of the policy is identical.
 CSP_EMBED="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors https:; base-uri 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types 'none'"
 
 declare -A WANT=(
@@ -50,7 +50,7 @@ if ! curl -sSk -D - -o /dev/null "$BASE/api/v1/badges/octocat/hello-world.svg" |
   echo "FAIL badge content-type"; fail=1
 fi
 
-# The embeddable city (ROADMAP #12) is the only framable page: https parents only, no X-Frame-Options (it would
+# The embeddable city is the only framable page: https parents only, no X-Frame-Options (it would
 # override frame-ancestors). Everything else in the set is unchanged, and the rest of the site stays DENY / 'none'.
 WANT[content-security-policy]="$CSP_EMBED"
 unset 'WANT[x-frame-options]'
@@ -65,7 +65,7 @@ WANT[content-security-policy]="$CSP"
 WANT[x-frame-options]="DENY"
 check /embed.html.bak  # a non-embed path right next to it keeps the strict set
 
-# API errors are generic JSON, never stack traces or echoed input (T14).
+# API errors are generic JSON, never stack traces or echoed input.
 body="$(curl -sSk "$BASE/api/v1/%3Cscript%3E")"
 if [ "$body" != '{"error":"not_found"}' ]; then echo "FAIL api 404 body: $body"; fail=1; fi
 
@@ -79,7 +79,7 @@ code="$(head -c 40000 /dev/zero | tr '\0' 'a' | curl -sSk -o /dev/null -w '%{htt
   -H 'Content-Type: application/json' -H 'Transfer-Encoding: chunked' --data-binary @- "$BASE/healthz" || true)"
 case "$code" in 413|405) ;; *) echo "FAIL chunked oversized body returned $code, want 413 or 405"; fail=1 ;; esac
 
-# A client cannot pick its own rate-limit identity: Caddy overwrites X-Real-IP (T11). Invalid bodies are
+# A client cannot pick its own rate-limit identity: Caddy overwrites X-Real-IP. Invalid bodies are
 # rejected before touching the database, so this burns only the rate budget of this runner's IP.
 codes=""
 for i in $(seq 1 12); do

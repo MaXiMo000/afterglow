@@ -73,7 +73,7 @@ void main(){
   } else rc=skyColor(reflect(-V,N));
   vec3 c=mix(deep,rc,refl);
   vec3 Lm=normalize(uMoonDir);vec3 R=reflect(-Lm,N);
-  float far=smoothstep(25.,260.,dist);/* A6: filtered glint - wider, dimmer highlight with distance */
+  float far=smoothstep(25.,260.,dist);/* filtered glint - wider, dimmer highlight with distance */
   c+=vec3(.75,.88,1.)*pow(max(dot(R,V),0.),mix(220.,28.,far))*min(2.2,60./(dist+20.))*mix(1.,.22,far);
   float fg=1.-exp(-dist*uFog*.7);
   c=mix(c,uFogCol,fg*.9);
@@ -94,7 +94,7 @@ void main(){
   float ge=1.-pow(1.-g,3.);ge*=1.+.06*sin(g*3.14159);
   if(g<=0.){gl_Position=vec4(2.,2.,2.,1.);return;}
   float h=iB.x*mix(1.,ge,uFlow);/* uFlow: how fast history is moving (0 = frozen: no half-grown buildings) */
-  /* A6: hover lift - the hovered building rises a little */
+  /* hover lift - the hovered building rises a little */
   float lift=step(abs(float(gl_InstanceID)-uHover),.5)*uLift;
   h*=1.+.07*lift;
   vec3 w=vec3(iA.x+aPos.x*iA.z,.28+.35*lift+aPos.y*h,iA.y+aPos.z*iA.w);
@@ -143,10 +143,10 @@ void main(){
   emis+=vec3(1.,.9,.72)*flash*win*1.5;col+=vec3(.5,.45,.36)*flash*.35;
   float grow=1.-vG;
   emis+=vec3(.45,.95,1.)*grow*smoothstep(1.2,0.,vTop-vW.y)*.8*uFlow;/* growth glow only while history plays */
-  /* bus-factor what-if (ROADMAP #6): the lights go out where nobody else holds 10%+ of the commits */
+  /* bus-factor what-if: the lights go out where nobody else holds 10%+ of the commits */
   float rk=vRisk*uRisk;emis*=1.-.9*rk;col=mix(col,col*.55+vec3(.05,.02,.03),rk);
-  /* PR overlay (ROADMAP #7): changed = cyan, deleted or moved away = red, pulsing gently; the rest dims */
-  /* marks: 1 changed (cyan), 2 deleted or moved away (red), 3 new since the previous analysis (green, ROADMAP #8) */
+  /* PR overlay: changed = cyan, deleted or moved away = red, pulsing gently; the rest dims */
+  /* marks: 1 changed (cyan), 2 deleted or moved away (red), 3 new since the previous analysis (green) */
   float pch=step(.5,vPr)*step(vPr,1.5),pgo=step(1.5,vPr)*step(vPr,2.5),pnw=step(2.5,vPr);
   vec3 pcol=pch*vec3(.3,.85,1.)+pgo*vec3(1.,.32,.28)+pnw*vec3(.45,1.,.6);
   float ptouch=pch+pgo+pnw,ppulse=.62+.38*sin(uTime*2.4+vC.y*6.)*uMotion;
@@ -164,7 +164,7 @@ void main(){
   }
   float inF=(uFocus<-.5)?1.:step(abs(vDist-uFocus),.5);/* PORT: focus by district index, not palette */
   col*=mix(1.,mix(.32,1.25,inF),uFocusAmt);emis*=mix(1.,mix(.35,1.3,inF),uFocusAmt);
-  /* PORT (A5): compare mode tints each building by what the data says happened between two dates.
+  /* PORT: compare mode tints each building by what the data says happened between two dates.
      added in window = green, last change in window = amber, still changing after = blue, untouched before = grey */
   if(uCmp.x>.5){
     float added=step(uCmp.y,vB.y-1e-5)*step(vB.y,uCmp.z);
@@ -176,9 +176,9 @@ void main(){
   }
   float hv=step(abs(vInst-uHover),.5);
   col+=vec3(.20,.42,.5)*hv*(.5+rim*2.);emis+=vec3(.2,.5,.6)*hv*.6*win+warm*hv*lit*win*.8*uLift;
-  if(uHover>-.5&&hv<.5){col*=mix(1.,.8,uLift);emis*=mix(1.,.78,uLift);} /* A6: neighbours dim */
+  if(uHover>-.5&&hv<.5){col*=mix(1.,.8,uLift);emis*=mix(1.,.78,uLift);} /* neighbours dim */
   vec3 c=col+emis;
-  /* weather (ROADMAP #5): low haze drifting round the feet of towers in quiet districts (palette 4 = quiet) */
+  /* weather: low haze drifting round the feet of towers in quiet districts (palette 4 = quiet) */
   float qf=uWeather*step(3.5,vC.x)*(1.-smoothstep(.28,3.4,vW.y))*(.75+.25*sin(vW.x*.35+uTime*.12)*sin(vW.z*.3-uTime*.09));
   c=mix(c,vec3(.34,.42,.45),qf*.72);
   float fg=1.-exp(-dist*uFog);fg*=mix(1.,.5,smoothstep(0.,18.,vW.y));
@@ -215,7 +215,7 @@ void main(){
 SRC.line={vs:H+`layout(location=0) in vec3 aP;layout(location=1) in float aU;uniform mat4 uVP;out float vU;void main(){vU=aU;gl_Position=uVP*vec4(aP,1.);}`,
 fs:H+`in float vU;uniform float uT,uTime,uBirth,uS,uVis;out vec4 o;
 void main(){float v=smoothstep(uBirth,uBirth+.05,uT);
-  /* A6: commit-flow pulses - packets travel faster along arcs with more co-change */
+  /* commit-flow pulses - packets travel faster along arcs with more co-change */
   float p=fract(vU*3.-uTime*(.06+.34*uS));float pulse=.18+.82*smoothstep(.9,1.,p)+.5*smoothstep(.985,1.,p);
   o=vec4(vec3(.35,.85,.8)*pulse*(.35+.65*uS)*v*uVis*.8,1.);}`};
 
@@ -243,7 +243,7 @@ void main(){
 }`,
 fs:H+`in vec2 vQ;in float vB;flat in float vTop;uniform float uT,uTime,uHot,uBeat;out vec4 o;
 void main(){float vis=smoothstep(vB+.04,vB+.08,uT)*uHot;float a=pow(max(1.-vQ.y,0.),1.7)*pow(max(1.-abs(vQ.x),0.),2.2);/* PORT: clamp; MSAA extrapolates varyings past the quad edge and pow(negative) is NaN */float pulse=.7+.3*sin(uTime*2.1+vB*40.);
-  /* A6: heartbeat on the hottest beacon (~1.1 Hz double beat) */
+  /* heartbeat on the hottest beacon (~1.1 Hz double beat) */
   float ph=fract(uTime*1.1);float beat=exp(-ph*10.)+.55*exp(-max(ph-.2,0.)*10.)*step(.2,ph);
   pulse+=vTop*uBeat*beat*.9;
   o=vec4(vec3(1.,.30,.22)*a*pulse*vis*1.6,a*vis);}`};
@@ -260,7 +260,7 @@ void main(){
 fs:H+NOISE+`in vec2 vQ;in float vD;in float vPh;uniform vec3 uFogCol;uniform float uTime;out vec4 o;
 void main(){float r=length(vQ);float a=pow(clamp(1.-r,0.,1.),1.6)*(.55+.45*vnoise(vQ*3.+vPh*20.+uTime*.02));a*=.10*smoothstep(8.,40.,vD);o=vec4(uFogCol*1.25*a,a);}`};
 
-/* Weather (ROADMAP #5). Rain: one line per drop, falling at a slight wind angle over the busiest districts; frozen
+/* Weather. Rain: one line per drop, falling at a slight wind angle over the busiest districts; frozen
    (still streaks) under reduced motion. uAmt eases the toggle. The fog half is a term in the bld and pad shaders. */
 SRC.rain={vs:H+`
 layout(location=0) in float aE;layout(location=1) in vec4 iP;
@@ -291,10 +291,10 @@ uniform float uDofAmt,uFocusD,uNear,uFar,uFlare,uRays;uniform vec3 uMoon;out vec
 float linDepth(float d){float z=d*2.-1.;return 2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear));}
 vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}
 void main(){
-  vec2 d=vUv-.5;float ca=.0022*dot(d,d)*4.*uCA;/* PORT: scaled by scroll velocity (EXPERIENCE section 1) */
+  vec2 d=vUv-.5;float ca=.0022*dot(d,d)*4.*uCA;/* PORT: scaled by scroll velocity */
   vec3 c;c.r=texture(uScene,vUv+d*ca*2.).r;c.g=texture(uScene,vUv).g;c.b=texture(uScene,vUv-d*ca*2.).b;
   if(any(isnan(c))||any(isinf(c)))c=vec3(0.);
-  /* A6: depth of field - blend toward a blurred copy by circle of confusion around the focus distance */
+  /* depth of field - blend toward a blurred copy by circle of confusion around the focus distance */
   if(uDofAmt>0.&&uFocusD>0.){
     float z=linDepth(texture(uDepth,vUv).r);
     float coc=clamp(abs(z-uFocusD)/(uFocusD*.9+6.),0.,1.);coc=smoothstep(.08,1.,coc)*uDofAmt;
@@ -302,7 +302,7 @@ void main(){
     c=mix(c,b,coc);
   }
   c+=texture(uB1,vUv).rgb*uBloom+texture(uB2,vUv).rgb*uB2k;
-  /* A6: lens flare ghosts from bright areas, and god rays streaming from the moon */
+  /* lens flare ghosts from bright areas, and god rays streaming from the moon */
   if(uFlare>0.){
     vec2 gv=(vec2(.5)-vUv)*.42;vec3 fl=vec3(0.);
     for(int i=1;i<4;i++){vec2 off=fract(vUv+gv*float(i));float wt=pow(max(1.-length(vec2(.5)-off)/.707,0.),6.);
@@ -322,7 +322,7 @@ void main(){
   o=vec4(c*uFade,1.);
 }`};
 
-/* PORT: GPU picking (EXPERIENCE section 9). Same geometry as `bld`; writes instance index + 1 as RGBA8. */
+/* PORT: GPU picking. Same geometry as `bld`; writes instance index + 1 as RGBA8. */
 SRC.pick={vs:H+`
 layout(location=0) in vec3 aPos;
 layout(location=2) in vec4 iA;layout(location=3) in vec4 iB;
@@ -336,7 +336,7 @@ void main(){
 fs:H+`flat in int vId;out vec4 o;
 void main(){o=vec4(float(vId&255),float((vId>>8)&255),float((vId>>16)&255),255.)/255.;}`};
 
-/* A6: building birth ripple on the pad as history passes a file's creation (a pure function of uT, so it plays
+/* building birth ripple on the pad as history passes a file's creation (a pure function of uT, so it plays
    backwards too), plus a steady selection ring. Uses the building instance buffer. */
 SRC.ripple={vs:H+`
 layout(location=0) in vec2 aQ;layout(location=2) in vec4 iA;layout(location=3) in vec4 iB;

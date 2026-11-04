@@ -1,5 +1,5 @@
 /**
- * Bus-factor "what if" (docs/ROADMAP.md #6): the districts left without anyone else holding a real share of the
+ * Bus-factor "what if": the districts left without anyone else holding a real share of the
  * commits if one contributor left. Uses `dirs[].owners` (analyser >= 5): the top 5 authors per district by commit
  * share, largest first, so "no other owner at 10%+" is exact (a 6th author has less than the 5th).
  */
