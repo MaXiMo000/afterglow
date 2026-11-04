@@ -8,7 +8,7 @@ import type { World } from '../world/build';
 import { extensionOf } from '../world/types';
 import { hasOwners, orphaned, OTHER_MIN } from '../world/whatif';
 import { ago, el, fmt, fmtDate, setText } from './dom';
-import { KEYMAP, MOVE_KEYS } from './keymap';
+import { ESSENTIAL, KEYMAP, MOVE_KEYS } from './keymap';
 
 /** Validated GitHub URL for a file at the analysed commit (the only dynamic href in the app). */
 export function githubUrl(r: Result, f: Pick<FileRec, 'path' | 'href'>): string | null {
@@ -311,20 +311,27 @@ export function whatIfSentence(r: Result, person: number): string {
 }
 
 export function renderHelp(root: HTMLElement): void {
-  const groups = new Map<string, HTMLElement>();
   const move = el('dl');
   for (const m of MOVE_KEYS) move.append(el('dt', m.keys), el('dd', m.label));
-  const sections: HTMLElement[] = [el('h3', 'Move'), move];
+  const most = el('dl');
+  for (const id of ESSENTIAL) {
+    const def = KEYMAP.find((d) => d.id === id);
+    if (def) most.append(el('dt', def.keys.join(' or ')), el('dd', def.label));
+  }
+  // Everything else, grouped, folded away so the first screen stays short.
+  const all = el('details');
+  all.append(el('summary', 'All shortcuts'));
+  const groups = new Map<string, HTMLElement>();
   for (const def of KEYMAP) {
     let dl = groups.get(def.group);
     if (!dl) {
       dl = el('dl');
       groups.set(def.group, dl);
-      sections.push(el('h3', def.group), dl);
+      all.append(el('h3', def.group), dl);
     }
     dl.append(el('dt', def.keys.join(' or ')), el('dd', def.label));
   }
-  root.replaceChildren(...sections);
+  root.replaceChildren(el('h3', 'Getting around'), move, el('h3', 'Most used'), most, all);
 }
 
 /** Mini-map: district discs, the camera's ground frustum, click to fly. */

@@ -61,6 +61,51 @@ describe('OrbitCamera', () => {
     expect(cam.flying).toBe(false);
   });
 
+  it('drag grabs the ground: the point under the pointer moves with it, and a fling glides then stops', () => {
+    const cam = new OrbitCamera();
+    cam.frame(100);
+    cam.snap();
+    const x0 = cam.goal.x;
+    cam.grab([10, 4, 0], [6, 4, 0], 1 / 60);
+    expect(cam.goal.x - x0).toBeCloseTo(4, 9); // the city follows the pointer: the target moves the other way
+    for (let i = 0; i < 2; i++) cam.update(1 / 60, false);
+    expect(cam.goal.x - x0).toBeGreaterThan(4); // momentum
+    expect(cam.goal.x - x0).toBeLessThan(4 + cam.goal.dist * 1.2 * (2 / 60) + 1e-9); // capped glide speed
+    for (let i = 0; i < 600; i++) cam.update(1 / 60, false);
+    const settled = cam.goal.x;
+    cam.update(1 / 60, false);
+    expect(cam.goal.x).toBeCloseTo(settled, 6);
+  });
+
+  it('a grab can never throw the camera further than half the view distance', () => {
+    const cam = new OrbitCamera();
+    cam.frame(100);
+    cam.snap();
+    const g = { ...cam.goal };
+    cam.grab([5000, 4, 0], [0, 4, 0]);
+    expect(Math.hypot(cam.goal.x - g.x, cam.goal.z - g.z)).toBeLessThanOrEqual(g.dist * 0.5 + 1e-9);
+  });
+
+  it('held keys ease up to speed and back to rest, never stepping', () => {
+    const cam = new OrbitCamera();
+    cam.frame(100);
+    cam.snap();
+    const zero = { fwd: 0, strafe: 0, turn: 0, tilt: 0, zoom: 0 };
+    const yaw0 = cam.goal.yaw;
+    cam.drive({ ...zero, turn: 1 }, 1 / 60);
+    const first = cam.goal.yaw - yaw0;
+    for (let i = 0; i < 60; i++) cam.drive({ ...zero, turn: 1 }, 1 / 60);
+    const yaw1 = cam.goal.yaw;
+    cam.drive({ ...zero, turn: 1 }, 1 / 60);
+    const full = cam.goal.yaw - yaw1;
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(full / 3); // eases in
+    for (let i = 0; i < 120; i++) cam.drive(zero, 1 / 60); // keys released: eases out and stops
+    const rest = cam.goal.yaw;
+    cam.drive(zero, 1 / 60);
+    expect(cam.goal.yaw).toBe(rest);
+  });
+
   it('orbitFromPose reproduces the pose exactly (no pop on handover)', () => {
     const pos: [number, number, number] = [30, 20, -40];
     const tgt: [number, number, number] = [5, 2, 3];

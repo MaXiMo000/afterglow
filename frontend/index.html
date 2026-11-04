@@ -48,19 +48,23 @@
     <header id="hud">
       <div class="brand"><a id="brandHome" href="/" aria-label="Afterglow home"><span class="mark" aria-hidden="true"></span><b>Afterglow</b></a><span class="repo" id="hudRepo"></span></div>
       <nav class="actions" aria-label="View">
-        <button class="chip" id="btnStory" type="button" hidden>Story</button>
+        <button class="chip" id="btnStory" type="button" aria-label="Story" hidden><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h4.5a1.5 1.5 0 0 1 1.5 1.5v8a1 1 0 0 0-1-1H2zM14 3.5H9.5A1.5 1.5 0 0 0 8 5v8a1 1 0 0 1 1-1h5z"/></svg><span class="lbl">Story</span></button>
         <button class="chip" id="btnCity" type="button" hidden>Skip to the city</button>
-        <button class="chip" id="btnSearch" type="button" hidden>Search <kbd>/</kbd></button>
-        <button class="chip" id="btnInsights" type="button" aria-pressed="false" hidden>Insights <kbd>I</kbd></button>
-        <button class="chip" id="btnWalkTour" type="button" hidden>Walk <kbd>9</kbd></button>
-        <button class="chip" id="btnShare" type="button" hidden aria-label="Share: copy a link to this view">Share <kbd>U</kbd></button>
-        <button class="chip" id="btnBadge" type="button" hidden aria-label="Badge: copy Markdown for a README image of this city">Badge</button>
-        <button class="chip" id="btnPhoto" type="button" hidden>Photo <kbd>P</kbd></button>
-        <button class="chip" id="btnHelp" type="button" hidden aria-label="Keyboard help">?</button>
+        <button class="chip" id="btnSearch" type="button" aria-label="Search" hidden><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><span class="lbl">Search</span><kbd>/</kbd></button>
+        <button class="chip" id="btnInsights" type="button" aria-label="Insights" aria-pressed="false" hidden><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13V8M8 13V3M13 13V6"/></svg><span class="lbl">Insights</span><kbd>I</kbd></button>
+        <button class="chip" id="btnWalkTour" type="button" aria-label="Guided walk" hidden><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="9" cy="2.8" r="1.3"/><path d="M8.5 5.5 6.5 9l2.5 1.5L8 14.5M8.5 5.5l2.5 2.5 2 0.5M6.5 9 4 8"/></svg><span class="lbl">Walk</span><kbd>9</kbd></button>
+        <button class="chip" id="btnKey" type="button" aria-label="City key" aria-pressed="true" hidden><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13.5 5.5 3h2L5 13.5zM8 13.5l1.5-6.5H13l-1.5 6.5z"/></svg><span class="lbl">Key</span><kbd>8</kbd></button>
+        <button class="chip" id="btnHelp" type="button" hidden aria-label="Help and controls">?</button>
         <!-- Persistent buttons last: screen-specific ones appear to their left, so nothing on screen moves (CLS 0). -->
-        <button class="chip" id="btnNew" type="button" hidden>New repo</button>
-        <button class="chip" id="btnTable" type="button" aria-pressed="false">View as table</button>
+        <button class="chip" id="btnMore" type="button" popovertarget="moreMenu" aria-label="More actions" hidden><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.1"/><circle cx="8" cy="8" r="1.1"/><circle cx="12.5" cy="8" r="1.1"/></svg><span class="lbl">More</span></button>
+        <button class="chip" id="btnTable" type="button" aria-label="View as table" aria-pressed="false"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1"/><path d="M2.5 6.5h11M2.5 10h11M6.5 6.5V13"/></svg><span class="lbl">View as table</span></button>
       </nav>
+      <div id="moreMenu" popover aria-label="More actions">
+        <button class="item" id="btnShare" type="button" hidden>Copy a share link <kbd>U</kbd></button>
+        <button class="item" id="btnBadge" type="button" hidden>Copy a README badge</button>
+        <button class="item" id="btnPhoto" type="button" hidden>Photo and video <kbd>P</kbd></button>
+        <button class="item" id="btnNew" type="button" hidden>Open another repository</button>
+      </div>
     </header>
 
     <main>
@@ -106,7 +110,15 @@
       <section id="city" aria-label="City view" hidden>
         <div id="place"><p class="eyebrow" id="placeEy">Exploring</p><h2 id="placeName">the whole city</h2><p class="sub" id="placeSub"></p><button class="chip" id="btnLeave" type="button" hidden></button></div>
         <div id="reticle" aria-hidden="true"></div>
-        <p id="hints" aria-hidden="true">drag to orbit &middot; wheel to zoom &middot; double-click to fly &middot; ? for keys</p>
+        <p id="hints" aria-hidden="true">drag to move &middot; right-drag to turn &middot; wheel to zoom &middot; ? for help</p>
+        <div id="navCtl" role="group" aria-label="Camera controls">
+          <button type="button" data-nav="in" aria-label="Zoom in">+</button>
+          <button type="button" data-nav="out" aria-label="Zoom out">&minus;</button>
+          <button type="button" data-nav="left" aria-label="Turn left">&#8634;</button>
+          <button type="button" data-nav="right" aria-label="Turn right">&#8635;</button>
+          <button type="button" data-nav="tilt" aria-label="Tilt: look down or across">&#9698;</button>
+          <button type="button" data-nav="home" aria-label="Back to the whole city">&#8962;</button>
+        </div>
       </section>
 
       <aside id="inspector" class="panel" aria-label="Selected file" hidden>
@@ -190,7 +202,7 @@
       </form>
     </dialog>
     <dialog id="help" aria-labelledby="helpTitle">
-      <h2 id="helpTitle">Keyboard</h2>
+      <h2 id="helpTitle">Controls</h2>
       <div class="help-body"></div>
       <div class="help-close">
         <label class="quality" for="quality">Graphics

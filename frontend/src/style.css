@@ -313,7 +313,7 @@ dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
 #palList li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; border-radius: var(--radius-sm); font: var(--size-sm) var(--font-mono); cursor: pointer; }
 #palList li .l { overflow-wrap: anywhere; }
 #palList li.sel, #palList li:hover { background: rgba(255, 180, 94, 0.12); }
-#help { width: min(620px, calc(100vw - 32px)); padding: 20px 24px; }
+#help { width: min(620px, calc(100vw - 32px)); max-height: 86dvh; overflow: auto; padding: 20px 24px; }
 #prDialog, #vsDialog { width: min(420px, calc(100vw - 32px)); padding: 20px 24px; }
 #vsDialog h2, #prDialog h2 { font: 400 var(--size-xl) var(--font-serif); margin: 0 0 8px; }
 #vsDialog label, #prDialog label { display: block; font: 500 var(--size-xs) var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-dim); margin: 14px 0 6px; }
@@ -321,6 +321,8 @@ dialog::backdrop { background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
 #vsDialog input:focus-visible, #prDialog input:focus-visible { outline: 2px solid var(--color-amber); outline-offset: 2px; }
 #vsDialog .actions, #prDialog .actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
 #help h2 { font: 400 var(--size-xl) var(--font-serif); margin: 0 0 8px; }
+#help details { margin-top: 14px; }
+#help summary { cursor: pointer; font: 500 var(--size-xs) var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-amber); }
 #help h3 { font: 500 var(--size-xs) var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-dim); margin: 16px 0 6px; }
 #help dl { display: grid; grid-template-columns: 170px 1fr; gap: 4px 16px; margin: 0; font-size: var(--size-sm); }
 #help dt { font-family: var(--font-mono); color: var(--color-amber); }
@@ -394,21 +396,104 @@ dialog[open]::backdrop { transition: opacity var(--motion-base) var(--motion-eas
 .go:active, .chip:active { transform: translateY(1px) scale(0.98); }
 .load-actions { display: flex; gap: 18px; align-items: center; }
 
+/* HUD chips: an icon plus a label; the label gives way to the icon alone on narrow screens. */
+.chip { display: inline-flex; align-items: center; gap: 7px; }
+.chip kbd { margin-left: 0; }
+.ico { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+#btnKey .ico { fill: currentColor; stroke: none; opacity: 0.85; }
+#btnMore .ico { fill: currentColor; stroke: none; }
+
+/* More menu: the less frequent actions, one tap away (native popover: Esc and outside clicks close it). */
+#moreMenu { position: fixed; inset: auto var(--gutter) auto auto; top: calc(env(safe-area-inset-top, 0px) + 62px); margin: 0; padding: 6px;
+  min-width: 230px; display: none; flex-direction: column; gap: 2px; color: var(--color-text);
+  background: var(--color-glass-hi); border: 1px solid var(--color-line); border-radius: var(--radius-md); backdrop-filter: blur(14px); box-shadow: var(--shadow-panel); }
+#moreMenu:popover-open { display: flex; }
+#moreMenu .item { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; background: none; border: 0;
+  border-radius: var(--radius-sm); padding: 10px 12px; font-size: var(--size-sm); }
+#moreMenu .item:hover, #moreMenu .item:focus-visible { background: rgba(255, 180, 94, 0.12); }
+
+/* On-screen camera controls, bottom right above the timeline. */
+#navCtl { position: absolute; right: var(--gutter); bottom: calc(var(--foot-h, 44px) + var(--tl-h, 52px) + 22px); display: grid; grid-template-columns: repeat(2, 38px);
+  gap: 6px; pointer-events: auto; }
+#navCtl button { width: 38px; height: 38px; display: grid; place-items: center; padding: 0; font: 500 18px / 1 var(--font-sans); color: var(--color-text);
+  background: var(--color-glass); border: 1px solid var(--color-line); border-radius: var(--radius-sm); backdrop-filter: blur(8px);
+  transition: border-color var(--motion-base), background var(--motion-base), transform var(--motion-fast); }
+#navCtl button:hover { border-color: rgba(255, 180, 94, 0.6); background: var(--color-glass-hi); }
+#navCtl button:active { transform: scale(0.94); }
+body.walking #navCtl, body.guided #navCtl, body.photo #navCtl { display: none; }
+#minimap { right: calc(var(--gutter) + 92px); }
+
+/* City key: shown by default in the city, foldable; never over the start page or the story. */
+body:not(.mode-city) #livingLegend { display: none !important; }
+#livingLegend details { display: grid; gap: 5px; }
+#livingLegend summary { cursor: pointer; font-weight: 600; list-style-position: inside; }
+#livingLegend details[open] summary { margin-bottom: 4px; }
+#livingLegend .chip { justify-self: start; margin-top: 6px; }
+#legends { max-height: calc(100dvh - var(--foot-h, 44px) - var(--tl-h, 52px) - 150px); overflow-y: auto; scrollbar-width: thin; }
+
+/* Safe areas (notches, home indicators, rounded corners) on every side. */
+html:root { --gutter: max(clamp(16px, 4.4vw, 64px), env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px)); }
+html, body { height: 100dvh; }
+
+@media (pointer: coarse) {
+  .chip { min-height: 40px; }
+  #navCtl { grid-template-columns: repeat(2, 44px); }
+  #navCtl button { width: 44px; height: 44px; }
+}
 @media (max-width: 1100px) {
   .chip kbd, #hints { display: none; }
   .actions { gap: 6px; }
   .repo { width: 16ch; }
+  #btnTable .lbl, #btnMore .lbl { display: none; }
 }
 @media (max-width: 760px) {
   .repo, #hints, #minimap { display: none; }
-  #timeline { grid-template-columns: auto 1fr; }
+  .chip .lbl { display: none; } /* icons only; each button keeps its accessible name */
+  .chip { padding: 6px 9px; }
+  #btnCity .lbl, #btnCity { white-space: nowrap; }
+  #timeline { grid-template-columns: auto 1fr; gap: 8px 12px; }
   #timeline .track { grid-column: 1 / -1; }
-  #timeline .speed, #btnPhoto, #btnHelp, #btnSearch kbd, #btnInsights kbd, #btnWalkTour kbd, #btnShare kbd { display: none; }
+  #timeline .speed { display: none; }
   #rail span { display: none; }
   .chap { bottom: clamp(96px, 14vh, 140px); }
   #callout .body { width: 180px; }
-  #place .sub { display: none; }
+  #place { max-width: calc(100vw - 2 * var(--gutter) - 104px); }
+  #place h2 { font-size: clamp(1.3rem, 6vw, 1.8rem); }
+  #place .sub { font-size: var(--size-xs); }
   .brand b { display: none; } /* the orb stays, and is still the home link */
+  /* Panels become bottom sheets above the timeline, full width. */
+  #inspector, #insights { left: var(--gutter); right: var(--gutter); width: auto; top: auto; bottom: calc(var(--foot-h, 44px) + var(--tl-h, 52px) + 14px);
+    max-height: min(58dvh, calc(100dvh - var(--foot-h, 44px) - var(--tl-h, 52px) - 90px)); animation-name: sheet-in; }
+  #insights .kpis { grid-template-columns: repeat(2, 1fr); }
+  #legends { right: var(--gutter); }
+  #legends > * { max-width: none; }
+  #moreMenu { left: var(--gutter); right: var(--gutter); min-width: 0; }
+  #moreMenu kbd { display: none; }
+  #help dl { grid-template-columns: 1fr; gap: 0 0; }
+  #help dd { margin-bottom: 8px; color: var(--color-dim); }
+}
+@keyframes sheet-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+/* Short screens (phones held sideways, small laptops with big zoom): tighten everything vertical. */
+@media (max-height: 520px) {
+  #hud { padding-top: calc(env(safe-area-inset-top, 0px) + 8px); }
+  .chip .lbl, .chip kbd, .repo { display: none; }
+  .chip { padding: 5px 9px; min-height: 34px; }
+  #honesty { font-size: 10px; }
+  #moreMenu { top: calc(env(safe-area-inset-top, 0px) + 50px); }
+  #inspector, #insights, #legends { top: calc(env(safe-area-inset-top, 0px) + 56px); }
+  #inspector, #insights { bottom: auto; max-height: calc(100dvh - var(--foot-h, 44px) - var(--tl-h, 52px) - 76px); }
+  #timeline { padding: 5px 10px; gap: 4px 10px; }
+  #timeline .date b { font-size: 1.1rem; }
+  #timeline .date span, #hints, #place .eyebrow { display: none; }
+  #place { bottom: calc(var(--foot-h, 44px) + var(--tl-h, 52px) + 10px); }
+  #place h2 { font-size: 1.2rem; margin: 0; }
+  #navCtl { bottom: calc(var(--foot-h, 44px) + var(--tl-h, 52px) + 10px); grid-template-columns: repeat(3, 36px); }
+  #navCtl button { width: 36px; height: 36px; }
+  #honesty { padding-top: 4px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4px); }
+  #help { max-height: 92dvh; overflow: auto; }
+}
+@media (max-height: 520px) and (min-width: 761px) {
+  #inspector, #insights { left: auto; right: var(--gutter); width: min(340px, 45vw); }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

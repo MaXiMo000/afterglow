@@ -42,7 +42,7 @@ export const KEYMAP: readonly KeyDef[] = [
   { id: 'lanterns', keys: ['L'], label: 'Lanterns (people) on / off', group: 'View' },
   { id: 'pr', keys: ['N'], label: 'Overlay a pull request by number (open PRs)', group: 'View' },
   { id: 'weather', keys: ['Z'], label: 'Weather: rain on busy districts, fog on quiet ones', group: 'View' },
-  { id: 'living', keys: ['8'], label: 'City key: what each kind of building means (8 again: plain boxes)', group: 'View' },
+  { id: 'living', keys: ['8'], label: 'City key on / off: what each kind of building means', group: 'View' },
   { id: 'types', keys: ['Y'], label: 'Colour by file type on / off', group: 'View' },
   { id: 'record', keys: ['O'], label: 'Record a video: the history if it is playing, else an orbit', group: 'View' },
   { id: 'share', keys: ['U'], label: 'Copy a share link (URL) to this view', group: 'View' },
@@ -51,12 +51,18 @@ export const KEYMAP: readonly KeyDef[] = [
 
 /** Keys that are handled directly (movement) and listed in help only. */
 export const MOVE_KEYS: readonly { keys: string; label: string }[] = [
-  { keys: 'W A S D / arrows', label: 'Move / orbit (Shift: faster)' },
-  { keys: 'Q E', label: 'Rotate' },
-  { keys: '+ - / wheel / pinch', label: 'Zoom (toward the cursor)' },
-  { keys: 'Double-click', label: 'Fly to a building' },
+  { keys: 'Drag', label: 'Move the city, like a map' },
+  { keys: 'Right-drag / Shift-drag', label: 'Turn and tilt' },
+  { keys: 'Wheel / + -', label: 'Zoom toward the cursor' },
+  { keys: 'Touch', label: 'One finger moves; two fingers pinch to zoom and twist to turn' },
+  { keys: 'W A S D / arrows', label: 'Move (Shift: faster)' },
+  { keys: 'Q E / Page Up Down', label: 'Turn / tilt' },
+  { keys: 'Click / double-click', label: 'Details / fly to a building' },
   { keys: 'Esc', label: 'Back out one level' },
 ];
+
+/** The handful of actions most people need, listed first in help; the rest sit under "All shortcuts". */
+export const ESSENTIAL: readonly ActionId[] = ['scrollWalk', 'living', 'palette', 'insights', 'tourNext', 'play', 'home', 'help'];
 
 /** Resolve a keyboard event to an action (null if none). Movement keys are not actions. */
 export function actionFor(e: KeyboardEvent): ActionId | null {

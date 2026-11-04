@@ -1,6 +1,6 @@
 /**
- * Explore camera: orbit with inertia, pan, dolly, zoom toward the cursor, eased flights,
- * presets. Goals are set by input; the rendered pose follows with frame-rate-independent damping.
+ * Explore camera: map-style ground grab with momentum, orbit with inertia, eased keyboard driving, zoom toward the
+ * cursor, eased flights, presets. Goals are set by input; the rendered pose follows with frame-rate-independent damping.
  * Pitch is clamped short of the poles (never flips) and the camera never goes under the water.
  */
 import { clamp, cross, lookAt, mul, norm, perspective, sub, type V3 } from '../render/math';
@@ -8,6 +8,8 @@ import { reflectVP, type Camera } from '../render/renderer';
 
 export type Orbit = { yaw: number; pitch: number; dist: number; x: number; y: number; z: number };
 export type Preset = 'overview' | 'street' | 'top' | 'skyline' | 'cinematic';
+/** Held-key input, each -1..1: move forward / right, turn, tilt up, zoom out. */
+export type Drive = { fwd: number; strafe: number; turn: number; tilt: number; zoom: number };
 const KEYS = ['yaw', 'pitch', 'dist', 'x', 'y', 'z'] as const;
 const PITCH_MIN = 0.06;
 const PITCH_MAX = 1.48;
@@ -21,6 +23,8 @@ export class OrbitCamera {
   bound = 200; // how far the target may wander from the centre
   autoOrbit = false;
   private spin = { yaw: 0, pitch: 0 }; // inertia, radians per second
+  private drift = { x: 0, z: 0 }; // pan momentum after a fling, world units per second
+  private vel: Drive = { fwd: 0, strafe: 0, turn: 0, tilt: 0, zoom: 0 }; // eased keyboard input
   private flight: { from: Orbit; to: Orbit; k: number; dur: number } | null = null;
 
   frame(radius: number): void {
@@ -54,12 +58,14 @@ export class OrbitCamera {
   snap(): void {
     this.cur = { ...this.goal };
     this.spin = { yaw: 0, pitch: 0 };
+    this.drift = { x: 0, z: 0 };
     this.flight = null;
   }
 
   /** Eased flight to a goal (700-1000 ms, cancellable by any input). */
   flyTo(to: Orbit, dur = 0.85, reduced = false): void {
     this.spin = { yaw: 0, pitch: 0 };
+    this.drift = { x: 0, z: 0 };
     const target = this.clampOrbit({ ...to });
     // Take the short way round.
     const d = ((target.yaw - this.cur.yaw + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
@@ -100,6 +106,14 @@ export class OrbitCamera {
       this.spin.yaw *= decay;
       this.spin.pitch *= decay;
     }
+    if (Math.abs(this.drift.x) + Math.abs(this.drift.z) > 1e-3) {
+      this.goal.x += this.drift.x * dt;
+      this.goal.z += this.drift.z * dt;
+      this.clampTarget();
+      const decay = Math.exp(-dt * 5);
+      this.drift.x *= decay;
+      this.drift.z *= decay;
+    }
     const k = reduced ? 1 : 1 - Math.exp(-dt * 9);
     for (const key of KEYS) this.cur[key] += (this.goal[key] - this.cur[key]) * k;
   }
@@ -120,6 +134,62 @@ export class OrbitCamera {
   /** Stop carrying velocity (pointer held still before release). */
   still(): void {
     this.spin = { yaw: 0, pitch: 0 };
+    this.drift = { x: 0, z: 0 };
+  }
+
+  /**
+   * Map-style drag: move the target so the ground point `from` (under the pointer before) lands on `to` (under it
+   * now). A move is capped at most of the view distance, so a ray grazing the horizon cannot throw the camera away.
+   */
+  grab(from: V3, to: V3, dt = 0): void {
+    this.cancel();
+    let dx = from[0] - to[0];
+    let dz = from[2] - to[2];
+    const max = this.goal.dist * 0.5;
+    const m = Math.hypot(dx, dz);
+    if (m > max) (dx *= max / m), (dz *= max / m);
+    this.goal.x += dx;
+    this.goal.z += dz;
+    this.clampTarget();
+    if (dt > 0) {
+      this.drift.x = 0.6 * this.drift.x + 0.4 * (dx / dt);
+      this.drift.z = 0.6 * this.drift.z + 0.4 * (dz / dt);
+      // A fling glides about one view-width at most: fast flicks never throw the city out of sight.
+      const cap = this.goal.dist * 1.2;
+      const v = Math.hypot(this.drift.x, this.drift.z);
+      if (v > cap) (this.drift.x *= cap / v), (this.drift.z *= cap / v);
+    }
+  }
+
+  /** Twist (two-finger rotate), radians; positive turns the scene clockwise on screen. */
+  turn(rad: number): void {
+    this.cancel();
+    this.goal.yaw += rad;
+  }
+
+  /**
+   * Keyboard driving: held keys ease the camera up to speed and back to rest instead of stepping it. Speeds scale
+   * with the view distance, so moving feels the same zoomed in or out. Call every frame, with zeros when idle.
+   */
+  drive(input: Drive, dt: number, fast = false): void {
+    const k = 1 - Math.exp(-dt * 7);
+    let moving = false;
+    for (const key of ['fwd', 'strafe', 'turn', 'tilt', 'zoom'] as const) {
+      this.vel[key] += (input[key] * (fast ? 2 : 1) - this.vel[key]) * k;
+      if (Math.abs(this.vel[key]) < 1e-3) this.vel[key] = 0;
+      else moving = true;
+      if (input[key]) this.cancel();
+    }
+    if (!moving) return;
+    const v = this.vel;
+    const move = this.goal.dist * 0.7 * dt;
+    const { yaw } = this.goal;
+    this.goal.x += (-Math.sin(yaw) * v.fwd + Math.cos(yaw) * v.strafe) * move;
+    this.goal.z += (-Math.cos(yaw) * v.fwd - Math.sin(yaw) * v.strafe) * move;
+    this.clampTarget();
+    this.goal.yaw += v.turn * 1.3 * dt;
+    this.goal.pitch = clamp(this.goal.pitch + v.tilt * 0.8 * dt, PITCH_MIN, PITCH_MAX);
+    this.goal.dist = clamp(this.goal.dist * Math.exp(v.zoom * 1.4 * dt), this.minDist, this.maxDist);
   }
 
   pan(dx: number, dy: number): void {
@@ -128,16 +198,6 @@ export class OrbitCamera {
     const { yaw } = this.goal;
     this.goal.x -= (Math.cos(yaw) * dx + Math.sin(yaw) * dy) * s;
     this.goal.z += (Math.sin(yaw) * dx - Math.cos(yaw) * dy) * s;
-    this.clampTarget();
-  }
-
-  /** Move along the ground in the camera's heading (WASD). */
-  walk(forward: number, strafe: number): void {
-    this.cancel();
-    const s = this.goal.dist * 0.02;
-    const { yaw } = this.goal;
-    this.goal.x += (-Math.sin(yaw) * forward + Math.cos(yaw) * strafe) * s;
-    this.goal.z += (-Math.cos(yaw) * forward - Math.sin(yaw) * strafe) * s;
     this.clampTarget();
   }
 

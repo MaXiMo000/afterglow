@@ -81,6 +81,23 @@ function queueText(p: Progress): string {
 
 const dist = (a: Vec, b: Vec): number => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
+/** A UI preference on this device (never anything sensitive); storage can be blocked, so both sides fail quietly. */
+function pref(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function savePref(key: string, value: string | null): void {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    // private mode or blocked storage: the preference just does not stick
+  }
+}
+
 export class App {
   private mode: Mode = 'hero';
   private renderer: Renderer | null = null;
@@ -113,11 +130,11 @@ export class App {
   private resultId: string | null = null; // job id of the loaded analysis (null for the demo)
   private prAbort: AbortController | null = null;
   private weatherGoal = 0; // weather layer: 1 on; P.weather eases toward it
-  private livingState = 0; // key 8 cycles: 0 Living City, 1 Living City with its key shown, 2 plain boxes
+  private keyShown = pref('afterglow:key') !== '0'; // the city key legend: on until the viewer closes it
+  private plain = false; // plain boxes instead of the Living City styles
   private typesGoal = 0; // colour by file type: 1 on; P.types eases toward it
   private ptrs = new Map<number, { x: number; y: number; t: number }>();
   private dragMoved = 0;
-  private pinch = 0;
   private hoverAt: { x: number; y: number } | null = null;
   private pickBusy = false;
   private pickChain: Promise<unknown> = Promise.resolve(); // one GPU readback in flight at a time
@@ -284,7 +301,7 @@ export class App {
     this.renderHonesty();
     if (this.typesGoal) this.setTypes(true, false);
     if (this.weatherGoal) this.setWeather(true, false);
-    if (this.livingState === 1) this.setLiving(1, false);
+    this.setKey(this.keyShown, false);
     this.setWhatIf(-1, false); // a new world starts with every light on
     this.clearPr(false); // keep the mode across repositories; its legend is per result
     if (!this.demo) {
@@ -328,7 +345,9 @@ export class App {
     $('#btnCity').hidden = m !== 'story';
     const explore = m === 'city' && !this.demo;
     $('#btnStory').hidden = !explore || !this.renderer;
-    for (const id of ['#btnSearch', '#btnInsights', '#btnWalkTour', '#btnShare', '#btnBadge', '#btnPhoto', '#btnHelp']) $(id).hidden = !explore;
+    for (const id of ['#btnSearch', '#btnInsights', '#btnWalkTour', '#btnKey', '#btnShare', '#btnBadge', '#btnPhoto', '#btnHelp']) $(id).hidden = !explore;
+    $('#btnMore').hidden = m === 'hero';
+    if (explore) this.setKey(this.keyShown, false); // fold or unfold for the screen it opens on
     this.timeline.root.hidden = !explore;
     if (!explore) {
       this.insights.toggle(this.result!, false);
@@ -685,7 +704,7 @@ export class App {
         this.setWeather(!this.weatherGoal);
         break;
       case 'living':
-        this.setLiving((this.livingState + 1) % 3);
+        this.setKey(!this.keyShown);
         break;
       case 'types':
         this.setTypes(!this.typesGoal);
@@ -1257,14 +1276,19 @@ export class App {
     if (announce) this.announce(`Weather on. ${rain}. ${fog}.`);
   }
 
-  /** Living City key: every building style is a rule about the file, read from its path, size and dates. */
-  private setLiving(state: number, announce = true): void {
+  /**
+   * Living City key: every building style is a rule about the file, read from its path, size and dates. Shown by
+   * default (folded on small screens); closing it is remembered on this device. Plain boxes switch inside it.
+   */
+  private setKey(show: boolean, announce = true): void {
     const box = $('#livingLegend');
-    this.livingState = state;
+    this.keyShown = show;
+    savePref('afterglow:key', show ? null : '0');
+    $('#btnKey').setAttribute('aria-pressed', String(show));
     const w = this.world;
-    if (state !== 1 || !w) {
+    if (!show || !w) {
       box.hidden = true;
-      if (announce) this.announce(state === 2 ? 'Plain boxes: every file the same shape' : 'Living City on');
+      if (announce) this.announce('City key hidden. 8 or the Key button shows it again.');
       return;
     }
     const c = w.living.counts;
@@ -1286,7 +1310,19 @@ export class App {
       row('crane', `Crane: changed in the last ${CRANE_DAYS} days of history (${fmt(w.living.cranes)}${w.living.cranes === MAX_CRANES ? `, the ${MAX_CRANES} busiest` : ''})`),
       row('ruin', `Vines: no change in 2 years (${fmt(dead)})`),
     ];
-    box.replaceChildren(closer('Hide the city key', () => this.setLiving(0)), el('strong', 'City key'), ...rows, el('p', 'From paths, sizes and dates only, never file contents. 8 again for plain boxes.', 'sub'));
+    const fold = el('details');
+    fold.open = !matchMedia('(max-width: 760px), (max-height: 520px)').matches;
+    const plain = el('button', this.plain ? 'Show the Living City' : 'Show plain boxes', 'chip');
+    plain.type = 'button';
+    plain.setAttribute('aria-pressed', String(this.plain));
+    plain.addEventListener('click', () => {
+      this.plain = !this.plain;
+      this.announce(this.plain ? 'Plain boxes: every file the same shape' : 'Living City styles on');
+      this.setKey(true, false);
+      ($('#livingLegend button.chip') as HTMLButtonElement | null)?.focus();
+    });
+    fold.append(el('summary', 'City key'), ...rows, el('p', 'From paths, sizes and dates only, never file contents.', 'sub'), plain);
+    box.replaceChildren(closer('Hide the city key', () => this.setKey(false)), fold);
     box.hidden = false;
     if (announce) this.announce(`City key. ${n(STYLE.tree)} test files as trees, ${n(STYLE.house)} docs as houses, ${fmt(w.living.cranes)} cranes.`);
   }
@@ -1616,6 +1652,30 @@ export class App {
     $('#btnPhoto').addEventListener('click', () => this.run('photo'));
     $('#btnWalkTour').addEventListener('click', () => this.run('scrollWalk'));
     $('#btnHelp').addEventListener('click', () => this.run('help'));
+    $('#btnKey').addEventListener('click', () => this.run('living'));
+    // The More menu closes once one of its actions runs.
+    $('#moreMenu').addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('button')) ($('#moreMenu') as HTMLElement).hidePopover();
+    });
+    // On-screen camera controls: the same eased flights as the keys, for touch and for anyone who prefers buttons.
+    $('#navCtl').addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-nav]');
+      const w = this.world;
+      if (!b || !w) return;
+      const g = this.cam.goal;
+      const reduced = reducedMotion();
+      this.cam.autoOrbit = false;
+      switch (b.dataset['nav']) {
+        case 'in': return this.cam.flyTo({ ...g, dist: g.dist * 0.6 }, 0.45, reduced);
+        case 'out': return this.cam.flyTo({ ...g, dist: g.dist / 0.6 }, 0.45, reduced);
+        case 'left': return this.cam.flyTo({ ...g, yaw: g.yaw - Math.PI / 6 }, 0.45, reduced);
+        case 'right': return this.cam.flyTo({ ...g, yaw: g.yaw + Math.PI / 6 }, 0.45, reduced);
+        case 'tilt': return this.cam.flyTo({ ...g, pitch: g.pitch < 0.9 ? 1.25 : 0.45 }, 0.6, reduced);
+        case 'home': return this.run('home');
+      }
+    });
+    // Say how to get around in the way this device works.
+    if (matchMedia('(pointer: coarse)').matches) setText($('#hints'), 'drag to move · pinch to zoom · twist to turn · tap a building');
     $('#btnSave').addEventListener('click', () => (this.exportNext = true));
     $('#btnRecOrbit').addEventListener('click', () => this.startRecording('orbit'));
     $('#btnRecHistory').addEventListener('click', () => this.startRecording('history'));
@@ -1676,7 +1736,7 @@ export class App {
       const active = document.activeElement as HTMLElement | null;
       // An input inside a just-closed dialog can stay activeElement until the browser's focus fixup runs.
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(active?.tagName ?? '') && !active?.closest('dialog:not([open])');
-      if (document.querySelector('dialog[open]')) return; // dialogs handle their own keys (Esc closes)
+      if (document.querySelector('dialog[open], [popover]:popover-open')) return; // dialogs and menus handle their own keys (Esc closes)
       // A key that began while a dialog was open (Enter picking a palette result, say) has closed it by now: not
       // ours either. Marked in the capture phase, so later keys still work while focus lingers in a closed dialog.
       if (keyFromDialog.has(e)) return;
@@ -1692,7 +1752,6 @@ export class App {
         if (this.prOn || this.prAbort) return this.clearPr(true);
         if (this.insights.whatIf >= 0) return this.setWhatIf(-1);
         if (this.weatherGoal) return this.setWeather(false);
-        if (this.livingState === 1) return this.setLiving(0);
         if (this.selected >= 0 || this.P.focus >= 0) return this.select(-1);
         if (this.insights.open) return this.run('insights');
         if (this.drillStack.length) return this.drillOut();
@@ -1713,7 +1772,7 @@ export class App {
       }
       const k = e.key.toLowerCase();
       if (k === 'shift') this.held.add(k);
-      if (['w', 'a', 's', 'd', 'q', 'e', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', '+', '=', '-'].includes(k)) {
+      if (['w', 'a', 's', 'd', 'q', 'e', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'pageup', 'pagedown', '+', '=', '-'].includes(k)) {
         e.preventDefault();
         this.held.add(k);
         this.cam.autoOrbit = false;
@@ -1723,31 +1782,48 @@ export class App {
 
   /** Continuous keyboard movement while keys are held (frame-rate independent). */
   private keyMove(dt: number, shift: boolean): void {
-    if (!this.held.size) return;
     const h = this.held;
+    const on = (...k: string[]): number => (k.some((x) => h.has(x)) ? 1 : 0);
+    if (!this.sw && !this.walker) {
+      // WASD and arrows move over the map, Q/E turn, Page Up/Down tilt, +/- zoom: eased in and out, never stepped.
+      const input = {
+        fwd: on('w', 'arrowup') - on('s', 'arrowdown'),
+        strafe: on('d', 'arrowright') - on('a', 'arrowleft'),
+        turn: on('e') - on('q'),
+        tilt: on('pageup') - on('pagedown'),
+        zoom: on('-') - on('+', '='),
+      };
+      this.cam.drive(input, dt, shift);
+      return;
+    }
+    if (!h.size) return;
     if (this.sw) {
-      const on = (...k: string[]): number => (k.some((x) => h.has(x)) ? 1 : 0);
       const dir = on('arrowdown', 'arrowright', 's', 'd') - on('arrowup', 'arrowleft', 'w', 'a');
       this.sw.goal = clamp(this.sw.goal + dir * dt * (shift ? 1.6 : 0.7), 0, this.sw.route.stops.length - 1);
       return;
     }
     if (this.walker) {
-      const on = (...k: string[]): number => (k.some((x) => h.has(x)) ? 1 : 0);
       const input = { forward: on('w') - on('s'), strafe: on('d') - on('a'), turn: on('arrowright', 'e') - on('arrowleft', 'q'), look: on('arrowup') - on('arrowdown'), run: shift };
       this.walker.step(dt, input, this.P.t);
-      return;
     }
-    const s = (shift ? 2 : 1) * dt * 60;
-    if (h.has('w')) this.cam.walk(s * 0.5, 0);
-    if (h.has('s')) this.cam.walk(-s * 0.5, 0);
-    if (h.has('a')) this.cam.walk(0, -s * 0.5);
-    if (h.has('d')) this.cam.walk(0, s * 0.5);
-    if (h.has('arrowleft') || h.has('q')) this.cam.orbit(-6 * s, 0);
-    if (h.has('arrowright') || h.has('e')) this.cam.orbit(6 * s, 0);
-    if (h.has('arrowup')) this.cam.orbit(0, 5 * s);
-    if (h.has('arrowdown')) this.cam.orbit(0, -5 * s);
-    if (h.has('+') || h.has('=')) this.cam.zoom(1 - 0.02 * s);
-    if (h.has('-')) this.cam.zoom(1 + 0.02 * s);
+  }
+
+  /** The point on the target's ground plane under a screen point, or null near or above the horizon. */
+  private groundAt(x: number, y: number): [number, number, number] | null {
+    const rect = this.canvas.getBoundingClientRect();
+    const C = this.cameraNow();
+    const ray = rayThrough(C, x - rect.left, y - rect.top, rect.width, rect.height);
+    if (ray[1] > -0.03) return null;
+    const t = (this.cam.goal.y - C.pos[1]) / ray[1];
+    return [C.pos[0] + ray[0] * t, this.cam.goal.y, C.pos[2] + ray[2] * t];
+  }
+
+  /** Map-style drag from one screen point to another: grab the ground; screen-space pan near the horizon. */
+  private dragPan(x0: number, y0: number, x1: number, y1: number, dt: number): void {
+    const a = this.groundAt(x0, y0);
+    const b = this.groundAt(x1, y1);
+    if (a && b) this.cam.grab(a, b, dt);
+    else this.cam.pan(x1 - x0, y1 - y0);
   }
 
   private bindCanvas(): void {
@@ -1768,10 +1844,6 @@ export class App {
       this.dragMoved = 0;
       this.cam.autoOrbit = false;
       this.cam.still();
-      if (this.ptrs.size === 2) {
-        const [a, b] = [...this.ptrs.values()];
-        this.pinch = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-      }
       c.classList.add('drag');
     });
     c.addEventListener('pointermove', (e) => {
@@ -1792,19 +1864,34 @@ export class App {
       const dy = e.clientY - p.y;
       const dt = Math.max(1, now - p.t) / 1000;
       this.dragMoved += Math.abs(dx) + Math.abs(dy);
+      const before = [...this.ptrs.values()].map((q) => ({ x: q.x, y: q.y }));
+      const [x0, y0] = [p.x, p.y];
       p.x = e.clientX;
       p.y = e.clientY;
       p.t = now;
       if (this.ptrs.size === 1) {
         if (this.sw) this.sw.goal = clamp(this.sw.goal - dy * 0.006, 0, this.sw.route.stops.length - 1); // swipe up walks on
         else if (this.walker) this.walker.look(-dx, -dy); // drag the view, like grabbing the scene
-        else if (e.shiftKey || e.buttons === 2) this.cam.pan(dx, dy);
-        else this.cam.orbit(dx, dy, dt);
-      } else if (this.ptrs.size === 2) {
-        const [a, b] = [...this.ptrs.values()];
-        const d = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-        if (this.pinch) this.zoomAt(this.pinch / d, (a!.x + b!.x) / 2, (a!.y + b!.y) / 2);
-        this.pinch = d;
+        // Like a map: drag moves the city, right-drag (or a modifier key) turns and tilts it.
+        else if (e.buttons & 2 || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) this.cam.orbit(dx, dy, dt);
+        else this.dragPan(x0, y0, e.clientX, e.clientY, dt);
+      } else if (this.ptrs.size === 2 && !this.walker && !this.sw) {
+        // Two fingers: pinch zooms, twisting turns, moving both moves the map.
+        const after = [...this.ptrs.values()];
+        const [a0, b0, a1, b1] = [before[0]!, before[1]!, after[0]!, after[1]!];
+        const d0 = Math.hypot(a0.x - b0.x, a0.y - b0.y);
+        const d1 = Math.hypot(a1.x - b1.x, a1.y - b1.y);
+        const mx0 = (a0.x + b0.x) / 2;
+        const my0 = (a0.y + b0.y) / 2;
+        const mx1 = (a1.x + b1.x) / 2;
+        const my1 = (a1.y + b1.y) / 2;
+        if (d0 > 8 && d1 > 8) {
+          this.zoomAt(d0 / d1, mx1, my1);
+          let turn = Math.atan2(a1.y - b1.y, a1.x - b1.x) - Math.atan2(a0.y - b0.y, a0.x - b0.x);
+          turn = ((turn + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+          this.cam.turn(turn);
+        }
+        this.dragPan(mx0, my0, mx1, my1, 0);
       }
       this.hideTip();
     });
@@ -1814,7 +1901,6 @@ export class App {
       const click = this.dragMoved < 6 && this.ptrs.size === 1;
       if (performance.now() - p.t > 90) this.cam.still(); // held still before release: no fling
       this.ptrs.delete(e.pointerId);
-      if (this.ptrs.size < 2) this.pinch = 0;
       if (!this.ptrs.size) c.classList.remove('drag');
       if (click) void this.pickAt(e.clientX, e.clientY).then((i) => this.select(i));
     };
@@ -2092,7 +2178,7 @@ export class App {
     this.fov = fov;
     this.lastPose = { pos, tgt };
     P.focusAmt += (this.focusGoal - P.focusAmt) * (1 - Math.exp(-dt * 5));
-    const livingGoal = this.livingState === 2 ? 0 : 1;
+    const livingGoal = this.plain ? 0 : 1;
     P.living = reduced ? livingGoal : P.living + (livingGoal - P.living) * (1 - Math.exp(-dt * 3));
     P.weather = reduced ? this.weatherGoal : P.weather + (this.weatherGoal - P.weather) * (1 - Math.exp(-dt * 2)); // slow fade in
     const prGoal = this.prOn ? 1 : 0;
