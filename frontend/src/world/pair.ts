@@ -67,6 +67,12 @@ export function pair(a: Result, b: Result): Pair {
     radius: Math.max(Math.abs(ax) + wa.radius, bx + wb.radius),
     heightFromChanges: wa.heightFromChanges || wb.heightFromChanges,
     types: fileTypes(result),
+    living: {
+      style: Uint8Array.from([...wa.living.style, ...wb.living.style]),
+      crane: Uint8Array.from([...wa.living.crane, ...wb.living.crane]),
+      counts: wa.living.counts.map((n, k) => n + wb.living.counts[k]!),
+      cranes: wa.living.cranes + wb.living.cranes,
+    },
   };
   return { a, b, split, world, result, centres: [ax, bx] };
 }

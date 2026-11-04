@@ -5,6 +5,11 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- Living City: buildings take a style that says what kind of file they are, from the path, size and dates only.
+  Test files are trees and test-heavy districts become parks, docs are houses, generated or vendored files are
+  warehouses, the largest source files are glass towers, old untouched files are brick, files changed in the last
+  14 days carry a crane (up to 24), and files untouched for two years grow vines. Streets get lamps. `8` shows the
+  city key with counts; `8` again switches back to plain boxes.
 - Repository: internal planning notes are no longer published; added SECURITY.md, CONTRIBUTING.md and .env.example.
   The default start-page gallery lists well-known projects.
 - Touch: every mode a key turns on now has an on-screen way off. Legends (PR, changes since, what-if, weather,

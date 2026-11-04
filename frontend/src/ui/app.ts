@@ -17,6 +17,7 @@ import { buildWorld, type World } from '../world/build';
 import { pair, pairStats, PAIR_MAX_FILES, type Pair } from '../world/pair';
 import { project } from '../render/math';
 import { TYPE_COLOURS } from '../world/types';
+import { CRANE_DAYS, MAX_CRANES, STYLE } from '../world/living';
 import { weather } from '../world/weather';
 import { buildCamera, OrbitCamera, orbitFromPose, rayThrough, type Preset } from './camera';
 import { $, ago, closer, el, fmt, fmtDate, reducedMotion, setText } from './dom';
@@ -89,7 +90,7 @@ export class App {
   private readonly cam = new OrbitCamera();
   private readonly P: Params = {
     t: 1, fog: FOG, hot: 0.5, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.035, ca: 1,
-    arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0, weather: 0, risk: 0, pr: 0,
+    arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0, weather: 0, risk: 0, pr: 0, living: 1,
   }; // prettier-ignore
   private time = 0;
   private last = 0;
@@ -110,6 +111,7 @@ export class App {
   private resultId: string | null = null; // job id of the loaded analysis (null for the demo)
   private prAbort: AbortController | null = null;
   private weatherGoal = 0; // weather layer: 1 on; P.weather eases toward it
+  private livingState = 0; // key 8 cycles: 0 Living City, 1 Living City with its key shown, 2 plain boxes
   private typesGoal = 0; // colour by file type: 1 on; P.types eases toward it
   private ptrs = new Map<number, { x: number; y: number; t: number }>();
   private dragMoved = 0;
@@ -280,6 +282,7 @@ export class App {
     this.renderHonesty();
     if (this.typesGoal) this.setTypes(true, false);
     if (this.weatherGoal) this.setWeather(true, false);
+    if (this.livingState === 1) this.setLiving(1, false);
     this.setWhatIf(-1, false); // a new world starts with every light on
     this.clearPr(false); // keep the mode across repositories; its legend is per result
     if (!this.demo) {
@@ -668,6 +671,9 @@ export class App {
         break;
       case 'weather':
         this.setWeather(!this.weatherGoal);
+        break;
+      case 'living':
+        this.setLiving((this.livingState + 1) % 3);
         break;
       case 'types':
         this.setTypes(!this.typesGoal);
@@ -1173,6 +1179,40 @@ export class App {
     if (announce) this.announce(`Weather on. ${rain}. ${fog}.`);
   }
 
+  /** Living City key: every building style is a rule about the file, read from its path, size and dates. */
+  private setLiving(state: number, announce = true): void {
+    const box = $('#livingLegend');
+    this.livingState = state;
+    const w = this.world;
+    if (state !== 1 || !w) {
+      box.hidden = true;
+      if (announce) this.announce(state === 2 ? 'Plain boxes: every file the same shape' : 'Living City on');
+      return;
+    }
+    const c = w.living.counts;
+    const row = (cls: string, text: string): HTMLElement => {
+      const p = el('div');
+      const i = el('i', null, cls);
+      i.setAttribute('aria-hidden', 'true');
+      p.append(i, document.createTextNode(text));
+      return p;
+    };
+    const n = (k: number): string => fmt(c[k] ?? 0);
+    const dead = w.result.files.filter((f) => f.dead).length;
+    const rows = [
+      row('tower', `Glass tower: the largest files (${n(STYLE.tower)})`),
+      row('brick', `Brick: old files untouched this year (${n(STYLE.brick)})`),
+      row('warehouse', `Warehouse: generated, vendored or lock files (${n(STYLE.warehouse)})`),
+      row('tree', `Tree: a test file; tests make the parks (${n(STYLE.tree)})`),
+      row('house', `House: docs and text files (${n(STYLE.house)})`),
+      row('crane', `Crane: changed in the last ${CRANE_DAYS} days of history (${fmt(w.living.cranes)}${w.living.cranes === MAX_CRANES ? `, the ${MAX_CRANES} busiest` : ''})`),
+      row('ruin', `Vines: no change in 2 years (${fmt(dead)})`),
+    ];
+    box.replaceChildren(closer('Hide the city key', () => this.setLiving(0)), el('strong', 'City key'), ...rows, el('p', 'From paths, sizes and dates only, never file contents. 8 again for plain boxes.', 'sub'));
+    box.hidden = false;
+    if (announce) this.announce(`City key. ${n(STYLE.tree)} test files as trees, ${n(STYLE.house)} docs as houses, ${fmt(w.living.cranes)} cranes.`);
+  }
+
   /** Colour by file type. Compare mode also recolours buildings, so the two never overlap. */
   private setTypes(on: boolean, announce = true): void {
     const box = $('#typeLegend');
@@ -1572,6 +1612,7 @@ export class App {
         if (this.prOn || this.prAbort) return this.clearPr(true);
         if (this.insights.whatIf >= 0) return this.setWhatIf(-1);
         if (this.weatherGoal) return this.setWeather(false);
+        if (this.livingState === 1) return this.setLiving(0);
         if (this.selected >= 0 || this.P.focus >= 0) return this.select(-1);
         if (this.insights.open) return this.run('insights');
         if (this.drillStack.length) return this.drillOut();
@@ -1958,6 +1999,8 @@ export class App {
     this.fov = fov;
     this.lastPose = { pos, tgt };
     P.focusAmt += (this.focusGoal - P.focusAmt) * (1 - Math.exp(-dt * 5));
+    const livingGoal = this.livingState === 2 ? 0 : 1;
+    P.living = reduced ? livingGoal : P.living + (livingGoal - P.living) * (1 - Math.exp(-dt * 3));
     P.weather = reduced ? this.weatherGoal : P.weather + (this.weatherGoal - P.weather) * (1 - Math.exp(-dt * 2)); // slow fade in
     const prGoal = this.prOn ? 1 : 0;
     P.pr = reduced ? prGoal : P.pr + (prGoal - P.pr) * (1 - Math.exp(-dt * 4));

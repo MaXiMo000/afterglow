@@ -9,6 +9,11 @@ Paste a public GitHub repository and its whole history grows into a night city y
 | What you see | What it means |
 | --- | --- |
 | Building | A file; height is its size in lines |
+| Glass tower / brick / warehouse | The largest source files / old files untouched this year / generated, vendored or lock files |
+| Tree, park | A test file; districts made mostly of tests become parks |
+| House | Docs and text files |
+| Crane | Changed in the last 14 days of the analysed history |
+| Vines | No change in over two years |
 | Lit windows | Recent activity |
 | Red beam | Hotspot: changed often in the last year by three people or fewer |
 | Dark, fogged district | Untouched for over two years |

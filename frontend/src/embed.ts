@@ -66,7 +66,7 @@ async function main(): Promise<void> {
   const tier = TIERS[low ? 0 : 1]!; // a guest on someone else's page: never the cinematic tier
   const P: Params = {
     t: 1, fog: 0.0072, hot: 1, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.03, ca: 1,
-    arcs: 1, lanterns: 0, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0, weather: 0, risk: 0, pr: 0,
+    arcs: 1, lanterns: 0, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0, weather: 0, risk: 0, pr: 0, living: 1,
   }; // prettier-ignore
 
   const size = (): void => {
