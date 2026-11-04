@@ -1,8 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mock, result } from './fixture';
 
-// A5 gate: "keyboard-only walkthrough of every feature". After the repo is submitted with Enter, nothing here uses
-// the mouse. Also: share links restore a view; hostile share links are ignored (SECURITY T15).
+// gate: "keyboard-only walkthrough of every feature". After the repo is submitted with Enter, nothing here uses
+// the mouse. Also: share links restore a view; hostile share links are ignored.
 const ID = 'e'.repeat(32);
 
 async function openCity(page: Page): Promise<void> {

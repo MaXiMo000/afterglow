@@ -1,6 +1,6 @@
 """Turn a public repository's history into a `core.schema.Result`.
 
-Two clones, both bare and capped (docs/PLAN.md section 3):
+Two clones, both bare and capped:
 - history: blobless, full history. Read with `git log --name-status -z -M100%`: exact renames (same blob id,
   so a pure move) are followed with no file contents; similarity-based detection would need the blobs, which a
   blobless clone does not have (and lazy fetching is disabled).
@@ -275,12 +275,12 @@ def build_result(repo: RepoRef, sha: str, commits: list[Commit], history_truncat
 
     # History cut at the commit cap: files at HEAD not touched in the window still belong in the city. They
     # get changes=0 (which no file inside the window can have) and the window's first date as an upper bound
-    # for birth and last change; the UI labels them "before the analysed history" (CLAUDE.md rule 6).
+    # for birth and last change; the UI labels them "before the analysed history".
     if history_truncated and head_paths is not None and not paths_truncated:
         window_start = commits[-1].time
         for p in head_paths:
             if p not in stats:
-                if len(stats) >= caps.tracked_paths:  # same memory cap as paths seen in history (SECURITY T3)
+                if len(stats) >= caps.tracked_paths:  # same memory cap as paths seen in history
                     paths_truncated = True
                     break
                 stats[p] = FileStats(last=window_start, birth=window_start, alive=True)
@@ -420,7 +420,7 @@ def owners(counts: Counter[int], rank_of: dict[int, int]) -> list[Owner]:
 
 
 def co_change(commits: list[Commit], file_index: dict[bytes, int], files: list[File]) -> list[Coupling]:
-    # ponytail: pair counting is O(commits x files_per_commit^2) in memory; bounded by COUPLING_WINDOW and
+    # Known limit: pair counting is O(commits x files_per_commit^2) in memory; bounded by COUPLING_WINDOW and
     # COUPLING_MAX_FILES (<= 1.9M pairs worst case). Switch to a count-min sketch if that ever bites.
     pairs: Counter[tuple[int, int]] = Counter()
     for c in commits:

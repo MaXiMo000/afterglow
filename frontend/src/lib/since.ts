@@ -1,5 +1,5 @@
 /**
- * "What changed since last time" (docs/ROADMAP.md #8): compare this analysis with the previous stored one of the
+ * "What changed since last time": compare this analysis with the previous stored one of the
  * same repository, file by file (by path). Uses only fields both results have, so it is exact for the files in both.
  */
 import type { Result } from './result';

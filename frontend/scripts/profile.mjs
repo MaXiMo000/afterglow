@@ -1,4 +1,4 @@
-// A7 profiling against the live stack (docs/PERF-LOG.md). Real GPU via ANGLE; CPU slowdown via CDP as a stand-in for
+// profiling against the live stack. Real GPU via ANGLE; CPU slowdown via CDP as a stand-in for
 // slower devices. It is NOT a real phone: record results as "desktop, N x CPU throttle", never as device numbers.
 //
 //   node scripts/profile.mjs frames [repo]        frame time, first frame, worst input delay: tier x CPU throttle

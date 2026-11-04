@@ -1,5 +1,5 @@
-"""Public API v1 (docs/PLAN.md section 4). Every response body is either a fixed shape or a stored,
-schema-validated result; request data is never echoed back (SECURITY T14).
+"""Public API v1. Every response body is either a fixed shape or a stored,
+schema-validated result; request data is never echoed back.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def _err(code: str, status: int, retry_after: float | None = None) -> JSONRespon
 
 
 class ValidatedBodies:
-    """Re-validate a stored result before serving it (SECURITY T12).
+    """Re-validate a stored result before serving it.
 
     Remembers the SHA-256 of bodies that passed, not the bodies (a 50k-file result is ~10 MB), so a changed
     body is always validated again. Run it in a worker thread: validating a result at the file cap takes
@@ -85,7 +85,7 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
 
     async def wait_estimate(conn: db.Conn, ahead: int) -> int | None:
         """Seconds until a job with `ahead` queued jobs before it starts: each worker takes one job per median
-        run time of recent jobs. An estimate, and labelled one in the UI (CLAUDE.md rule 6)."""
+        run time of recent jobs. An estimate, and labelled one in the UI."""
         if not run_stats or time.monotonic() - run_stats[0][0] > RUN_STATS_S:
             run_stats[:] = [(time.monotonic(), await db.run_stats(conn))]
         stats = run_stats[0][1]
@@ -105,7 +105,7 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
 
     async def read_json(request: Request) -> tuple[str, dict[str, object]] | JSONResponse:
         """Request checks shared by every POST: CSRF controls, size, rate limits, a JSON object body."""
-        # SECURITY T10: JSON only; custom header required (cross-origin needs CORS, which we never grant);
+        # JSON only; custom header required (cross-origin needs CORS, which we never grant);
         # Origin checked when present.
         if request.headers.get("content-type", "").split(";")[0].strip() != "application/json":
             return _err("unsupported_media_type", 415)
@@ -163,7 +163,7 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
 
     @router.post("/prs")
     async def create_pr(request: Request) -> Response:
-        """PR overlay (docs/ROADMAP.md #7): the files an open PR changes. Same limits as an analysis."""
+        """PR overlay: the files an open PR changes. Same limits as an analysis."""
         got = await read_json(request)
         if isinstance(got, JSONResponse):
             return got
@@ -218,7 +218,7 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
 
     @router.get("/analyses/{job_id}/previous")
     async def previous(request: Request, job_id: str) -> Response:
-        """The analysis of this repository before this one (ROADMAP #8), re-validated like any result."""
+        """The analysis of this repository before this one, re-validated like any result."""
         job = await load_job(request, job_id)
         if isinstance(job, JSONResponse):
             return job
@@ -334,7 +334,7 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
 
     @router.get("/results/{owner}/{name}")
     async def latest(request: Request, owner: str, name: str) -> Response:
-        """Newest stored result of a repository, for the embeddable city (ROADMAP #12). Never starts work."""
+        """Newest stored result of a repository, for the embeddable city. Never starts work."""
         if wait := read_limit.check(client_of(request)):
             return _err("rate_limited", 429, wait)
         try:
@@ -363,7 +363,7 @@ def build_router(settings: Settings, pool: AsyncConnectionPool | None, hub: Hub 
 
     @router.get("/featured")
     async def featured(request: Request) -> Response:
-        """Start-page gallery (ROADMAP #10): the configured repositories, in order (tiles use the badges)."""
+        """Start-page gallery: the configured repositories, in order (tiles use the badges)."""
         if wait := read_limit.check(client_of(request)):
             return _err("rate_limited", 429, wait)
         return JSONResponse(

@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
-// A3 flows against the real Caddy + CSP, with the API mocked so hostile and broken data can be injected.
+// flows against the real Caddy + CSP, with the API mocked so hostile and broken data can be injected.
 const ID = 'a'.repeat(32);
 const XSS = '<img src=x onerror="window.__xss=1">';
 
@@ -51,7 +51,7 @@ async function violations(page: Page): Promise<() => Promise<string[]>> {
   return () => page.evaluate(() => (window as unknown as { __v: string[] }).__v);
 }
 
-test('hostile paths render as inert text everywhere (T5)', async ({ page }) => {
+test('hostile paths render as inert text everywhere', async ({ page }) => {
   const v = await violations(page);
   let dialog = false;
   page.on('dialog', (d) => ((dialog = true), void d.dismiss()));
@@ -93,7 +93,7 @@ for (const [name, body] of [
   ['file index out of range', result({ files: [{ path: 'a', dir: 9, loc: 1, birth: 1, last: 2, changes: 1, changes_12m: 1, authors: 1, hot: false, dead: false }] })],
   ['too many files', result({ files: Array.from({ length: 50_001 }, () => ({ path: 'a', dir: 0, loc: 1, birth: 1, last: 2, changes: 1, changes_12m: 1, authors: 1, hot: false, dead: false })) })],
 ] as const) {
-  test(`a bad result is refused before rendering (T21): ${name}`, async ({ page }) => {
+  test(`a bad result is refused before rendering: ${name}`, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await mockApi(page, body);

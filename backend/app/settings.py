@@ -1,4 +1,4 @@
-"""Runtime configuration, read from the environment and validated at startup (SECURITY T13, T18).
+"""Runtime configuration, read from the environment and validated at startup.
 
 Invalid configuration raises instead of falling back to a permissive default: fail closed.
 """
@@ -28,7 +28,7 @@ class Settings:
     public_origin: str
     database_url: str = ""  # empty: DB-backed routes answer 503 (unit tests of the app shell)
     ip_key: bytes = b""  # HMAC key for client-IP pseudonyms; raw IPs are never stored
-    featured: tuple[str, ...] = ()  # start-page gallery (ROADMAP #10): canonical owner/name slugs
+    featured: tuple[str, ...] = ()  # start-page gallery: canonical owner/name slugs
 
     @property
     def is_prod(self) -> bool:

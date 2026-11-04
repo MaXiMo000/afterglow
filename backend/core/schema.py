@@ -1,5 +1,5 @@
-"""The analysis result (docs/PLAN.md section 4). Strict, bounded, `extra=forbid`: the only shape the worker
-may write, the API may serve and the store may return (SECURITY T5, T6, T12, T21).
+"""The analysis result. Strict, bounded, `extra=forbid`: the only shape the worker
+may write, the API may serve and the store may return.
 
 Everything that came from a repository (paths, directory names) is re-checked here for control and bidi
 characters, so a bug in the worker's sanitiser cannot leak them to browsers.
@@ -14,7 +14,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
-ANALYSER_VERSION = 5  # 2: files at HEAD come from HEAD's tree (A5 fix). 3: exact renames followed, mailmap,
+ANALYSER_VERSION = 5  # 2: files at HEAD come from HEAD's tree. 3: exact renames followed, mailmap,
 # files older than a truncated window kept (changes=0), per-file quarters, removals per month.
 # 4: files[].href for paths the display form changed, exact removal times. 5: dirs[].owners
 MAX_PATH = 512
@@ -94,7 +94,7 @@ class Dir(_Strict):
     bus_factor: Count  # authors covering >= 50% of commits touching this district (commit-weighted)
     quiet: bool
     # Top MAX_OWNERS authors by commit share, largest first. Authors outside people[] (past MAX_PEOPLE) are
-    # left out but still count in the shares' denominator. Feeds the bus-factor "what if" (ROADMAP #6).
+    # left out but still count in the shares' denominator. Feeds the bus-factor "what if".
     owners: Annotated[list[Owner], Field(max_length=MAX_OWNERS)] = []
 
     @model_validator(mode="after")
@@ -199,7 +199,7 @@ class PrChange(_Strict):
 
 
 class PrResult(_Strict):
-    """Files a pull request changes (docs/ROADMAP.md #7): GitHub's test merge compared with its first parent.
+    """Files a pull request changes: GitHub's test merge compared with its first parent.
     File names and change kinds only, never contents."""
 
     repo: Annotated[str, Field(pattern=r"^[a-z0-9-]{1,39}/[a-z0-9._-]{1,100}$")]

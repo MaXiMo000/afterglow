@@ -1,6 +1,6 @@
 #!/bin/sh
 # Runs once on an empty data directory (docker-entrypoint-initdb.d). Creates the two login roles with passwords
-# from the environment, then the schema. Fails closed if a password is missing or short (SECURITY T18).
+# from the environment, then the schema. Fails closed if a password is missing or short.
 set -eu
 for v in AFTERGLOW_DB_API_PASSWORD AFTERGLOW_DB_WORKER_PASSWORD AFTERGLOW_DB_MAINT_PASSWORD; do
   eval "val=\${$v:-}"

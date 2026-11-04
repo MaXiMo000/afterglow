@@ -1,6 +1,6 @@
-"""API v1 against a real Postgres (SECURITY T1, T6, T7, T10, T11, T12, T14) plus least-privilege grants.
+"""API v1 against a real Postgres plus least-privilege grants.
 
-Needs AFTERGLOW_TEST_ADMIN_URL / _API_URL / _WORKER_URL (see CLAUDE.md). Skipped locally without them; in CI a
+Needs AFTERGLOW_TEST_ADMIN_URL / _API_URL / _WORKER_URL. Skipped locally without them; in CI a
 missing database is an error, not a skip.
 """
 
@@ -190,7 +190,7 @@ def test_rate_limit(client: TestClient) -> None:
 
 
 def test_database_restart_does_not_surface_as_500(client: TestClient) -> None:
-    # Found by the A8 ZAP scan: after Postgres restarted, the pool handed out a dead connection (AdminShutdown -> 500).
+    # Found by a ZAP scan: after Postgres restarted, the pool handed out a dead connection (AdminShutdown -> 500).
     assert post(client, {"repo": "acme/one"})[0] == 202
     user = psycopg.conninfo.conninfo_to_dict(API)["user"]
     with psycopg.connect(ADMIN, autocommit=True) as conn:
@@ -223,7 +223,7 @@ def test_unknown_and_malformed_ids(client: TestClient) -> None:
         r = client.get(f"/api/v1/analyses/{jid}")
         assert r.status_code == 404
         assert r.json() == {"error": "not_found"}
-    assert client.get("/api/v1/analyses").status_code in (404, 405)  # no listing endpoint (T7)
+    assert client.get("/api/v1/analyses").status_code in (404, 405)  # no listing endpoint
 
 
 def test_failed_job_reports_reason_code_only(client: TestClient) -> None:
@@ -364,7 +364,7 @@ def test_readyz_reports_a_stalled_queue(client: TestClient, monkeypatch: pytest.
 
 
 def test_readyz_is_cached(client: TestClient) -> None:
-    """A flood of /readyz requests costs one query per READY_CACHE_S, not one each (SECURITY T11)."""
+    """A flood of /readyz requests costs one query per READY_CACHE_S, not one each."""
     assert client.get("/readyz").json() == {"status": "ok"}
     with psycopg.connect(ADMIN, autocommit=True) as conn:
         conn.execute(

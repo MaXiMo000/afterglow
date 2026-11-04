@@ -1,4 +1,4 @@
-"""PR overlay worker (docs/ROADMAP.md #7): GitHub's test merge vs its first parent, trees only."""
+"""PR overlay worker: GitHub's test merge vs its first parent, trees only."""
 
 from __future__ import annotations
 

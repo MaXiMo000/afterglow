@@ -5,6 +5,24 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- Living City: buildings take a style that says what kind of file they are, from the path, size and dates only.
+  Test files are trees and test-heavy districts become parks, docs are houses, generated or vendored files are
+  warehouses, the largest source files are glass towers, old untouched files are brick, files changed in the last
+  14 days carry a crane (up to 24), and files untouched for two years grow vines. Streets get lamps. `8` shows the
+  city key with counts (open by default, folded on small screens; closing it is remembered on the device), and a
+  button inside it switches to plain boxes.
+- Guided walk (`9`, or the Walk button): scroll, swipe or use the arrow keys to walk at street level from finding to
+  finding (hotspots, the biggest park, a quiet district, a crane site), with a caption and the inspector at each stop.
+  `J`/`K` jump between stops, Esc leaves.
+- Easier to get around: the city moves like a map (drag to move with momentum, right-drag or a modifier to turn and
+  tilt; two fingers pinch, twist and move on touch), held keys ease in and out instead of stepping, and on-screen
+  buttons zoom, turn, tilt and return home.
+- Clearer UI: toolbar buttons have icons, the less frequent actions (share, badge, photo, another repository) sit in
+  a More menu, and help leads with getting around and the most used keys, the rest under "All shortcuts".
+- Phones and tablets: icon-only toolbar on narrow screens, panels as bottom sheets, a compact layout for short
+  (landscape) screens, safe-area insets for notches and home indicators, and larger touch targets.
+- Repository: internal planning notes are no longer published; added SECURITY.md, CONTRIBUTING.md and .env.example.
+  The default start-page gallery lists well-known projects.
 - Touch: every mode a key turns on now has an on-screen way off. Legends (PR, changes since, what-if, weather,
   file types, compare dates, side by side) have a close button; walk mode, recording and a district opened as a city
   show a "Leave walk mode" / "Stop recording" / "Climb out" button under the place name.
@@ -66,7 +84,7 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
   - On histories past the commit cap, files untouched in the analysed window stay in the city, labelled "before".
   - Changes per quarter for the last two years, shown as a sparkline in the file inspector, with a "heating up" /
     "cooling down" trend there, in the hotspot list and in the screen-reader summary.
-  - Compare mode counts removed files. Result size grows ~14% (measured, `docs/PERF-LOG.md`), within budget.
+  - Compare mode counts removed files. Result size grows ~14% (measured), within budget.
 - Clean links: `afterglow.example/owner/name` opens that repository's story, and the address bar follows the loaded
   repository, so a copied URL is shareable as is.
 - Release: images are scanned before they are pushed.

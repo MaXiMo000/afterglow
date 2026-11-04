@@ -1,6 +1,6 @@
 """Queries the API runs as the `afterglow_api` role (SELECT/INSERT on jobs, SELECT on results).
 
-Every statement is parameterised; nothing from a request is ever interpolated into SQL (SECURITY T5).
+Every statement is parameterised; nothing from a request is ever interpolated into SQL.
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ async def create_job(conn: Conn, repo: str, client: str) -> tuple[uuid.UUID, str
 
 
 async def create_pr_job(conn: Conn, repo: str, pr: int, client: str) -> tuple[uuid.UUID, str]:
-    """Like create_job, for a PR overlay (ROADMAP #7): reuse a fresh overlay, else dedupe per (repo, pr)."""
+    """Like create_job, for a PR overlay: reuse a fresh overlay, else dedupe per (repo, pr)."""
     cur = await conn.execute(
         "SELECT merge FROM pr_results WHERE repo = %s AND pr = %s AND created > now() - %s::interval "
         "ORDER BY created DESC LIMIT 1",
@@ -182,7 +182,7 @@ async def get_job(conn: Conn, job_id: uuid.UUID) -> Job | None:
 
 
 async def stalest_featured(conn: Conn, slugs: tuple[str, ...]) -> str | None:
-    """The featured repository most in need of a fresh analysis (ROADMAP #10), or None.
+    """The featured repository most in need of a fresh analysis, or None.
 
     Only while nothing is queued or running, so visitors never wait behind it; skips repositories whose
     newest result is younger than FEATURED_STALE and ones that failed in the last day (a typo or a deleted
@@ -208,7 +208,7 @@ async def stalest_featured(conn: Conn, slugs: tuple[str, ...]) -> str | None:
 
 async def previous_result(conn: Conn, repo: str, sha: str) -> bytes | None:
     """The newest stored result for `repo` from before the one at `sha` (same analyser), for "what changed
-    since last time" (ROADMAP #8). None when there is none (first analysis, or retention removed it)."""
+    since last time". None when there is none (first analysis, or retention removed it)."""
     cur = await conn.execute(
         "SELECT p.body FROM results c JOIN results p ON p.repo = c.repo AND p.analyser = c.analyser "
         "AND p.created < c.created AND p.sha <> c.sha "

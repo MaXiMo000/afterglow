@@ -1,4 +1,4 @@
-"""Repo validation (T1), result schema (T5, T12, T21) and the result store (T12)."""
+"""Repo validation, result schema (T5, T12, T21) and the result store."""
 
 from __future__ import annotations
 

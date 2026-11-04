@@ -1,5 +1,5 @@
 /**
- * Explore panels (EXPERIENCE section 5): inspector drawer, insights, help overlay, mini-map, timeline + compare.
+ * Explore panels: inspector drawer, insights, help overlay, mini-map, timeline + compare.
  * Every value shown is a field of the result or a count derived from it; nothing is estimated.
  */
 import { analysedFrom, beforeWindow, dirBeforeWindow, quarterLabel, removedBetween, shownTrend, trend, TREND_TEXT } from '../lib/history';
@@ -8,9 +8,9 @@ import type { World } from '../world/build';
 import { extensionOf } from '../world/types';
 import { hasOwners, orphaned, OTHER_MIN } from '../world/whatif';
 import { ago, el, fmt, fmtDate, setText } from './dom';
-import { KEYMAP, MOVE_KEYS } from './keymap';
+import { ESSENTIAL, KEYMAP, MOVE_KEYS } from './keymap';
 
-/** Validated GitHub URL for a file at the analysed commit (the only dynamic href in the app, SECURITY T5). */
+/** Validated GitHub URL for a file at the analysed commit (the only dynamic href in the app). */
 export function githubUrl(r: Result, f: Pick<FileRec, 'path' | 'href'>): string | null {
   const m = /^([a-z0-9-]{1,39})\/([a-z0-9._-]{1,100})$/.exec(r.meta.repo);
   if (!m || !/^[0-9a-f]{40,64}$/.test(r.meta.sha)) return null;
@@ -85,7 +85,7 @@ export class Inspector {
       kids.push(ul);
     } else kids.push(el('p', 'No strong co-change partners in the latest 10,000 commits.', 'sub'));
     if ((r.dirs[f.dir]?.files ?? 0) > 1) {
-      // Drill-down (ROADMAP #9): the district as its own city.
+      // Drill-down: the district as its own city.
       const b = el('button', `Open ${d ? d.name : 'district'} as a city`, 'chip');
       b.type = 'button';
       b.addEventListener('click', () => this.onDrill(f.dir));
@@ -121,7 +121,7 @@ export class Inspector {
 
 const SVG = 'http://www.w3.org/2000/svg';
 
-/** Changes per quarter as a small bar chart, with the same numbers as text for screen readers (EXPERIENCE 5). */
+/** Changes per quarter as a small bar chart, with the same numbers as text for screen readers. */
 function quarterHistory(r: Result, f: FileRec): HTMLElement[] {
   const head = r.meta.span[1];
   if (r.meta.analyser < 3) return []; // older analyses: the closing note says what is missing
@@ -281,7 +281,7 @@ export class Insights {
     this.root.querySelector('ol')!.replaceChildren(...rows);
   }
 
-  /** "What if Contributor N left?" (docs/ROADMAP.md #6): a native select, so it is keyboard and screen-reader ready. */
+  /** "What if Contributor N left?": a native select, so it is keyboard and screen-reader ready. */
   private whatIfControl(r: Result): HTMLElement {
     const box = el('div', null, 'whatif');
     if (!hasOwners(r)) {
@@ -311,23 +311,30 @@ export function whatIfSentence(r: Result, person: number): string {
 }
 
 export function renderHelp(root: HTMLElement): void {
-  const groups = new Map<string, HTMLElement>();
   const move = el('dl');
   for (const m of MOVE_KEYS) move.append(el('dt', m.keys), el('dd', m.label));
-  const sections: HTMLElement[] = [el('h3', 'Move'), move];
+  const most = el('dl');
+  for (const id of ESSENTIAL) {
+    const def = KEYMAP.find((d) => d.id === id);
+    if (def) most.append(el('dt', def.keys.join(' or ')), el('dd', def.label));
+  }
+  // Everything else, grouped, folded away so the first screen stays short.
+  const all = el('details');
+  all.append(el('summary', 'All shortcuts'));
+  const groups = new Map<string, HTMLElement>();
   for (const def of KEYMAP) {
     let dl = groups.get(def.group);
     if (!dl) {
       dl = el('dl');
       groups.set(def.group, dl);
-      sections.push(el('h3', def.group), dl);
+      all.append(el('h3', def.group), dl);
     }
     dl.append(el('dt', def.keys.join(' or ')), el('dd', def.label));
   }
-  root.replaceChildren(...sections);
+  root.replaceChildren(el('h3', 'Getting around'), move, el('h3', 'Most used'), most, all);
 }
 
-/** Mini-map: district discs, the camera's ground frustum, click to fly (EXPERIENCE section 5). */
+/** Mini-map: district discs, the camera's ground frustum, click to fly. */
 export class MiniMap {
   readonly canvas = document.getElementById('minimap') as HTMLCanvasElement;
   private scale = 1;
@@ -390,7 +397,7 @@ export class MiniMap {
   }
 }
 
-/** Compare categories for two dates, from fields the analysis has (EXPERIENCE section 5). */
+/** Compare categories for two dates, from fields the analysis has. */
 export function compareCounts(
   r: Result,
   a: number,

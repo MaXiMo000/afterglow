@@ -1,4 +1,4 @@
-/** Same-origin API client (docs/PLAN.md section 4). Only fixed paths and a validated 32-hex id are ever used. */
+/** Same-origin API client. Only fixed paths and a validated 32-hex id are ever used. */
 import type { RepoRef } from './repo';
 import { validatePr, type Pr } from './pr';
 import { validateResult, type Result } from './result';
@@ -93,7 +93,7 @@ export function followProgress(id: string, onProgress: (p: Progress) => void, si
   });
 }
 
-/** Queue a PR overlay (docs/ROADMAP.md #7). Same request rules as an analysis. */
+/** Queue a PR overlay. Same request rules as an analysis. */
 export async function startPr(repo: string, pr: number): Promise<{ id: string; done: boolean }> {
   const res = await fetch('/api/v1/prs', {
     method: 'POST',
@@ -114,7 +114,7 @@ export async function fetchPr(id: string): Promise<Pr> {
   return validatePr(await res.json());
 }
 
-/** The analysis of the same repository before this one (docs/ROADMAP.md #8), or null if none is stored. */
+/** The analysis of the same repository before this one, or null if none is stored. */
 export async function fetchPrevious(id: string): Promise<Result | null> {
   if (!ID.test(id)) throw new ApiError('bad_response');
   const res = await fetch(`/api/v1/analyses/${id}/previous`, { credentials: 'omit' });

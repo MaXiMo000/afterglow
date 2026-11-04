@@ -1,4 +1,4 @@
-"""Client keys and concurrency caps (SECURITY T11): unit tests, no database."""
+"""Client keys and concurrency caps: unit tests, no database."""
 
 from __future__ import annotations
 

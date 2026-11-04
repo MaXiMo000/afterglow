@@ -1,9 +1,9 @@
 /**
- * WebGL2 renderer, originally ported from the design prototype (see docs/PLAN.md section 3 for why raw WebGL2, not Three.js).
+ * WebGL2 renderer, originally ported from the design prototype (raw WebGL2, no engine: small bundle, full control of the draw budget).
  *
- * Additions over that prototype (EXPERIENCE section 9): shaders compile in parallel (KHR_parallel_shader_compile)
+ * Additions over that prototype: shaders compile in parallel (KHR_parallel_shader_compile)
  * and are polled instead of blocking; dynamic resolution holds the frame budget; hover/click use a GPU ID pass read
- * back asynchronously through a pixel-pack buffer; instance counts come from validated data only (SECURITY T21).
+ * back asynchronously through a pixel-pack buffer; instance counts come from validated data only.
  */
 import { mirrorY, rng, type M4, type V3 } from './math';
 import { SRC } from './shaders';
@@ -20,9 +20,9 @@ export const TIERS: readonly Tier[] = [
 
 export type Camera = { vp: M4; vpR: M4; pos: V3; posR: V3; right: V3; up: V3; fwd: V3; tanH: number; near: number; far: number };
 export type Params = { t: number; fog: number; hot: number; focus: number; focusAmt: number; hover: number; fade: number; exposure: number; grain: number; ca: number;
-  /** Explore toggles (A5): coupling arcs, lanterns, and compare mode [on, fromT, toT] in normalised history time. */
+  /** Explore toggles: coupling arcs, lanterns, and compare mode [on, fromT, toT] in normalised history time. */
   arcs: number; lanterns: number; cmp: [number, number, number];
-  /** Effects (A6): hover lift 0..1, selected file (-1 none), focus distance for depth of field (0 off), DOF amount,
+  /** Effects: hover lift 0..1, selected file (-1 none), focus distance for depth of field (0 off), DOF amount,
    *  motion 0/1 (reduced motion turns off ripples, heartbeat and trails), flow 0..1 = how fast history time is
    *  moving (growth glow, birth rings and half-grown heights only show while it moves). */
   lift: number; sel: number; focusDist: number; dof: number; motion: number; flow: number;
@@ -33,7 +33,9 @@ export type Params = { t: number; fog: number; hot: number; focus: number; focus
   /** Bus-factor what-if highlight, 0..1 (eased); which buildings is set with setRisk. */
   risk: number;
   /** PR overlay, 0..1 (eased); which buildings is set with setPr. */
-  pr: number };
+  pr: number;
+  /** Living City (building styles, trees, cranes, parks, streetlights), 0..1 (eased); 0 is the plain box city. */
+  living: number };
 
 const FOG_COL: V3 = [0.075, 0.17, 0.19];
 const MOON: V3 = [-0.42, 0.36, -0.83];
@@ -65,10 +67,11 @@ export class Renderer {
   private cw = 2;
   private ch = 2;
   private world: World | null = null;
-  private vaos: { bld?: WebGLVertexArrayObject; pad?: WebGLVertexArrayObject; beam?: WebGLVertexArrayObject; fire?: WebGLVertexArrayObject; lant?: WebGLVertexArrayObject; mist?: WebGLVertexArrayObject; rain?: WebGLVertexArrayObject; water?: WebGLVertexArrayObject; ripple?: WebGLVertexArrayObject; curves: WebGLVertexArrayObject[] } = { curves: [] };
+  private vaos: { bld?: WebGLVertexArrayObject; pad?: WebGLVertexArrayObject; beam?: WebGLVertexArrayObject; fire?: WebGLVertexArrayObject; lant?: WebGLVertexArrayObject; mist?: WebGLVertexArrayObject; rain?: WebGLVertexArrayObject; water?: WebGLVertexArrayObject; ripple?: WebGLVertexArrayObject; crane?: WebGLVertexArrayObject; curves: WebGLVertexArrayObject[] } = { curves: [] };
   private buffers: WebGLBuffer[] = [];
   private n = 0;
   private padCount = 0;
+  private craneCount = 0;
   private instVB: WebGLBuffer | null = null;
   private lanternBuf: WebGLBuffer | null = null;
   private lanternCount = 0;
@@ -215,14 +218,14 @@ export class Renderer {
       this.attr(1, 3, 24, 12);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.cube.ib);
       gl.bindBuffer(gl.ARRAY_BUFFER, instVB);
-      for (let k = 0; k < 4; k++) this.attr(2 + k, 4, INST * 4, k * 16, 1);
+      for (let k = 0; k < 5; k++) this.attr(2 + k, 4, INST * 4, k * 16, 1);
     });
 
     // District pads: disc + skirt, per-vertex district values (birth, activity, last touch, palette).
     const pv: number[] = [];
     for (const d of w.dists) {
       const seg = Math.min(96, Math.max(24, Math.round(d.r * 3)));
-      const dv = [d.birth, d.act, d.last, d.pal];
+      const dv = [d.birth, d.act, d.last, d.pal, d.park];
       for (let s = 0; s < seg; s++) {
         const a0 = (s / seg) * Math.PI * 2;
         const a1 = ((s + 1) / seg) * Math.PI * 2;
@@ -236,13 +239,14 @@ export class Renderer {
         v(x1, 0.25, z1, 1), v(x0, -0.15, z0, 1.5), v(x1, -0.15, z1, 1.5);
       }
     }
-    this.padCount = pv.length / 9;
+    this.padCount = pv.length / 10;
     const padVB = this.buf(new Float32Array(pv));
     this.vaos.pad = this.vao(() => {
       gl.bindBuffer(gl.ARRAY_BUFFER, padVB);
-      this.attr(0, 3, 36, 0);
-      this.attr(1, 2, 36, 12);
-      this.attr(2, 4, 36, 20);
+      this.attr(0, 3, 40, 0);
+      this.attr(1, 2, 40, 12);
+      this.attr(2, 4, 40, 20);
+      this.attr(3, 1, 40, 36);
     });
 
     this.vaos.curves = w.curves.map((c) => {
@@ -273,7 +277,7 @@ export class Renderer {
       this.buf(fc), this.attr(2, 3);
     });
     this.lanternCount = w.lanterns.length;
-    // A6: each lantern draws its head plus TRAIL fading samples of where it has been.
+    // each lantern draws its head plus TRAIL fading samples of where it has been.
     const pts = this.lanternCount * (1 + TRAIL);
     const lm = new Float32Array(pts * 4);
     const lc = new Float32Array(pts * 3);
@@ -294,7 +298,7 @@ export class Renderer {
       this.buf(lc), this.attr(2, 3);
     });
 
-    // Ripples and the selection ring share the building instance buffer (A6).
+    // Ripples and the selection ring share the building instance buffer.
     this.vaos.ripple = this.vao(() => {
       this.buf(new Float32Array([-1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, 1])), this.attr(0, 2);
       gl.bindBuffer(gl.ARRAY_BUFFER, instVB);
@@ -310,6 +314,20 @@ export class Renderer {
       this.buf(hd), this.attr(1, 4, 16, 0, 1);
     });
 
+    // Living City cranes: mast, jib with counter-jib, two ties to the apex and the hook cable (LINES).
+    const cranes: number[] = [];
+    w.living.crane.forEach((c, fi) => {
+      if (c) cranes.push(w.pos[fi * 3]!, w.pos[fi * 3 + 1]!, w.pos[fi * 3 + 2]!, w.inst[fi * INST + 6]!);
+    });
+    this.craneCount = cranes.length / 4;
+    this.vaos.crane = this.vao(() => {
+      // (along the jib, height above the mast top, 1 = mast foot)
+      const seg = [[0, 0, 1], [0, 0, 0], [-0.8, 0, 0], [2.8, 0, 0], [0, 0, 0], [0, 0.7, 0], [0, 0.7, 0], [2.8, 0, 0],
+        [0, 0.7, 0], [-0.8, 0, 0], [2.3, 0, 0], [2.3, -1.3, 0]]; // prettier-ignore
+      this.buf(new Float32Array(seg.flat())), this.attr(0, 3);
+      this.buf(new Float32Array(cranes.length ? cranes : [0, 0, 0, 2])), this.attr(1, 4, 16, 0, 1);
+    });
+
     // Mist banks (decorative).
     const mist = new Float32Array(MAX_MIST * 4);
     for (let i = 0; i < MAX_MIST; i++) {
@@ -322,7 +340,7 @@ export class Renderer {
       this.buf(mist), this.attr(1, 4, 16, 0, 1);
     });
 
-    // Weather (ROADMAP #5): rain drops spread over the rainy districts by area (fog is a shader term, no geometry).
+    // Weather: rain drops spread over the rainy districts by area (fog is a shader term, no geometry).
     const wx = weather(w.result);
     const rainD = wx.rain.map((i) => w.dists[i]!).filter(Boolean);
     const area = rainD.reduce((s, d) => s + d.r * d.r, 0) || 1;
@@ -388,7 +406,7 @@ export class Renderer {
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
     const rbs: WebGLRenderbuffer[] = [];
     if (depth === 'texture') {
-      // Sampled by the depth-of-field pass (A6).
+      // Sampled by the depth-of-field pass.
       const d = gl.createTexture()!;
       gl.bindTexture(gl.TEXTURE_2D, d);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, w, h, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
@@ -535,6 +553,7 @@ export class Renderer {
     gl.uniform3fv(u['uRim']!, RIM);
     gl.uniform1f(u['uFlow']!, P.flow);
     gl.uniform1f(u['uWeather']!, this.tier.rain ? P.weather : 0);
+    gl.uniform1f(u['uLiving']!, P.living);
     gl.bindVertexArray(this.vaos.pad!);
     gl.drawArrays(gl.TRIANGLES, 0, this.padCount);
 
@@ -557,6 +576,7 @@ export class Renderer {
     gl.uniform1f(u['uPr']!, P.pr);
     gl.uniform1f(u['uMotion']!, P.motion);
     gl.uniform1f(u['uWeather']!, this.tier.rain ? P.weather : 0);
+    gl.uniform1f(u['uLiving']!, P.living);
     gl.uniform3fv(u['uTypeCol']!, TYPE_COL);
     gl.uniform3fv(u['uCmp']!, refl ? [0, 0, 0] : P.cmp);
     gl.bindVertexArray(this.vaos.bld!);
@@ -596,6 +616,16 @@ export class Renderer {
       gl.uniform1f(u['uBeat']!, P.motion);
       gl.bindVertexArray(this.vaos.beam!);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, w.hot.length);
+    }
+    if (this.craneCount && P.living > 0.01) {
+      u = this.use('crane');
+      gl.uniformMatrix4fv(u['uVP']!, false, vp);
+      gl.uniform1f(u['uT']!, P.t);
+      gl.uniform1f(u['uTime']!, time);
+      gl.uniform1f(u['uMotion']!, P.motion);
+      gl.uniform1f(u['uLiving']!, P.living);
+      gl.bindVertexArray(this.vaos.crane!);
+      gl.drawArraysInstanced(gl.LINES, 0, 12, this.craneCount);
     }
     u = this.use('pts');
     gl.uniformMatrix4fv(u['uVP']!, false, vp);

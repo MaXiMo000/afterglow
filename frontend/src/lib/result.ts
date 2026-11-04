@@ -1,5 +1,5 @@
 /**
- * The analysis result (docs/PLAN.md section 4) and a strict client-side check (SECURITY T21).
+ * The analysis result and a strict client-side check.
  * The server already validated it; this second check runs before any GPU buffer is sized from server data, so a
  * compromised or buggy server cannot make the renderer allocate unbounded memory or read NaN.
  */

@@ -1,5 +1,5 @@
 /**
- * Story camera rig: a pure function of scroll progress (EXPERIENCE sections 1-2). Same p in, same pose out,
+ * Story camera rig: a pure function of scroll progress. Same p in, same pose out,
  * whichever direction you scrolled from, so reverse scroll is exactly symmetric.
  *
  * Chapter i owns the window centred on centers[i]; the camera rests near each centre (eased remap) and travels

@@ -9,13 +9,21 @@ Paste a public GitHub repository and its whole history grows into a night city y
 | What you see | What it means |
 | --- | --- |
 | Building | A file; height is its size in lines |
+| Glass tower / brick / warehouse | The largest source files / old files untouched this year / generated, vendored or lock files |
+| Tree, park | A test file; districts made mostly of tests become parks |
+| House | Docs and text files |
+| Crane | Changed in the last 14 days of the analysed history |
+| Vines | No change in over two years |
 | Lit windows | Recent activity |
 | Red beam | Hotspot: changed often in the last year by three people or fewer |
 | Dark, fogged district | Untouched for over two years |
 | Lanterns | Contributors (pseudonymous), roaming the files they work on |
 | Arcs | Folders whose files change together |
 
-A short scroll story walks through the findings, then the city opens for free exploration: search (`/`), an insights
+A short scroll story walks through the findings, then the city opens for free exploration. It moves like a map: drag to
+move, right-drag (or two fingers) to turn, wheel or pinch to zoom, with on-screen buttons for the same. The city key
+explains every building style. A guided walk (`9`) takes you at street level from finding to finding as you scroll,
+with a caption at each stop. It works on phones and tablets in either orientation. Also: search (`/`), an insights
 panel (hotspots, bus factor, quiet areas, coupling), a timeline to replay history, compare two dates, share links,
 photo mode, a graphics-quality setting, and a full keyboard map (`?`). The browser's Back button, Esc and Backspace
 step back through city, story and start page. Everything also works as a plain table, with or without WebGL.
@@ -46,13 +54,23 @@ scripts/dev-env.sh                  # writes deploy/.env with random secrets
 docker compose -f deploy/compose.yaml --profile worker up -d --build --wait
 ```
 
-Open https://localhost:8443 (a local certificate, so the browser warns once). Development and test commands are in
-[`CLAUDE.md`](CLAUDE.md).
+Open https://localhost:8443 (a local certificate, so the browser warns once). Configuration keys are listed in
+[`.env.example`](.env.example).
+
+## Tests
+
+```bash
+(cd frontend && npm ci --ignore-scripts && npm run typecheck && npm test && npm run build && npm run e2e)
+eval "$(scripts/test-db.sh)"        # Postgres for the backend tests
+(cd backend && pip install --require-hashes --no-deps -r requirements-dev.lock   && pip install --no-deps --no-build-isolation -e .   && ruff check . && mypy --strict app core worker egress && pytest)
+```
+
+More in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Deploy
 
 On any Linux server with Docker and a domain name: point DNS at the server, add five lines to `deploy/.env`, and
-start the same stack; Caddy gets the HTTPS certificate on its own. Step by step: [`docs/DEPLOY.md`](docs/DEPLOY.md).
+start the same stack; Caddy gets the HTTPS certificate on its own. Step by step: [`docs/DEPLOY.md`](docs/DEPLOY.md), including operations and troubleshooting.
 
 Release images are published to GHCR with build provenance; pin them by digest from the
 [release notes](https://github.com/MaXiMo000/afterglow/releases) and check them with
@@ -61,19 +79,8 @@ Release images are published to GHCR with build provenance; pin them by digest f
 ## Security and quality
 
 Every pull request runs typed checks, unit and end-to-end tests (including accessibility, CSP and performance
-budgets), CodeQL, Semgrep, Trivy, gitleaks and dependency audits. The threat model is in
-[`docs/SECURITY.md`](docs/SECURITY.md); reproducible evidence (sandbox trace, ZAP, load tests) is in
-[`docs/SECURITY-EVIDENCE.md`](docs/SECURITY-EVIDENCE.md). An independent review has not been done yet.
-Please report vulnerabilities privately through GitHub's "Report a vulnerability".
-
-| Doc | Contents |
-| --- | --- |
-| [`docs/DEPLOY.md`](docs/DEPLOY.md) | Running it on your own server, operations, troubleshooting |
-| [`docs/PLAN.md`](docs/PLAN.md) | Product, architecture, decisions, API, performance budgets |
-| [`docs/EXPERIENCE.md`](docs/EXPERIENCE.md) | Scroll, camera, input, motion and UI specification |
-| [`docs/SECURITY.md`](docs/SECURITY.md) | Threats, controls and the launch checklist |
-| [`docs/SECURITY-EVIDENCE.md`](docs/SECURITY-EVIDENCE.md) | How each security claim was verified |
-| [`docs/PERF-LOG.md`](docs/PERF-LOG.md) | Measured performance |
+budgets), CodeQL, Semgrep, Trivy, gitleaks and dependency audits. How the service is protected, and how to
+report a problem privately: [`SECURITY.md`](SECURITY.md).
 
 ## License
 

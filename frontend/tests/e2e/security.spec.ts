@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mock } from './fixture';
 
-// SECURITY T8 / T20: the page runs with zero CSP or Trusted Types violations and talks only to its own origin.
+// The page runs with zero CSP or Trusted Types violations and talks only to its own origin.
 // The "controls are live" tests prove the policy is actually enforced, so removing a directive fails CI.
 
 type Violation = { directive: string; blocked: string };

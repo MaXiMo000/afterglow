@@ -1,5 +1,5 @@
 -- Afterglow schema. Applied once by deploy/db/init.sh as the database owner.
--- Least privilege (SECURITY T4, T7): the API may create jobs and read results; the worker may claim and update
+-- Least privilege: the API may create jobs and read results; the worker may claim and update
 -- jobs and write results. Neither role can delete anything or touch the other's columns; only the retention role
 -- (afterglow_maint) deletes, and it can do nothing else.
 
@@ -13,7 +13,7 @@ CREATE TABLE results (
 );
 CREATE INDEX results_recent ON results (repo, created DESC);
 
--- PR overlays (ROADMAP #7): the files a public PR changes (paths and change kinds only), keyed by GitHub's test merge.
+-- PR overlays: the files a public PR changes (paths and change kinds only), keyed by GitHub's test merge.
 CREATE TABLE pr_results (
   repo      text    NOT NULL CHECK (repo ~ '^[a-z0-9-]{1,39}/[a-z0-9._-]{1,100}$'),
   pr        integer NOT NULL CHECK (pr BETWEEN 1 AND 10000000),
@@ -36,7 +36,7 @@ CREATE TABLE jobs (
   reason    text CHECK (reason ~ '^[a-z_]{1,32}$'),
   sha       text,
   analyser  integer,
-  kind      text NOT NULL DEFAULT 'analysis' CHECK (kind IN ('analysis', 'pr')),  -- pr: PR overlay (ROADMAP #7)
+  kind      text NOT NULL DEFAULT 'analysis' CHECK (kind IN ('analysis', 'pr')),  -- pr: PR overlay
   pr        integer CHECK (pr BETWEEN 1 AND 10000000),
   created   timestamptz NOT NULL DEFAULT now(),
   updated   timestamptz NOT NULL DEFAULT now(),
@@ -48,12 +48,12 @@ CREATE TABLE jobs (
   -- A PR job's sha is the test merge, not a result: analyser stays NULL, so the results foreign key is skipped.
   CONSTRAINT jobs_pr_no_analyser CHECK (kind = 'analysis' OR analyser IS NULL)
 );
--- One active job per repository, and per PR of it (SECURITY T11: dedupe).
+-- One active job per repository, and per PR of it (dedupe).
 CREATE UNIQUE INDEX jobs_one_active_per_repo ON jobs (repo, (coalesce(pr, 0))) WHERE status IN ('queued', 'running');
 CREATE INDEX jobs_queue ON jobs (created) WHERE status = 'queued';
 CREATE INDEX jobs_client_active ON jobs (client) WHERE status IN ('queued', 'running');
 
--- Privacy (SECURITY T6, frontend/privacy.html): the client pseudonym exists only for the per-client cap on active jobs.
+-- Privacy (see frontend/privacy.html): the client pseudonym exists only for the per-client cap on active jobs.
 -- Once a job is done or failed it is replaced with zeros, on every path (worker, reaper, cache-hit insert).
 CREATE FUNCTION jobs_forget_client() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN

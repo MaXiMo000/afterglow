@@ -1,5 +1,5 @@
 /**
- * Command palette v2 (EXPERIENCE section 5): fuzzy search over files, districts, people (pseudonyms) and actions,
+ * Command palette v2: fuzzy search over files, districts, people (pseudonyms) and actions,
  * with recent items. ARIA combobox pattern inside a modal <dialog> (focus trapped, Esc closes, focus returns).
  */
 import { el } from './dom';

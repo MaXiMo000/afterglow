@@ -73,7 +73,7 @@ void main(){
   } else rc=skyColor(reflect(-V,N));
   vec3 c=mix(deep,rc,refl);
   vec3 Lm=normalize(uMoonDir);vec3 R=reflect(-Lm,N);
-  float far=smoothstep(25.,260.,dist);/* A6: filtered glint - wider, dimmer highlight with distance */
+  float far=smoothstep(25.,260.,dist);/* filtered glint - wider, dimmer highlight with distance */
   c+=vec3(.75,.88,1.)*pow(max(dot(R,V),0.),mix(220.,28.,far))*min(2.2,60./(dist+20.))*mix(1.,.22,far);
   float fg=1.-exp(-dist*uFog*.7);
   c=mix(c,uFogCol,fg*.9);
@@ -85,32 +85,50 @@ uniform mat4 uVP;uniform float uT,uTime,uHover,uLift,uFlow;
 `;
 SRC.bld={vs:H+`
 layout(location=0) in vec3 aPos;layout(location=1) in vec3 aNor;
-layout(location=2) in vec4 iA;layout(location=3) in vec4 iB;layout(location=4) in vec4 iC;layout(location=5) in vec4 iD;
-`+BUILDING_COMMON+`
-out vec3 vW;out vec3 vN;out vec2 vXZ;out vec2 vSize;out vec4 vB;out vec4 vC;out float vG;out float vTop;flat out float vInst;flat out float vDist;flat out float vType;flat out float vRisk;flat out float vPr;
+layout(location=2) in vec4 iA;layout(location=3) in vec4 iB;layout(location=4) in vec4 iC;layout(location=5) in vec4 iD;layout(location=6) in vec4 iE;
+`+BUILDING_COMMON+`uniform float uLiving;
+out vec3 vW;out vec3 vN;out vec2 vXZ;out vec2 vSize;out vec4 vB;out vec4 vC;out float vG;out float vTop;flat out float vInst;flat out float vDist;flat out float vType;flat out float vRisk;flat out float vPr;flat out float vStyle;flat out float vCrane;
 void main(){
-  vType=iD.y;vRisk=iD.z;vPr=iD.w;
+  vType=iD.y;vRisk=iD.z;vPr=iD.w;vStyle=iE.x;vCrane=iE.y;
   float g=clamp((uT-iB.y)/.03,0.,1.);
   float ge=1.-pow(1.-g,3.);ge*=1.+.06*sin(g*3.14159);
   if(g<=0.){gl_Position=vec4(2.,2.,2.,1.);return;}
   float h=iB.x*mix(1.,ge,uFlow);/* uFlow: how fast history is moving (0 = frozen: no half-grown buildings) */
-  /* A6: hover lift - the hovered building rises a little */
+  /* hover lift - the hovered building rises a little */
   float lift=step(abs(float(gl_InstanceID)-uHover),.5)*uLift;
   h*=1.+.07*lift;
-  vec3 w=vec3(iA.x+aPos.x*iA.z,.28+.35*lift+aPos.y*h,iA.y+aPos.z*iA.w);
-  vW=w;vN=aNor;vXZ=aPos.xz+.5;vSize=iA.zw;vB=iB;vC=iC;vG=g;vTop=.28+h;vInst=float(gl_InstanceID);vDist=iD.x;
+  /* Living City shapes (uLiving eases 0..1 back to plain boxes): glass towers taper, test files are pyramid trees,
+     docs are houses with a sloping roof. Only the top four corners move, so the footprint (and walk collision) stays. */
+  vec2 xz=aPos.xz;float top=step(.5,aPos.y);
+  float sty=iE.x;
+  float tw=step(.5,sty)*step(sty,1.5),tr=step(3.5,sty)*step(sty,4.5),hs=step(4.5,sty);
+  xz*=mix(1.,mix(1.,.78,tw)*mix(1.,.04,tr),top*uLiving);
+  float roof=hs*top*step(0.,aPos.x)*min(iA.z,iA.w)*.55*uLiving;
+  vec3 w=vec3(iA.x+xz.x*iA.z,.28+.35*lift+aPos.y*h+roof,iA.y+xz.y*iA.w);
+  vec3 nor=aNor;if(tr*uLiving>.5&&abs(aNor.y)<.5)nor=normalize(aNor+vec3(0.,.45,0.));
+  vW=w;vN=nor;vXZ=aPos.xz+.5;vSize=iA.zw;vB=iB;vC=iC;vG=g;vTop=.28+h;vInst=float(gl_InstanceID);vDist=iD.x;
   gl_Position=uVP*vec4(w,1.);
 }`,
 fs:H+NOISE+`
-in vec3 vW;in vec3 vN;in vec2 vXZ;in vec2 vSize;in vec4 vB;in vec4 vC;in float vG;in float vTop;flat in float vInst;flat in float vDist;flat in float vType;flat in float vRisk;flat in float vPr;
-uniform float uT,uTime,uFog,uHot,uFocus,uFocusAmt,uHover,uLift,uFlow,uType,uWeather,uRisk,uPr,uMotion;uniform vec3 uCam,uFogCol,uCmp;uniform vec3 uPal[5];uniform vec3 uTypeCol[10];/* PORT: 5 palette kinds, not 12 districts */
+in vec3 vW;in vec3 vN;in vec2 vXZ;in vec2 vSize;in vec4 vB;in vec4 vC;in float vG;in float vTop;flat in float vInst;flat in float vDist;flat in float vType;flat in float vRisk;flat in float vPr;flat in float vStyle;flat in float vCrane;
+uniform float uT,uTime,uFog,uHot,uFocus,uFocusAmt,uHover,uLift,uFlow,uType,uWeather,uRisk,uPr,uMotion,uLiving;uniform vec3 uCam,uFogCol,uCmp;uniform vec3 uPal[5];uniform vec3 uTypeCol[10];/* PORT: 5 palette kinds, not 12 districts */
 out vec4 o;
 void main(){
   vec3 N=normalize(vN);vec3 tc=uCam-vW;float dist=length(tc);vec3 V=tc/dist;
   /* Colour by file type (uType eases 0..1): facades take a deep shade of the type colour, roofs a brighter one;
      windows, rim light and fog stay, so it is still the night city. */
   vec3 tcol=uTypeCol[int(vType+.5)];
-  vec3 base=mix(uPal[int(vC.x+.5)],tcol*.42,.85*uType);
+  vec3 base=uPal[int(vC.x+.5)];
+  /* Living City materials, blended with the district colour so districts stay readable:
+     1 glass tower, 2 old brick, 3 warehouse (generated/vendored), 4 tree (test file), 5 house (docs). */
+  int sty=int(vStyle+.5);float L1=uLiving;
+  float isTree=(sty==4)?L1:0.;
+  if(sty==1)base=mix(base,vec3(.10,.20,.30),.55*L1);
+  else if(sty==2)base=mix(base,vec3(.30,.13,.09),.6*L1);
+  else if(sty==3)base=mix(base,vec3(.17,.19,.21),.6*L1);
+  else if(sty==4)base=mix(base,vec3(.09,.34,.17),.9*L1);
+  else if(sty==5)base=mix(base,vec3(.30,.24,.17),.55*L1);
+  base=mix(base,tcol*.42,.85*uType);
   vec3 L=normalize(vec3(-.5,.6,-.6));
   float ndl=max(dot(N,L),0.),hemi=N.y*.5+.5;
   vec3 amb=mix(vec3(.05,.10,.11),vec3(.22,.16,.32),hemi);
@@ -122,8 +140,17 @@ void main(){
   float ySt=vW.y-.28;
   col*=mix(.5,1.,smoothstep(0.,2.2,ySt)*side+(1.-side));/* contact shadow: buildings sit on the ground */
   vec2 uv=abs(N.x)>.5?vec2(vXZ.y*vSize.y,ySt):vec2(vXZ.x*vSize.x,ySt);
-  vec2 cell=vec2(.34,.5),id=floor(uv/cell),f=fract(uv/cell);
+  vec2 cell=vec2(.34,.5);
+  if(sty==1)cell=mix(cell,vec2(.2,.32),L1);/* glass: dense curtain wall */
+  else if(sty==2||sty==5)cell=mix(cell,vec2(.5,.62),L1);/* brick and houses: fewer, larger windows */
+  vec2 id=floor(uv/cell),f=fract(uv/cell);
   float win=step(.18,f.x)*step(f.x,.82)*step(.22,f.y)*step(f.y,.78)*step(1.,ySt)*side;
+  if(sty==3)win=mix(win,step(.2,fract(uv.y*1.4))*step(fract(uv.y*1.4),.38)*step(.5,ySt)*side,L1);/* warehouse: strip windows */
+  win*=1.-isTree;
+  if(sty==2)col*=1.-L1*.22*side*step(.86,fract(ySt*7.))*(1.-win);/* brick courses */
+  if(sty==3)col*=1.-L1*.18*side*step(.5,fract(uv.x*9.));/* corrugated cladding */
+  if(sty==1){float gl=pow(1.-max(dot(N,V),0.),2.)*side;col+=vec3(.25,.42,.6)*gl*.5*L1;}/* glass catches the sky */
+  if(isTree>0.){float leaf=vnoise(vW.xz*3.1+vW.y*2.7);col=col*mix(1.,.75+.6*leaf,isTree)+vec3(.03,.09,.05)*isTree*(.6+.4*hemi);}
   float rnd=h21(id+vC.y*17.31+(abs(N.x)>.5?3.7:0.));
   float alive=1.-smoothstep(vB.z+.06,vB.z+.26,uT);alive=max(alive,.05);
   float act=vB.w*alive;
@@ -136,6 +163,13 @@ void main(){
   warm=mix(warm,vec3(1.,.30,.20),vC.z*uHot);
   vec3 emis=warm*lit*win*fl*1.9;
   emis*=1.-vC.w*.9;
+  /* ruins: untouched for two years, vines climb from the ground (dead files only) */
+  if(vC.w>.5&&side>.5){float vine=smoothstep(.15,.0,ySt/(1.2+2.6*vnoise(vW.xz*1.7+vec2(ySt*.4))));col=mix(col,vec3(.04,.14,.06),vine*.85*L1);}
+  /* under construction: scaffolding and work lights on the top floors of a crane site */
+  if(vCrane>.5&&side>.5){float up=smoothstep(vTop-.28-2.2,vTop-.28-1.6,vW.y);vec2 sg=fract(vec2(uv.x*2.2,ySt*2.));
+    float bar=max(step(.9,sg.x),step(.9,sg.y))*up;col=mix(col,vec3(.55,.36,.12),bar*.8*L1);emis+=vec3(1.,.62,.22)*bar*.35*L1;}
+  /* a few warm lights strung through the trees, more where the tests are busy */
+  if(isTree>0.){vec3 q=vW*5.;float dot_=step(length(fract(q.xy+q.z*.37)-.5),.09)*step(.9-.25*vB.w,h21(floor(q.xy+q.z*.37)));emis+=vec3(1.,.8,.45)*dot_*isTree*1.4;}
   emis+=vec3(.30,.62,.75)*step(.988,rnd)*win*vC.w*.5;
   float period=.012+vC.y*.03;
   float k=floor((uT-vB.y)/period);float since=uT-(vB.y+k*period);
@@ -143,16 +177,17 @@ void main(){
   emis+=vec3(1.,.9,.72)*flash*win*1.5;col+=vec3(.5,.45,.36)*flash*.35;
   float grow=1.-vG;
   emis+=vec3(.45,.95,1.)*grow*smoothstep(1.2,0.,vTop-vW.y)*.8*uFlow;/* growth glow only while history plays */
-  /* bus-factor what-if (ROADMAP #6): the lights go out where nobody else holds 10%+ of the commits */
+  /* bus-factor what-if: the lights go out where nobody else holds 10%+ of the commits */
   float rk=vRisk*uRisk;emis*=1.-.9*rk;col=mix(col,col*.55+vec3(.05,.02,.03),rk);
-  /* PR overlay (ROADMAP #7): changed = cyan, deleted or moved away = red, pulsing gently; the rest dims */
-  /* marks: 1 changed (cyan), 2 deleted or moved away (red), 3 new since the previous analysis (green, ROADMAP #8) */
+  /* PR overlay: changed = cyan, deleted or moved away = red, pulsing gently; the rest dims */
+  /* marks: 1 changed (cyan), 2 deleted or moved away (red), 3 new since the previous analysis (green) */
   float pch=step(.5,vPr)*step(vPr,1.5),pgo=step(1.5,vPr)*step(vPr,2.5),pnw=step(2.5,vPr);
   vec3 pcol=pch*vec3(.3,.85,1.)+pgo*vec3(1.,.32,.28)+pnw*vec3(.45,1.,.6);
   float ptouch=pch+pgo+pnw,ppulse=.62+.38*sin(uTime*2.4+vC.y*6.)*uMotion;
   col*=mix(1.,mix(.42,1.,ptouch),uPr);emis*=mix(1.,mix(.22,1.,ptouch),uPr);emis+=pcol*ppulse*.5*uPr*(.4+.6*side);
   if(N.y>.5){
-    col*=1.15;emis+=vec3(1.,.28,.18)*vC.z*uHot*.9;
+    col*=1.15;
+    if(sty==3)col*=1.-L1*.25*step(.5,fract(vXZ.x*6.));/* warehouse: sawtooth roof lights */emis+=vec3(1.,.28,.18)*vC.z*uHot*.9;
     vec2 q=abs(vXZ-.5)*2.;float edge=smoothstep(.86,.97,max(q.x,q.y));
     col+=vec3(.42,.36,.62)*edge*.35;/* lit parapet */
     col=mix(col,tcol*.7,.55*uType);emis+=tcol*edge*.45*uType;/* type-coloured roof and glowing parapet */
@@ -164,7 +199,7 @@ void main(){
   }
   float inF=(uFocus<-.5)?1.:step(abs(vDist-uFocus),.5);/* PORT: focus by district index, not palette */
   col*=mix(1.,mix(.32,1.25,inF),uFocusAmt);emis*=mix(1.,mix(.35,1.3,inF),uFocusAmt);
-  /* PORT (A5): compare mode tints each building by what the data says happened between two dates.
+  /* PORT: compare mode tints each building by what the data says happened between two dates.
      added in window = green, last change in window = amber, still changing after = blue, untouched before = grey */
   if(uCmp.x>.5){
     float added=step(uCmp.y,vB.y-1e-5)*step(vB.y,uCmp.z);
@@ -176,9 +211,9 @@ void main(){
   }
   float hv=step(abs(vInst-uHover),.5);
   col+=vec3(.20,.42,.5)*hv*(.5+rim*2.);emis+=vec3(.2,.5,.6)*hv*.6*win+warm*hv*lit*win*.8*uLift;
-  if(uHover>-.5&&hv<.5){col*=mix(1.,.8,uLift);emis*=mix(1.,.78,uLift);} /* A6: neighbours dim */
+  if(uHover>-.5&&hv<.5){col*=mix(1.,.8,uLift);emis*=mix(1.,.78,uLift);} /* neighbours dim */
   vec3 c=col+emis;
-  /* weather (ROADMAP #5): low haze drifting round the feet of towers in quiet districts (palette 4 = quiet) */
+  /* weather: low haze drifting round the feet of towers in quiet districts (palette 4 = quiet) */
   float qf=uWeather*step(3.5,vC.x)*(1.-smoothstep(.28,3.4,vW.y))*(.75+.25*sin(vW.x*.35+uTime*.12)*sin(vW.z*.3-uTime*.09));
   c=mix(c,vec3(.34,.42,.45),qf*.72);
   float fg=1.-exp(-dist*uFog);fg*=mix(1.,.5,smoothstep(0.,18.,vW.y));
@@ -189,12 +224,12 @@ void main(){
 /* PORT: per-district values travel as vertex attributes (aD = birth, activity, last touch, palette) instead of
    uniform arrays sized for 12 districts, so any number of districts works. */
 SRC.pad={vs:H+`
-layout(location=0) in vec3 aPos;layout(location=1) in vec2 aR;layout(location=2) in vec4 aD;
-uniform mat4 uVP;out vec3 vW;out float vRad;out float vD;flat out vec4 vDist;
-void main(){vW=aPos;vRad=aR.x;vD=aR.y;vDist=aD;gl_Position=uVP*vec4(aPos,1.);}`,
+layout(location=0) in vec3 aPos;layout(location=1) in vec2 aR;layout(location=2) in vec4 aD;layout(location=3) in float aPark;
+uniform mat4 uVP;out vec3 vW;out float vRad;out float vD;flat out vec4 vDist;flat out float vPark;
+void main(){vW=aPos;vRad=aR.x;vD=aR.y;vDist=aD;vPark=aPark;gl_Position=uVP*vec4(aPos,1.);}`,
 fs:H+NOISE+`
-in vec3 vW;in float vRad;in float vD;flat in vec4 vDist;
-uniform float uT,uTime,uFog,uFlow,uWeather;uniform vec3 uCam,uFogCol,uRim[5];out vec4 o;
+in vec3 vW;in float vRad;in float vD;flat in vec4 vDist;flat in float vPark;
+uniform float uT,uTime,uFog,uFlow,uWeather,uLiving;uniform vec3 uCam,uFogCol,uRim[5];out vec4 o;
 void main(){
   /* A born district shows fully; while history plays it dissolves in (dither), never as a black disc. */
   float vis=step(vDist.x,uT)*mix(1.,smoothstep(vDist.x,vDist.x+.05,uT),uFlow);
@@ -204,6 +239,12 @@ void main(){
   float st=smoothstep(.43,.5,max(g.x,g.y));
   float alive=1.-smoothstep(vDist.z+.06,vDist.z+.26,uT);alive=max(alive,.1);
   c+=vec3(1.,.6,.3)*st*.11*vDist.y*alive*step(vRad,1.);
+  /* Living City ground: park lawns where tests make up the district, streetlights on every other street corner */
+  float inner=step(vRad,1.)*uLiving;
+  c=mix(c,vec3(.025,.075,.04)*(.75+.5*vnoise(vW.xz*.9)),inner*smoothstep(.05,.6,vPark)*.9);
+  vec2 cn=floor(vW.xz/1.6+.5);float corner=step(.5,mod(cn.x+cn.y,2.));
+  float lamp=smoothstep(.07,.0,length(fract(vW.xz/1.6+.5)-.5))*corner;
+  c+=vec3(1.,.72,.4)*lamp*inner*(.25+.75*alive)*.8;
   float rim=(vRad>1.)?.55:smoothstep(.93,.985,vRad);
   c+=uRim[int(vDist.w+.5)]*rim*(.5+.5*sin(uTime*.6+vD*1.7))*.9*mix(.25,1.,alive);
   float dist=length(uCam-vW);float fg=1.-exp(-dist*uFog);
@@ -215,7 +256,7 @@ void main(){
 SRC.line={vs:H+`layout(location=0) in vec3 aP;layout(location=1) in float aU;uniform mat4 uVP;out float vU;void main(){vU=aU;gl_Position=uVP*vec4(aP,1.);}`,
 fs:H+`in float vU;uniform float uT,uTime,uBirth,uS,uVis;out vec4 o;
 void main(){float v=smoothstep(uBirth,uBirth+.05,uT);
-  /* A6: commit-flow pulses - packets travel faster along arcs with more co-change */
+  /* commit-flow pulses - packets travel faster along arcs with more co-change */
   float p=fract(vU*3.-uTime*(.06+.34*uS));float pulse=.18+.82*smoothstep(.9,1.,p)+.5*smoothstep(.985,1.,p);
   o=vec4(vec3(.35,.85,.8)*pulse*(.35+.65*uS)*v*uVis*.8,1.);}`};
 
@@ -243,7 +284,7 @@ void main(){
 }`,
 fs:H+`in vec2 vQ;in float vB;flat in float vTop;uniform float uT,uTime,uHot,uBeat;out vec4 o;
 void main(){float vis=smoothstep(vB+.04,vB+.08,uT)*uHot;float a=pow(max(1.-vQ.y,0.),1.7)*pow(max(1.-abs(vQ.x),0.),2.2);/* PORT: clamp; MSAA extrapolates varyings past the quad edge and pow(negative) is NaN */float pulse=.7+.3*sin(uTime*2.1+vB*40.);
-  /* A6: heartbeat on the hottest beacon (~1.1 Hz double beat) */
+  /* heartbeat on the hottest beacon (~1.1 Hz double beat) */
   float ph=fract(uTime*1.1);float beat=exp(-ph*10.)+.55*exp(-max(ph-.2,0.)*10.)*step(.2,ph);
   pulse+=vTop*uBeat*beat*.9;
   o=vec4(vec3(1.,.30,.22)*a*pulse*vis*1.6,a*vis);}`};
@@ -260,7 +301,22 @@ void main(){
 fs:H+NOISE+`in vec2 vQ;in float vD;in float vPh;uniform vec3 uFogCol;uniform float uTime;out vec4 o;
 void main(){float r=length(vQ);float a=pow(clamp(1.-r,0.,1.),1.6)*(.55+.45*vnoise(vQ*3.+vPh*20.+uTime*.02));a*=.10*smoothstep(8.,40.,vD);o=vec4(uFogCol*1.25*a,a);}`};
 
-/* Weather (ROADMAP #5). Rain: one line per drop, falling at a slight wind angle over the busiest districts; frozen
+/* Living City cranes: a mast and a slowly slewing jib over each file changed in the last days of history, with a
+   hook cable and a blinking tip. aE = (along the jib, height above the mast top, 1 = mast foot); iP = (x, building top, z, last change). Shown only
+   once the timeline reaches that change, so replaying history never shows a crane early. */
+SRC.crane={vs:H+`
+layout(location=0) in vec3 aE;layout(location=1) in vec4 iP;
+uniform mat4 uVP;uniform float uTime,uMotion,uT,uLiving;out float vA;out float vTip;
+void main(){
+  float a=uTime*.05*uMotion+iP.x*1.7+iP.z*.9;vec2 dir=vec2(cos(a),sin(a));/* slow slew, frozen under reduced motion */
+  vec3 p=vec3(iP.x+dir.x*aE.x,aE.z>.5?iP.y:iP.y+2.6+aE.y,iP.z+dir.y*aE.x);
+  vTip=step(2.7,aE.x);vA=uLiving*step(iP.w-.002,uT);
+  gl_Position=uVP*vec4(p,1.);
+}`,
+fs:H+`in float vA;in float vTip;uniform float uTime;out vec4 o;
+void main(){float b=vTip*step(.5,fract(uTime*.7));vec3 c=mix(vec3(1.,.62,.2),vec3(1.,.15,.1),vTip)*(1.1+b*3.);o=vec4(c*vA,vA);}`};
+
+/* Weather. Rain: one line per drop, falling at a slight wind angle over the busiest districts; frozen
    (still streaks) under reduced motion. uAmt eases the toggle. The fog half is a term in the bld and pad shaders. */
 SRC.rain={vs:H+`
 layout(location=0) in float aE;layout(location=1) in vec4 iP;
@@ -291,10 +347,10 @@ uniform float uDofAmt,uFocusD,uNear,uFar,uFlare,uRays;uniform vec3 uMoon;out vec
 float linDepth(float d){float z=d*2.-1.;return 2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear));}
 vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}
 void main(){
-  vec2 d=vUv-.5;float ca=.0022*dot(d,d)*4.*uCA;/* PORT: scaled by scroll velocity (EXPERIENCE section 1) */
+  vec2 d=vUv-.5;float ca=.0022*dot(d,d)*4.*uCA;/* PORT: scaled by scroll velocity */
   vec3 c;c.r=texture(uScene,vUv+d*ca*2.).r;c.g=texture(uScene,vUv).g;c.b=texture(uScene,vUv-d*ca*2.).b;
   if(any(isnan(c))||any(isinf(c)))c=vec3(0.);
-  /* A6: depth of field - blend toward a blurred copy by circle of confusion around the focus distance */
+  /* depth of field - blend toward a blurred copy by circle of confusion around the focus distance */
   if(uDofAmt>0.&&uFocusD>0.){
     float z=linDepth(texture(uDepth,vUv).r);
     float coc=clamp(abs(z-uFocusD)/(uFocusD*.9+6.),0.,1.);coc=smoothstep(.08,1.,coc)*uDofAmt;
@@ -302,7 +358,7 @@ void main(){
     c=mix(c,b,coc);
   }
   c+=texture(uB1,vUv).rgb*uBloom+texture(uB2,vUv).rgb*uB2k;
-  /* A6: lens flare ghosts from bright areas, and god rays streaming from the moon */
+  /* lens flare ghosts from bright areas, and god rays streaming from the moon */
   if(uFlare>0.){
     vec2 gv=(vec2(.5)-vUv)*.42;vec3 fl=vec3(0.);
     for(int i=1;i<4;i++){vec2 off=fract(vUv+gv*float(i));float wt=pow(max(1.-length(vec2(.5)-off)/.707,0.),6.);
@@ -322,7 +378,7 @@ void main(){
   o=vec4(c*uFade,1.);
 }`};
 
-/* PORT: GPU picking (EXPERIENCE section 9). Same geometry as `bld`; writes instance index + 1 as RGBA8. */
+/* PORT: GPU picking. Same geometry as `bld`; writes instance index + 1 as RGBA8. */
 SRC.pick={vs:H+`
 layout(location=0) in vec3 aPos;
 layout(location=2) in vec4 iA;layout(location=3) in vec4 iB;
@@ -336,7 +392,7 @@ void main(){
 fs:H+`flat in int vId;out vec4 o;
 void main(){o=vec4(float(vId&255),float((vId>>8)&255),float((vId>>16)&255),255.)/255.;}`};
 
-/* A6: building birth ripple on the pad as history passes a file's creation (a pure function of uT, so it plays
+/* building birth ripple on the pad as history passes a file's creation (a pure function of uT, so it plays
    backwards too), plus a steady selection ring. Uses the building instance buffer. */
 SRC.ripple={vs:H+`
 layout(location=0) in vec2 aQ;layout(location=2) in vec4 iA;layout(location=3) in vec4 iB;

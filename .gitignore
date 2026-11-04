@@ -41,4 +41,9 @@ backend/store/
 
 # local screenshots
 frontend/shots/
-deploy/audit/zap/out/
+
+# local-only notes and assistant files
+.dev/
+CLAUDE.md
+CLAUDE.local.md
+.claude/

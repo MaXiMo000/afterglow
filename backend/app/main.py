@@ -25,7 +25,7 @@ from app.settings import Settings, load_settings
 
 log = logging.getLogger("afterglow")
 
-# Safe reason codes only: never echo exception text, paths or input back to the client (SECURITY T14).
+# Safe reason codes only: never echo exception text, paths or input back to the client.
 READY_CACHE_S = 5.0
 FEATURED_EVERY_S = 600.0  # featured refresh check (one job at most per check, only when the queue is idle)
 FEATURED_CLIENT = "0" * 32  # the service itself, not a visitor
@@ -57,7 +57,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     hub = Hub()
 
     async def refresh_featured(p: AsyncConnectionPool) -> None:
-        """Keep the start-page gallery's analyses fresh (ROADMAP #10) without ever making visitors wait."""
+        """Keep the start-page gallery's analyses fresh without ever making visitors wait."""
         while True:
             await asyncio.sleep(FEATURED_EVERY_S)
             try:
@@ -128,7 +128,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """For an uptime monitor: 503 when the database is unreachable or no worker is taking queued jobs.
 
         Public but cheap: the answer is cached, so a flood of requests costs one query per READY_CACHE_S and
-        cannot take connections from real traffic (SECURITY T11).
+        cannot take connections from real traffic.
         """
         if pool is None:
             return JSONResponse({"status": "unavailable"}, status_code=503)

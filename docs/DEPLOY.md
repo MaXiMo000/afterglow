@@ -5,7 +5,7 @@ and its egress proxy. The server needs only **git and Docker**; the frontend is 
 
 Use a Linux server where you control Docker (a VPS). Platforms that run each container for you (Render, Railway,
 Fly, Heroku) cannot give the worker a network with no internet access or a locked-down container, which is what keeps
-a hostile repository contained (docs/SECURITY.md T4).
+a hostile repository contained.
 
 ## What you need
 - A domain name you can add DNS records to.

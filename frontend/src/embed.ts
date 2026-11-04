@@ -1,5 +1,5 @@
 /**
- * Embeddable city (docs/ROADMAP.md #12), served at /embed/owner/name for other sites' iframes.
+ * Embeddable city, served at /embed/owner/name for other sites' iframes.
  *
  * Read-only by design, so being framed carries no clickjacking risk: it shows the newest stored analysis and never
  * starts one, has no forms and no state-changing requests. Plain wheel scrolls the host page (zoom is Ctrl+wheel,
@@ -24,7 +24,7 @@ async function main(): Promise<void> {
   if (!ref) return status('Not a repository address.');
   const slug = `${ref.owner}/${ref.name}`.toLowerCase();
   const open = $('open') as HTMLAnchorElement;
-  open.href = `/${slug}`; // same origin, validated owner/name (SECURITY T5)
+  open.href = `/${slug}`; // same origin, validated owner/name
   $('repo').textContent = slug;
   document.title = `${slug} - Afterglow city`;
 
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
   const tier = TIERS[low ? 0 : 1]!; // a guest on someone else's page: never the cinematic tier
   const P: Params = {
     t: 1, fog: 0.0072, hot: 1, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.03, ca: 1,
-    arcs: 1, lanterns: 0, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0, weather: 0, risk: 0, pr: 0,
+    arcs: 1, lanterns: 0, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0, weather: 0, risk: 0, pr: 0, living: 1,
   }; // prettier-ignore
 
   const size = (): void => {

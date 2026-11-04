@@ -272,7 +272,7 @@ def test_unusable_mailmaps_are_ignored(tmp_path: Path, mailmap: dict[str, object
 
 
 def test_files_before_the_window_respect_the_path_cap(tmp_path: Path) -> None:
-    """A huge tree behind a truncated history must not bypass tracked_paths (SECURITY T3: truncate and flag)."""
+    """A huge tree behind a truncated history must not bypass tracked_paths (truncate and flag)."""
     commits = [C({f"old/{i}.py": "x\n" for i in range(50)}, time=T0)]
     commits += [C({"new.py": f"{i}\n"}, time=T0 + YEAR + i) for i in range(5)]
     caps = Caps(allow_file_protocol=True, wall_s=60, commits=3, tracked_paths=10)

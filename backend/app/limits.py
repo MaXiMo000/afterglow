@@ -1,6 +1,6 @@
-"""Rate limits and concurrency caps (SECURITY T11), keyed by an HMAC of the client IP.
+"""Rate limits and concurrency caps, keyed by an HMAC of the client IP.
 
-ponytail: in-process state, correct for one API process. Running several replicas needs these counters in
+Known limit: in-process state, correct for one API process. Running several replicas needs these counters in
 Postgres or Redis; until then the global caps are per replica.
 """
 
@@ -30,7 +30,7 @@ def client_network(ip: str) -> str:
 
 
 def client_id(ip_key: bytes, ip: str) -> str:
-    """Stable pseudonym for a client network. The raw IP is never stored or logged (SECURITY T6)."""
+    """Stable pseudonym for a client network. The raw IP is never stored or logged."""
     return hmac.new(ip_key, client_network(ip).encode(), hashlib.sha256).hexdigest()[:32]
 
 

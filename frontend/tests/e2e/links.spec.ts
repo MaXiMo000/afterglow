@@ -69,6 +69,7 @@ test('Back onto another repository shows that repository', async ({ page }) => {
   await page.fill('#repoInput', 'acme/orbit');
   await page.press('#repoInput', 'Enter');
   await expect(page.locator('body')).toHaveClass(/mode-story/);
+  await page.click('#btnMore');
   await page.click('#btnNew');
   await expect(page.locator('body')).toHaveClass(/mode-hero/);
   await expect(page).toHaveURL(/:\d+\/\?quality=simple$/);

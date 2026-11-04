@@ -1,6 +1,6 @@
 /**
- * App controller: hero -> loading (real SSE progress) -> story (A4) -> city with the explore tools (A5), plus the
- * 2D table fallback. The effects pass (A6) builds on this.
+ * App controller: hero -> loading (real SSE progress) -> story -> city with the explore tools, plus the
+ * 2D table fallback. The effects pass builds on this.
  */
 import { ApiError, fetchPr, fetchPrevious, fetchResult, followProgress, startAnalysis, startPr, type Progress } from '../lib/api';
 import { overlay } from '../lib/pr';
@@ -17,6 +17,8 @@ import { buildWorld, type World } from '../world/build';
 import { pair, pairStats, PAIR_MAX_FILES, type Pair } from '../world/pair';
 import { project } from '../render/math';
 import { TYPE_COLOURS } from '../world/types';
+import { CRANE_DAYS, MAX_CRANES, STYLE } from '../world/living';
+import { caption, poseAt, stopAt, walkRoute, type Route } from '../world/route';
 import { weather } from '../world/weather';
 import { buildCamera, OrbitCamera, orbitFromPose, rayThrough, type Preset } from './camera';
 import { $, ago, closer, el, fmt, fmtDate, reducedMotion, setText } from './dom';
@@ -67,7 +69,7 @@ const ERROR_TEXT: Record<string, string> = {
   not_ready: 'The analysis is not finished yet. Please try again in a moment.',
 };
 const NO_RETRY = ['invalid_repo', 'not_found', 'empty_repo', 'no_files', 'too_large', 'unparseable'];
-const IDLE_FRAME_MS = 1000 / 30; // nothing moving: ambient animation only, at half rate (PLAN section 6, Idle)
+const IDLE_FRAME_MS = 1000 / 30; // nothing moving: ambient animation only, at half rate
 const ACTIVE_FOR_MS = 2000; // input keeps the full frame rate this long after it stops
 
 /** "2 ahead in the queue, estimated wait about 3 min": the wait is the server's estimate from recent jobs. */
@@ -79,6 +81,23 @@ function queueText(p: Progress): string {
 
 const dist = (a: Vec, b: Vec): number => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
+/** A UI preference on this device (never anything sensitive); storage can be blocked, so both sides fail quietly. */
+function pref(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function savePref(key: string, value: string | null): void {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    // private mode or blocked storage: the preference just does not stick
+  }
+}
+
 export class App {
   private mode: Mode = 'hero';
   private renderer: Renderer | null = null;
@@ -89,7 +108,7 @@ export class App {
   private readonly cam = new OrbitCamera();
   private readonly P: Params = {
     t: 1, fog: FOG, hot: 0.5, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.035, ca: 1,
-    arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0, weather: 0, risk: 0, pr: 0,
+    arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0, weather: 0, risk: 0, pr: 0, living: 1,
   }; // prettier-ignore
   private time = 0;
   private last = 0;
@@ -99,10 +118,11 @@ export class App {
   private lanterns: Float32Array | null = null;
   private selected = -1;
   private focusGoal = 0;
-  private readonly sound = new Ambience(); // ambient sound (docs/ROADMAP.md #13): off until the user turns it on
+  private readonly sound = new Ambience(); // ambient sound: off until the user turns it on
   private soundAt = 0;
   private peakCommits = 1;
-  private walker: Walker | null = null; // walk mode (docs/ROADMAP.md #3)
+  private walker: Walker | null = null; // walk mode
+  private sw: { route: Route; s: number; goal: number; at: number } | null = null; // guided scroll walk: progress s, stop k at s = k
   private hintsText = '';
   private tour = -1; // position in insights.hotspots during a J/K tour
   private prOn = false; // an overlay (PR, or changes since the previous analysis) is shown
@@ -110,10 +130,11 @@ export class App {
   private resultId: string | null = null; // job id of the loaded analysis (null for the demo)
   private prAbort: AbortController | null = null;
   private weatherGoal = 0; // weather layer: 1 on; P.weather eases toward it
+  private keyShown = pref('afterglow:key') !== '0'; // the city key legend: on until the viewer closes it
+  private plain = false; // plain boxes instead of the Living City styles
   private typesGoal = 0; // colour by file type: 1 on; P.types eases toward it
   private ptrs = new Map<number, { x: number; y: number; t: number }>();
   private dragMoved = 0;
-  private pinch = 0;
   private hoverAt: { x: number; y: number } | null = null;
   private pickBusy = false;
   private pickChain: Promise<unknown> = Promise.resolve(); // one GPU readback in flight at a time
@@ -124,20 +145,20 @@ export class App {
   private blend: { pos: Vec; tgt: Vec; fov: number; k: number } | null = null;
   private fov = 50;
   private lastPose: { pos: Vec; tgt: Vec } | null = null;
-  // Explore state (A5)
+  // Explore state
   private tT = 1; // target history position; P.t eases toward it
   private playing = false;
   private speedIdx = 0;
   private compare: { a: number; b: number } | null = null;
   private photo = false;
   private exportNext = false;
-  /** Video export in progress (docs/ROADMAP.md #4). */
+  /** Video export in progress. */
   private rec: { kind: 'orbit' | 'history'; rec: MediaRecorder; out: HTMLCanvasElement; ctx: CanvasRenderingContext2D; t0: number; dur: number; left: number; keep: boolean } | null = null;
   private pendingView: View | null = null;
   /** Screen to restore without a new history entry (reload, or Back/Forward onto another repository's entry). */
   private arrive: 'story' | 'city' | null = null;
   private prevT = 1;
-  private loadFrac = 0; // real analysis progress 0..1, drives the city un-building during loading (A6)
+  private loadFrac = 0; // real analysis progress 0..1, drives the city un-building during loading
   private lastRepo = '';
   private lastInput = -Infinity; // performance.now() of the latest pointer, wheel, key or scroll input
   private wasIdle = false;
@@ -148,8 +169,8 @@ export class App {
     (i) => this.select(i >= 0 ? i + this.inspectorBase : i), // the inspector works in its own repository's indices
     (d) => this.drillInto(d),
   );
-  /** Drill-down (docs/ROADMAP.md #9): the parent cities, outermost first, and the current city's district prefixes. */
-  /** Two cities side by side (docs/ROADMAP.md #11): the pair on screen, and the file offset of B's buildings. */
+  /** Drill-down: the parent cities, outermost first, and the current city's district prefixes. */
+  /** Two cities side by side: the pair on screen, and the file offset of B's buildings. */
   private pairState: Pair | null = null;
   private inspectorBase = 0;
   private drillStack: { result: Result; prefixes: string[] | null; from: number }[] = [];
@@ -280,6 +301,7 @@ export class App {
     this.renderHonesty();
     if (this.typesGoal) this.setTypes(true, false);
     if (this.weatherGoal) this.setWeather(true, false);
+    this.setKey(this.keyShown, false);
     this.setWhatIf(-1, false); // a new world starts with every light on
     this.clearPr(false); // keep the mode across repositories; its legend is per result
     if (!this.demo) {
@@ -314,6 +336,7 @@ export class App {
     this.body.classList.remove('mode-hero', 'mode-loading', 'mode-story', 'mode-city');
     this.body.classList.add(`mode-${m}`);
     if (m !== 'city') this.setWalk(false, true);
+    if (m !== 'city') this.setScrollWalk(false, true);
     if (m !== 'city') this.stopRecording(false);
     $('#hero').hidden = m !== 'hero';
     $('#loading').hidden = m !== 'loading';
@@ -322,7 +345,9 @@ export class App {
     $('#btnCity').hidden = m !== 'story';
     const explore = m === 'city' && !this.demo;
     $('#btnStory').hidden = !explore || !this.renderer;
-    for (const id of ['#btnSearch', '#btnInsights', '#btnShare', '#btnBadge', '#btnPhoto', '#btnHelp']) $(id).hidden = !explore;
+    for (const id of ['#btnSearch', '#btnInsights', '#btnWalkTour', '#btnKey', '#btnShare', '#btnBadge', '#btnPhoto', '#btnHelp']) $(id).hidden = !explore;
+    $('#btnMore').hidden = m === 'hero';
+    if (explore) this.setKey(this.keyShown, false); // fold or unfold for the screen it opens on
     this.timeline.root.hidden = !explore;
     if (!explore) {
       this.insights.toggle(this.result!, false);
@@ -336,7 +361,7 @@ export class App {
     this.hideTip();
   }
 
-  /** Scroll story for the loaded result (A4). Reduced motion gets the static-card path inside Story. */
+  /** Scroll story for the loaded result. Reduced motion gets the static-card path inside Story. */
   private enterStory(fromCity = false, push = true): void {
     if (!this.result || !this.world || this.demo) return;
     if (fromCity) this.startBlend();
@@ -370,7 +395,7 @@ export class App {
 
   private savedQuality(): string | null {
     try {
-      return localStorage.getItem('afterglow:quality'); // UI preference only (SECURITY T20 allows UI prefs)
+      return localStorage.getItem('afterglow:quality'); // UI preference only, nothing sensitive
     } catch {
       return null;
     }
@@ -536,7 +561,7 @@ export class App {
       const text = offline ? 'You appear to be offline. Check your connection and try again.' : (ERROR_TEXT[code] ?? 'Something went wrong. Please try again.');
       line(text, 'fail');
       this.announce(text);
-      // Empty/error state (A6): always offer a way forward, never a dead end.
+      // Empty/error state: always offer a way forward, never a dead end.
       const retry = !NO_RETRY.includes(code) || offline;
       $('#btnRetry').hidden = !retry;
       $('#loadActions').hidden = false;
@@ -577,7 +602,7 @@ export class App {
     }
   }
 
-  // ---------- explore actions (A5): one entry point for keys, palette and buttons ----------
+  // ---------- explore actions: one entry point for keys, palette and buttons ----------
   private run(id: ActionId): void {
     const w = this.world;
     const r = this.result;
@@ -585,12 +610,16 @@ export class App {
     const reduced = reducedMotion();
     // Camera flights take over from walking.
     if (this.walker && /^(home|reset|frame|preset\d)$/.test(id)) this.setWalk(false);
+    if (this.sw && /^(home|reset|frame|preset\d|walk)$/.test(id)) this.setScrollWalk(false, id === 'walk');
     switch (id) {
       case 'record':
         this.startRecording(this.playing ? 'history' : 'orbit');
         break;
       case 'walk':
         this.setWalk(!this.walker);
+        break;
+      case 'scrollWalk':
+        this.setScrollWalk(!this.sw);
         break;
       case 'home':
         this.cam.autoOrbit = false;
@@ -641,6 +670,11 @@ export class App {
         break;
       case 'tourNext':
       case 'tourPrev':
+        if (this.sw) {
+          const last = this.sw.route.stops.length - 1;
+          this.sw.goal = clamp(Math.round(this.sw.goal) + (id === 'tourNext' ? 1 : -1), 0, last);
+          break;
+        }
         this.tourStep(id === 'tourNext' ? 1 : -1);
         break;
       case 'pr': {
@@ -669,6 +703,9 @@ export class App {
       case 'weather':
         this.setWeather(!this.weatherGoal);
         break;
+      case 'living':
+        this.setKey(!this.keyShown);
+        break;
       case 'types':
         this.setTypes(!this.typesGoal);
         break;
@@ -689,7 +726,8 @@ export class App {
         this.openTable($('#tableView').hasAttribute('hidden'));
         break;
       case 'help':
-        ($('#help') as HTMLDialogElement).showModal();
+        ($('#help') as HTMLDialogElement).showModal(); // focus lands on the title (autofocus), so it opens at the top
+        $('#help').scrollTop = 0;
         break;
       case 'photo':
         this.togglePhoto();
@@ -718,7 +756,7 @@ export class App {
   }
 
   /**
-   * Walk mode (docs/ROADMAP.md #3): drop to street level where the orbit camera is looking, facing the same way.
+   * Walk mode: drop to street level where the orbit camera is looking, facing the same way.
    * Leaving puts the orbit camera over the spot you walked to. `quiet` skips the camera hand-over (mode changes).
    */
   private setWalk(on: boolean, quiet = false): void {
@@ -760,7 +798,73 @@ export class App {
     if (from && !quiet) this.blend = { pos: [...from.pos], tgt: [...from.tgt], fov: this.fov, k: 0 };
   }
 
-  /** Hotspot tour (docs/ROADMAP.md #2): fly to the next/previous hotspot, in the insights list order, and say why. */
+  /**
+   * Guided scroll walk: street level, from finding to finding (world/route.ts). Scroll, swipe or arrows move along
+   * the route; J/K jump a stop. Leaving puts the orbit camera over the spot, like leaving walk mode.
+   */
+  private setScrollWalk(on: boolean, quiet = false): void {
+    const w = this.world;
+    const from = this.lastPose;
+    if (on) {
+      if (!w || this.mode !== 'city' || this.sw) return;
+      if (this.walker) this.setWalk(false, true);
+      const route = walkRoute(w);
+      if (!route.stops.length) return this.toast('Nothing to walk to in this city.');
+      this.select(-1);
+      this.sw = { route, s: 0, goal: 0, at: -2 };
+      this.cam.autoOrbit = false;
+      this.body.classList.add('guided');
+      this.syncLeave();
+      this.hintsText ||= $('#hints').textContent ?? '';
+      setText($('#hints'), 'Scroll, swipe or arrow keys to walk \u00b7 J / K next / previous stop \u00b7 Esc to leave');
+      this.announce(`Guided walk, ${route.stops.length} stops. Scroll or use the arrow keys to walk, J and K to jump between stops, Escape to leave.`);
+    } else {
+      const sw = this.sw;
+      if (!sw) return;
+      this.sw = null;
+      this.body.classList.remove('guided');
+      this.syncLeave();
+      setText($('#hints'), this.hintsText);
+      this.select(-1);
+      if (quiet) return;
+      const p = poseAt(sw.route, sw.s).pos;
+      this.cam.flyTo({ ...this.cam.goal, pitch: 0.5, dist: 34, x: p[0], y: 4, z: p[2] }, 0.01, true);
+      this.announce('Left the guided walk');
+    }
+    if (from && !quiet) this.blend = { pos: [...from.pos], tgt: [...from.tgt], fov: this.fov, k: 0 };
+  }
+
+  /** Scroll walk, per frame: ease toward the goal and caption the stop the walker reaches. */
+  private stepScrollWalk(dt: number, reduced: boolean): { pos: Vec; tgt: Vec } {
+    const sw = this.sw!;
+    const w = this.world!;
+    sw.s = reduced ? sw.goal : sw.s + (sw.goal - sw.s) * (1 - Math.exp(-dt * 3));
+    const k = stopAt(sw.route, sw.s);
+    if (k !== sw.at) {
+      sw.at = k;
+      const n = sw.route.stops.length;
+      if (k >= 0) {
+        const stop = sw.route.stops[k]!;
+        this.select(stop.file); // ring and inspector on the building (none for a whole district); no flight
+        const c = caption(w, stop);
+        setText($('#placeEy'), `Stop ${k + 1} of ${n}`);
+        setText($('#placeName'), c.title);
+        setText($('#placeSub'), c.body);
+        this.sound.chime(k);
+        this.announce(`Stop ${k + 1} of ${n}: ${c.title}. ${c.body}`);
+      } else {
+        this.select(-1);
+        const next = sw.route.stops[Math.min(n - 1, Math.ceil(sw.s))]!;
+        setText($('#placeEy'), 'Walking');
+        setText($('#placeName'), `to ${caption(w, next).title}`);
+        setText($('#placeSub'), 'Scroll, swipe or arrow keys \u00b7 J / K jump \u00b7 Esc to leave');
+      }
+    }
+    const { pos, tgt } = poseAt(sw.route, sw.s);
+    return { pos: [...pos], tgt: [...tgt] };
+  }
+
+  /** Hotspot tour: fly to the next/previous hotspot, in the insights list order, and say why. */
   private tourStep(dir: 1 | -1): void {
     const r = this.result;
     const list = r?.insights.hotspots ?? [];
@@ -783,7 +887,7 @@ export class App {
     this.announce(`Hotspot ${this.tour + 1} of ${list.length}: ${f.path}, ${why}.`);
   }
 
-  /** PR overlay (docs/ROADMAP.md #7): queue it like an analysis, then light up the buildings it touches. */
+  /** PR overlay: queue it like an analysis, then light up the buildings it touches. */
   private async showPr(n: number): Promise<void> {
     const r = this.result;
     if (!r || this.demo || n > 10_000_000) return;
@@ -850,7 +954,7 @@ export class App {
     return near.reduce((n, m) => n + m.commits, 0) / near.length / this.peakCommits;
   }
 
-  /** Start-page gallery (docs/ROADMAP.md #10): skyline tiles from the badge route, each opening that city. */
+  /** Start-page gallery: skyline tiles from the badge route, each opening that city. */
   private async loadFeatured(): Promise<void> {
     let repos: unknown;
     try {
@@ -866,7 +970,7 @@ export class App {
       if (!ref) return [];
       const slug = `${ref.owner}/${ref.name}`.toLowerCase();
       const a = el('a');
-      a.href = `/${slug}`; // validated owner/name only (SECURITY T5)
+      a.href = `/${slug}`; // validated owner/name only
       a.setAttribute('aria-label', `Open the city of ${slug}`);
       const img = el('img');
       img.src = `/api/v1/badges/${slug}.svg`;
@@ -897,10 +1001,10 @@ export class App {
     ($('#vsDialog') as HTMLDialogElement).showModal();
   }
 
-  /** Analyse (or reuse) a second repository and show both cities side by side (docs/ROADMAP.md #11). */
+  /** Analyse (or reuse) a second repository and show both cities side by side. */
   private async startPair(raw: string): Promise<void> {
     const a = this.pairState?.a ?? this.result;
-    const ref = parseRepo(raw.trim()); // the same strict parser as the form (SECURITY T1)
+    const ref = parseRepo(raw.trim()); // the same strict parser as the form
     if (!a || this.demo || !ref) return this.toast('That does not look like owner/name.');
     const slug = `${ref.owner}/${ref.name}`.toLowerCase();
     if (slug === a.meta.repo) return this.toast('Pick a different repository to compare with.');
@@ -1022,7 +1126,7 @@ export class App {
     return `${fmt(x.files)} files \u00b7 ${bus}${x.quiet ? ' \u00b7 quiet' : ''}`;
   }
 
-  /** Open district `d` of the current city as a city of its own (docs/ROADMAP.md #9). */
+  /** Open district `d` of the current city as a city of its own. */
   private drillInto(d: number): void {
     const r = this.result;
     if (!r || this.demo || this.mode !== 'city' || !r.dirs[d]) return;
@@ -1059,7 +1163,7 @@ export class App {
     this.announce(this.drillStack.length ? `Back in ${this.drillPath()}.` : 'Back in the whole city.');
   }
 
-  /** What changed since the previous stored analysis (docs/ROADMAP.md #8). 6 again turns it off. */
+  /** What changed since the previous stored analysis. 6 again turns it off. */
   private async showSince(): Promise<void> {
     const r = this.result;
     const id = this.resultId;
@@ -1122,7 +1226,7 @@ export class App {
     if (announce) this.announce('Overlay cleared.');
   }
 
-  /** Bus-factor what-if (docs/ROADMAP.md #6): lights go out in the districts nobody else knows. -1 clears it. */
+  /** Bus-factor what-if: lights go out in the districts nobody else knows. -1 clears it. */
   private setWhatIf(person: number, announce = true): void {
     const r = this.result;
     const box = $('#riskLegend');
@@ -1144,7 +1248,7 @@ export class App {
     if (announce) this.announce(text);
   }
 
-  /** Weather (docs/ROADMAP.md #5): decorative, but only where the data says, and the legend says what it means. */
+  /** Weather: decorative, but only where the data says, and the legend says what it means. */
   private setWeather(on: boolean, announce = true): void {
     const box = $('#weatherLegend');
     const r = this.result;
@@ -1173,7 +1277,59 @@ export class App {
     if (announce) this.announce(`Weather on. ${rain}. ${fog}.`);
   }
 
-  /** Colour by file type (docs/ROADMAP.md #1). Compare mode also recolours buildings, so the two never overlap. */
+  /**
+   * Living City key: every building style is a rule about the file, read from its path, size and dates. Shown by
+   * default (folded on small screens); closing it is remembered on this device. Plain boxes switch inside it.
+   */
+  private setKey(show: boolean, announce = true): void {
+    const box = $('#livingLegend');
+    this.keyShown = show;
+    savePref('afterglow:key', show ? null : '0');
+    $('#btnKey').setAttribute('aria-pressed', String(show));
+    const w = this.world;
+    if (!show || !w) {
+      box.hidden = true;
+      if (announce) this.announce('City key hidden. 8 or the Key button shows it again.');
+      return;
+    }
+    const c = w.living.counts;
+    const row = (cls: string, text: string): HTMLElement => {
+      const p = el('div');
+      const i = el('i', null, cls);
+      i.setAttribute('aria-hidden', 'true');
+      p.append(i, document.createTextNode(text));
+      return p;
+    };
+    const n = (k: number): string => fmt(c[k] ?? 0);
+    const dead = w.result.files.filter((f) => f.dead).length;
+    const rows = [
+      row('tower', `Glass tower: the largest files (${n(STYLE.tower)})`),
+      row('brick', `Brick: old files untouched this year (${n(STYLE.brick)})`),
+      row('warehouse', `Warehouse: generated, vendored or lock files (${n(STYLE.warehouse)})`),
+      row('tree', `Tree: a test file; tests make the parks (${n(STYLE.tree)})`),
+      row('house', `House: docs and text files (${n(STYLE.house)})`),
+      row('crane', `Crane: changed in the last ${CRANE_DAYS} days of history (${fmt(w.living.cranes)}${w.living.cranes === MAX_CRANES ? `, the ${MAX_CRANES} busiest` : ''})`),
+      row('ruin', `Vines: no change in 2 years (${fmt(dead)})`),
+    ];
+    const fold = el('details');
+    fold.open = !matchMedia('(max-width: 760px), (max-height: 700px)').matches; // folded where it would cover the city
+    const plain = el('button', this.plain ? 'Show the Living City' : 'Show plain boxes', 'chip');
+    plain.type = 'button';
+    plain.setAttribute('aria-pressed', String(this.plain));
+    plain.addEventListener('click', () => {
+      this.plain = !this.plain;
+      this.announce(this.plain ? 'Plain boxes: every file the same shape' : 'Living City styles on');
+      this.setKey(true, false);
+      ($('#livingLegend details') as HTMLDetailsElement).open = true; // it was open to be clicked: keep it open
+      ($('#livingLegend button.chip') as HTMLButtonElement | null)?.focus();
+    });
+    fold.append(el('summary', 'City key'), ...rows, el('p', 'From paths, sizes and dates only, never file contents.', 'sub'), plain);
+    box.replaceChildren(closer('Hide the city key', () => this.setKey(false)), fold);
+    box.hidden = false;
+    if (announce) this.announce(`City key. ${n(STYLE.tree)} test files as trees, ${n(STYLE.house)} docs as houses, ${fmt(w.living.cranes)} cranes.`);
+  }
+
+  /** Colour by file type. Compare mode also recolours buildings, so the two never overlap. */
   private setTypes(on: boolean, announce = true): void {
     const box = $('#typeLegend');
     const w = this.world;
@@ -1282,7 +1438,7 @@ export class App {
     }
   }
 
-  /** Iframe snippet for the embeddable city (docs/ROADMAP.md #12): read-only, newest stored analysis. */
+  /** Iframe snippet for the embeddable city: read-only, newest stored analysis. */
   private async copyEmbed(): Promise<void> {
     const repo = this.result?.meta.repo; // validated `owner/name`, lower-case
     if (!repo || this.demo || !/^[a-z0-9-]{1,39}\/[a-z0-9._-]{1,100}$/.test(repo)) return this.toast('Load a repository first.');
@@ -1335,7 +1491,7 @@ export class App {
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }
 
-  /** Caption band for posters and videos: repo, commit, the date shown, and the data caveats (CLAUDE.md rule 6). */
+  /** Caption band for posters and videos: repo, commit, the date shown, and the data caveats. */
   private caption(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     const r = this.result;
     if (!r) return;
@@ -1361,7 +1517,7 @@ export class App {
   }
 
   /**
-   * Record a WebM (docs/ROADMAP.md #4): a quarter orbit in 12 s, or the whole history in 20 s. Each rendered frame is
+   * Record a WebM: a quarter orbit in 12 s, or the whole history in 20 s. Each rendered frame is
    * copied with the caption onto a 2D canvas (<= 1280 px wide) that MediaRecorder captures; nothing leaves the browser.
    */
   private startRecording(kind: 'orbit' | 'history'): void {
@@ -1408,7 +1564,7 @@ export class App {
    * In photo mode the photo bar's exit button stops a recording first, as Esc does.
    */
   private syncLeave(): void {
-    const label = this.rec ? 'Stop recording' : this.walker ? 'Leave walk mode' : this.drillStack.length ? 'Climb out' : '';
+    const label = this.rec ? 'Stop recording' : this.walker ? 'Leave walk mode' : this.sw ? 'Leave the guided walk' : this.drillStack.length ? 'Climb out' : '';
     const b = $('#btnLeave');
     b.hidden = !label;
     setText(b, label);
@@ -1496,12 +1652,37 @@ export class App {
     $('#btnSearch').addEventListener('click', () => this.run('palette'));
     $('#btnInsights').addEventListener('click', () => this.run('insights'));
     $('#btnPhoto').addEventListener('click', () => this.run('photo'));
+    $('#btnWalkTour').addEventListener('click', () => this.run('scrollWalk'));
     $('#btnHelp').addEventListener('click', () => this.run('help'));
+    $('#btnKey').addEventListener('click', () => this.run('living'));
+    // The More menu closes once one of its actions runs.
+    $('#moreMenu').addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('button')) ($('#moreMenu') as HTMLElement).hidePopover();
+    });
+    // On-screen camera controls: the same eased flights as the keys, for touch and for anyone who prefers buttons.
+    $('#navCtl').addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-nav]');
+      const w = this.world;
+      if (!b || !w) return;
+      const g = this.cam.goal;
+      const reduced = reducedMotion();
+      this.cam.autoOrbit = false;
+      switch (b.dataset['nav']) {
+        case 'in': return this.cam.flyTo({ ...g, dist: g.dist * 0.6 }, 0.45, reduced);
+        case 'out': return this.cam.flyTo({ ...g, dist: g.dist / 0.6 }, 0.45, reduced);
+        case 'left': return this.cam.flyTo({ ...g, yaw: g.yaw - Math.PI / 6 }, 0.45, reduced);
+        case 'right': return this.cam.flyTo({ ...g, yaw: g.yaw + Math.PI / 6 }, 0.45, reduced);
+        case 'tilt': return this.cam.flyTo({ ...g, pitch: g.pitch < 0.9 ? 1.25 : 0.45 }, 0.6, reduced);
+        case 'home': return this.run('home');
+      }
+    });
+    // Say how to get around in the way this device works.
+    if (matchMedia('(pointer: coarse)').matches) setText($('#hints'), 'drag to move · pinch to zoom · twist to turn · tap a building');
     $('#btnSave').addEventListener('click', () => (this.exportNext = true));
     $('#btnRecOrbit').addEventListener('click', () => this.startRecording('orbit'));
     $('#btnRecHistory').addEventListener('click', () => this.startRecording('history'));
     $('#btnPhotoExit').addEventListener('click', () => (this.rec ? this.stopRecording(false) : this.togglePhoto()));
-    $('#btnLeave').addEventListener('click', () => (this.rec ? this.stopRecording(false) : this.walker ? this.setWalk(false) : this.drillOut()));
+    $('#btnLeave').addEventListener('click', () => (this.rec ? this.stopRecording(false) : this.walker ? this.setWalk(false) : this.sw ? this.setScrollWalk(false) : this.drillOut()));
     ($('#timeline .play') as HTMLButtonElement).addEventListener('click', () => this.run('play'));
     $('#timeline .track').addEventListener('keydown', (e) => {
       const k = (e as KeyboardEvent).key;
@@ -1557,7 +1738,7 @@ export class App {
       const active = document.activeElement as HTMLElement | null;
       // An input inside a just-closed dialog can stay activeElement until the browser's focus fixup runs.
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(active?.tagName ?? '') && !active?.closest('dialog:not([open])');
-      if (document.querySelector('dialog[open]')) return; // dialogs handle their own keys (Esc closes)
+      if (document.querySelector('dialog[open], [popover]:popover-open')) return; // dialogs and menus handle their own keys (Esc closes)
       // A key that began while a dialog was open (Enter picking a palette result, say) has closed it by now: not
       // ours either. Marked in the capture phase, so later keys still work while focus lingers in a closed dialog.
       if (keyFromDialog.has(e)) return;
@@ -1567,6 +1748,7 @@ export class App {
         if (this.photo) return this.togglePhoto();
         if (!$('#tableView').hidden) return this.openTable(false);
         if (this.walker) return this.setWalk(false);
+        if (this.sw) return this.setScrollWalk(false);
         if (this.compare) return this.setCompare(null);
         if (this.typesGoal) return this.setTypes(false);
         if (this.prOn || this.prAbort) return this.clearPr(true);
@@ -1592,7 +1774,7 @@ export class App {
       }
       const k = e.key.toLowerCase();
       if (k === 'shift') this.held.add(k);
-      if (['w', 'a', 's', 'd', 'q', 'e', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', '+', '=', '-'].includes(k)) {
+      if (['w', 'a', 's', 'd', 'q', 'e', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'pageup', 'pagedown', '+', '=', '-'].includes(k)) {
         e.preventDefault();
         this.held.add(k);
         this.cam.autoOrbit = false;
@@ -1602,25 +1784,48 @@ export class App {
 
   /** Continuous keyboard movement while keys are held (frame-rate independent). */
   private keyMove(dt: number, shift: boolean): void {
-    if (!this.held.size) return;
     const h = this.held;
-    if (this.walker) {
-      const on = (...k: string[]): number => (k.some((x) => h.has(x)) ? 1 : 0);
-      const input = { forward: on('w') - on('s'), strafe: on('d') - on('a'), turn: on('arrowright', 'e') - on('arrowleft', 'q'), look: on('arrowup') - on('arrowdown'), run: shift };
-      this.walker.step(dt, input, this.P.t);
+    const on = (...k: string[]): number => (k.some((x) => h.has(x)) ? 1 : 0);
+    if (!this.sw && !this.walker) {
+      // WASD and arrows move over the map, Q/E turn, Page Up/Down tilt, +/- zoom: eased in and out, never stepped.
+      const input = {
+        fwd: on('w', 'arrowup') - on('s', 'arrowdown'),
+        strafe: on('d', 'arrowright') - on('a', 'arrowleft'),
+        turn: on('e') - on('q'),
+        tilt: on('pageup') - on('pagedown'),
+        zoom: on('-') - on('+', '='),
+      };
+      this.cam.drive(input, dt, shift);
       return;
     }
-    const s = (shift ? 2 : 1) * dt * 60;
-    if (h.has('w')) this.cam.walk(s * 0.5, 0);
-    if (h.has('s')) this.cam.walk(-s * 0.5, 0);
-    if (h.has('a')) this.cam.walk(0, -s * 0.5);
-    if (h.has('d')) this.cam.walk(0, s * 0.5);
-    if (h.has('arrowleft') || h.has('q')) this.cam.orbit(-6 * s, 0);
-    if (h.has('arrowright') || h.has('e')) this.cam.orbit(6 * s, 0);
-    if (h.has('arrowup')) this.cam.orbit(0, 5 * s);
-    if (h.has('arrowdown')) this.cam.orbit(0, -5 * s);
-    if (h.has('+') || h.has('=')) this.cam.zoom(1 - 0.02 * s);
-    if (h.has('-')) this.cam.zoom(1 + 0.02 * s);
+    if (!h.size) return;
+    if (this.sw) {
+      const dir = on('arrowdown', 'arrowright', 's', 'd') - on('arrowup', 'arrowleft', 'w', 'a');
+      this.sw.goal = clamp(this.sw.goal + dir * dt * (shift ? 1.6 : 0.7), 0, this.sw.route.stops.length - 1);
+      return;
+    }
+    if (this.walker) {
+      const input = { forward: on('w') - on('s'), strafe: on('d') - on('a'), turn: on('arrowright', 'e') - on('arrowleft', 'q'), look: on('arrowup') - on('arrowdown'), run: shift };
+      this.walker.step(dt, input, this.P.t);
+    }
+  }
+
+  /** The point on the target's ground plane under a screen point, or null near or above the horizon. */
+  private groundAt(x: number, y: number): [number, number, number] | null {
+    const rect = this.canvas.getBoundingClientRect();
+    const C = this.cameraNow();
+    const ray = rayThrough(C, x - rect.left, y - rect.top, rect.width, rect.height);
+    if (ray[1] > -0.03) return null;
+    const t = (this.cam.goal.y - C.pos[1]) / ray[1];
+    return [C.pos[0] + ray[0] * t, this.cam.goal.y, C.pos[2] + ray[2] * t];
+  }
+
+  /** Map-style drag from one screen point to another: grab the ground; screen-space pan near the horizon. */
+  private dragPan(x0: number, y0: number, x1: number, y1: number, dt: number): void {
+    const a = this.groundAt(x0, y0);
+    const b = this.groundAt(x1, y1);
+    if (a && b) this.cam.grab(a, b, dt);
+    else this.cam.pan(x1 - x0, y1 - y0);
   }
 
   private bindCanvas(): void {
@@ -1641,10 +1846,6 @@ export class App {
       this.dragMoved = 0;
       this.cam.autoOrbit = false;
       this.cam.still();
-      if (this.ptrs.size === 2) {
-        const [a, b] = [...this.ptrs.values()];
-        this.pinch = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-      }
       c.classList.add('drag');
     });
     c.addEventListener('pointermove', (e) => {
@@ -1665,18 +1866,34 @@ export class App {
       const dy = e.clientY - p.y;
       const dt = Math.max(1, now - p.t) / 1000;
       this.dragMoved += Math.abs(dx) + Math.abs(dy);
+      const before = [...this.ptrs.values()].map((q) => ({ x: q.x, y: q.y }));
+      const [x0, y0] = [p.x, p.y];
       p.x = e.clientX;
       p.y = e.clientY;
       p.t = now;
       if (this.ptrs.size === 1) {
-        if (this.walker) this.walker.look(-dx, -dy); // drag the view, like grabbing the scene
-        else if (e.shiftKey || e.buttons === 2) this.cam.pan(dx, dy);
-        else this.cam.orbit(dx, dy, dt);
-      } else if (this.ptrs.size === 2) {
-        const [a, b] = [...this.ptrs.values()];
-        const d = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-        if (this.pinch) this.zoomAt(this.pinch / d, (a!.x + b!.x) / 2, (a!.y + b!.y) / 2);
-        this.pinch = d;
+        if (this.sw) this.sw.goal = clamp(this.sw.goal - dy * 0.006, 0, this.sw.route.stops.length - 1); // swipe up walks on
+        else if (this.walker) this.walker.look(-dx, -dy); // drag the view, like grabbing the scene
+        // Like a map: drag moves the city, right-drag (or a modifier key) turns and tilts it.
+        else if (e.buttons & 2 || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) this.cam.orbit(dx, dy, dt);
+        else this.dragPan(x0, y0, e.clientX, e.clientY, dt);
+      } else if (this.ptrs.size === 2 && !this.walker && !this.sw) {
+        // Two fingers: pinch zooms, twisting turns, moving both moves the map.
+        const after = [...this.ptrs.values()];
+        const [a0, b0, a1, b1] = [before[0]!, before[1]!, after[0]!, after[1]!];
+        const d0 = Math.hypot(a0.x - b0.x, a0.y - b0.y);
+        const d1 = Math.hypot(a1.x - b1.x, a1.y - b1.y);
+        const mx0 = (a0.x + b0.x) / 2;
+        const my0 = (a0.y + b0.y) / 2;
+        const mx1 = (a1.x + b1.x) / 2;
+        const my1 = (a1.y + b1.y) / 2;
+        if (d0 > 8 && d1 > 8) {
+          this.zoomAt(d0 / d1, mx1, my1);
+          let turn = Math.atan2(a1.y - b1.y, a1.x - b1.x) - Math.atan2(a0.y - b0.y, a0.x - b0.x);
+          turn = ((turn + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+          this.cam.turn(turn);
+        }
+        this.dragPan(mx0, my0, mx1, my1, 0);
       }
       this.hideTip();
     });
@@ -1686,7 +1903,6 @@ export class App {
       const click = this.dragMoved < 6 && this.ptrs.size === 1;
       if (performance.now() - p.t > 90) this.cam.still(); // held still before release: no fling
       this.ptrs.delete(e.pointerId);
-      if (this.ptrs.size < 2) this.pinch = 0;
       if (!this.ptrs.size) c.classList.remove('drag');
       if (click) void this.pickAt(e.clientX, e.clientY).then((i) => this.select(i));
     };
@@ -1711,6 +1927,12 @@ export class App {
       (e) => {
         if (this.mode !== 'city') return;
         e.preventDefault();
+        if (this.sw) {
+          // One wheel notch (100 px) is a fifth of the way to the next stop; line-mode wheels send ~3 per notch.
+          const px = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 600 : 1);
+          this.sw.goal = clamp(this.sw.goal + px * 0.002, 0, this.sw.route.stops.length - 1);
+          return;
+        }
         if (this.walker) return; // no zoom on foot
         // Trackpad pinch arrives as ctrl+wheel with small deltas; both zoom toward the cursor.
         this.zoomAt(Math.exp(e.deltaY * (e.ctrlKey ? 0.01 : 0.0011)), e.clientX, e.clientY);
@@ -1832,10 +2054,10 @@ export class App {
     const pose = pos && tgt ? { pos, tgt } : (this.lastPose ?? this.cam.pose());
     const far = Math.max(1200, (this.world?.radius ?? 100) * 6);
     // Walking (and the blend out of it) puts the eye next to walls: a closer near plane stops them being cut open.
-    return buildCamera(pose.pos, pose.tgt, this.canvas.clientWidth, this.canvas.clientHeight, far, fov, this.walker || this.blend ? NEAR : 0.4);
+    return buildCamera(pose.pos, pose.tgt, this.canvas.clientWidth, this.canvas.clientHeight, far, fov, this.walker || this.sw || this.blend ? NEAR : 0.4);
   }
 
-  /** Nothing is moving but ambient animation: render at a low rate to save battery (PLAN section 6, Idle). */
+  /** Nothing is moving but ambient animation: render at a low rate to save battery. */
   private isIdle(now: number): boolean {
     return !(
       now - this.lastInput < ACTIVE_FOR_MS ||
@@ -1895,7 +2117,7 @@ export class App {
     } else if (this.mode !== 'story') {
       P.hot = 0.5;
       P.fog = FOG * 1.15;
-      // Loading is a scene (A6): the background city un-builds in step with real analysis progress.
+      // Loading is a scene: the background city un-builds in step with real analysis progress.
       const goal = this.mode === 'loading' ? 1 - 0.92 * this.loadFrac : 1;
       P.t = reduced ? goal : P.t + (goal - P.t) * (1 - Math.exp(-dt * 2.5));
       P.exposure = 1;
@@ -1923,7 +2145,7 @@ export class App {
       P.fade *= sf.fade;
     } else {
       if (this.walker) this.walker.resolve(P.t); // a building born under the walker (history playing) pushes them out
-      ({ pos, tgt } = this.walker ? this.walker.pose() : this.cam.pose());
+      ({ pos, tgt } = this.sw ? this.stepScrollWalk(dt, reduced) : this.walker ? this.walker.pose() : this.cam.pose());
     }
     if (this.blend) {
       const b = this.blend;
@@ -1934,7 +2156,7 @@ export class App {
       fov = lerp(b.fov, fov, e);
       if (b.k >= 1) this.blend = null;
     }
-    // A6 effects. Depth of field: story pulls focus onto each chapter's subject; the city focuses the selection or
+    // effects. Depth of field: story pulls focus onto each chapter's subject; the city focuses the selection or
     // the orbit target; the hero stays soft behind the text.
     const w0 = this.world;
     let focus = dist(pos, tgt);
@@ -1944,7 +2166,7 @@ export class App {
     } else if (this.mode === 'city' && w0 && this.selected >= 0) {
       focus = dist(pos, [w0.pos[this.selected * 3]!, w0.pos[this.selected * 3 + 1]!, w0.pos[this.selected * 3 + 2]!]);
     }
-    if (this.walker && this.selected < 0) focus = 14; // on foot: focus down the street, not on the look target
+    if ((this.walker || this.sw) && this.selected < 0) focus = 14; // on foot: focus down the street, not on the look target
     P.focusDist += (focus - (P.focusDist || focus)) * (1 - Math.exp(-dt * 4)); // focus pulls glide, never snap
     P.dof = this.mode === 'story' ? 1 : this.mode === 'city' ? (this.photo ? 1 : 0.55) : 0.4;
     P.motion = reduced ? 0 : 1;
@@ -1958,6 +2180,8 @@ export class App {
     this.fov = fov;
     this.lastPose = { pos, tgt };
     P.focusAmt += (this.focusGoal - P.focusAmt) * (1 - Math.exp(-dt * 5));
+    const livingGoal = this.plain ? 0 : 1;
+    P.living = reduced ? livingGoal : P.living + (livingGoal - P.living) * (1 - Math.exp(-dt * 3));
     P.weather = reduced ? this.weatherGoal : P.weather + (this.weatherGoal - P.weather) * (1 - Math.exp(-dt * 2)); // slow fade in
     const prGoal = this.prOn ? 1 : 0;
     P.pr = reduced ? prGoal : P.pr + (prGoal - P.pr) * (1 - Math.exp(-dt * 4));
@@ -1981,7 +2205,7 @@ export class App {
         const u = reduced ? 0 : smoothstep(0, 1, s - k);
         const a = L.wp[k % L.wp.length]!;
         const b = L.wp[(k + 1) % L.wp.length]!;
-        const o = i * 3; // written in place: no per-frame arrays in the hot path (EXPERIENCE section 9)
+        const o = i * 3; // written in place: no per-frame arrays in the hot path
         this.lanterns[o] = lerp(a[0], b[0], u);
         this.lanterns[o + 1] = lerp(a[1], b[1], u) + Math.sin(u * Math.PI) * 3.5;
         this.lanterns[o + 2] = lerp(a[2], b[2], u);

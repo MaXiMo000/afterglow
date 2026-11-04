@@ -1,5 +1,5 @@
 /**
- * Share links (EXPERIENCE section 5, SECURITY T15). The URL hash carries only strictly validated numbers and the
+ * Share links. The URL hash carries only strictly validated numbers and the
  * repo name; anything unexpected is dropped, and nothing from it is ever inserted as HTML.
  *   #v=1&r=owner/name&c=yaw,pitch,dist,x,z&t=0.734
  */

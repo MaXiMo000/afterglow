@@ -1,4 +1,4 @@
-"""Pull request overlay (docs/ROADMAP.md #7): which files a PR changes, without reading any file contents.
+"""Pull request overlay: which files a PR changes, without reading any file contents.
 
 GitHub keeps a test merge of every open, mergeable PR at `refs/pull/<n>/merge`; its first parent is the base
 branch, so `diff-tree base merge` is exactly the PR's change set. Only those two commits and their trees are

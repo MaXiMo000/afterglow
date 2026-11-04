@@ -1,5 +1,5 @@
 /**
- * Two cities side by side (docs/ROADMAP.md #11). Each repository is laid out as its own city with the same
+ * Two cities side by side. Each repository is laid out as its own city with the same
  * building rules (heights use one absolute scale), on one shared calendar (both normalised to the union of their
  * spans, so the timeline shows both at the same real date), then placed on neighbouring islands: A to the west,
  * B to the east. The merged result keeps A's files first, so a building index below `split` is A's.
@@ -8,7 +8,7 @@ import type { Month, Result } from '../lib/result';
 import { buildWorld, INST, type World } from './build';
 import { fileTypes } from './types';
 
-/** Both together must stay within one city's file budget (PLAN section 6). */
+/** Both together must stay within one city's file budget. */
 export const PAIR_MAX_FILES = 50_000;
 const GAP = 24;
 
@@ -67,6 +67,12 @@ export function pair(a: Result, b: Result): Pair {
     radius: Math.max(Math.abs(ax) + wa.radius, bx + wb.radius),
     heightFromChanges: wa.heightFromChanges || wb.heightFromChanges,
     types: fileTypes(result),
+    living: {
+      style: Uint8Array.from([...wa.living.style, ...wb.living.style]),
+      crane: Uint8Array.from([...wa.living.crane, ...wb.living.crane]),
+      counts: wa.living.counts.map((n, k) => n + wb.living.counts[k]!),
+      cranes: wa.living.cranes + wb.living.cranes,
+    },
   };
   return { a, b, split, world, result, centres: [ax, bx] };
 }
