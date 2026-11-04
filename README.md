@@ -20,7 +20,8 @@ Paste a public GitHub repository and its whole history grows into a night city y
 | Lanterns | Contributors (pseudonymous), roaming the files they work on |
 | Arcs | Folders whose files change together |
 
-A short scroll story walks through the findings, then the city opens for free exploration: search (`/`), an insights
+A short scroll story walks through the findings, then the city opens for free exploration. A guided walk (`9`) takes you
+at street level from finding to finding as you scroll, with a caption at each stop; `8` shows the city key. Also: search (`/`), an insights
 panel (hotspots, bus factor, quiet areas, coupling), a timeline to replay history, compare two dates, share links,
 photo mode, a graphics-quality setting, and a full keyboard map (`?`). The browser's Back button, Esc and Backspace
 step back through city, story and start page. Everything also works as a plain table, with or without WebGL.

@@ -403,7 +403,7 @@ dialog[open]::backdrop { transition: opacity var(--motion-base) var(--motion-eas
   .repo, #hints, #minimap { display: none; }
   #timeline { grid-template-columns: auto 1fr; }
   #timeline .track { grid-column: 1 / -1; }
-  #timeline .speed, #btnPhoto, #btnHelp, #btnSearch kbd, #btnInsights kbd, #btnShare kbd { display: none; }
+  #timeline .speed, #btnPhoto, #btnHelp, #btnSearch kbd, #btnInsights kbd, #btnWalkTour kbd, #btnShare kbd { display: none; }
   #rail span { display: none; }
   .chap { bottom: clamp(96px, 14vh, 140px); }
   #callout .body { width: 180px; }

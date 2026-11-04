@@ -10,6 +10,9 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
   warehouses, the largest source files are glass towers, old untouched files are brick, files changed in the last
   14 days carry a crane (up to 24), and files untouched for two years grow vines. Streets get lamps. `8` shows the
   city key with counts; `8` again switches back to plain boxes.
+- Guided walk (`9`, or the Walk button): scroll, swipe or use the arrow keys to walk at street level from finding to
+  finding (hotspots, the biggest park, a quiet district, a crane site), with a caption and the inspector at each stop.
+  `J`/`K` jump between stops, Esc leaves.
 - Repository: internal planning notes are no longer published; added SECURITY.md, CONTRIBUTING.md and .env.example.
   The default start-page gallery lists well-known projects.
 - Touch: every mode a key turns on now has an on-screen way off. Legends (PR, changes since, what-if, weather,
