@@ -67,7 +67,7 @@ export class Renderer {
   private cw = 2;
   private ch = 2;
   private world: World | null = null;
-  private vaos: { bld?: WebGLVertexArrayObject; pad?: WebGLVertexArrayObject; beam?: WebGLVertexArrayObject; fire?: WebGLVertexArrayObject; lant?: WebGLVertexArrayObject; mist?: WebGLVertexArrayObject; rain?: WebGLVertexArrayObject; water?: WebGLVertexArrayObject; ripple?: WebGLVertexArrayObject; crane?: WebGLVertexArrayObject; curves: WebGLVertexArrayObject[] } = { curves: [] };
+  private vaos: { bld?: WebGLVertexArrayObject; pad?: WebGLVertexArrayObject; beam?: WebGLVertexArrayObject; fire?: WebGLVertexArrayObject; lant?: WebGLVertexArrayObject; mist?: WebGLVertexArrayObject; rain?: WebGLVertexArrayObject; water?: WebGLVertexArrayObject; ripple?: WebGLVertexArrayObject; crane?: WebGLVertexArrayObject; tree?: WebGLVertexArrayObject; house?: WebGLVertexArrayObject; curves: WebGLVertexArrayObject[] } = { curves: [] };
   private buffers: WebGLBuffer[] = [];
   private n = 0;
   private padCount = 0;
@@ -79,6 +79,7 @@ export class Renderer {
   private trailOut: Float32Array | null = null; // reused upload buffer (no per-frame allocation)
   private trailAt = 0;
   private cube!: { vb: WebGLBuffer; ib: WebGLBuffer };
+  private meshes!: { tree: { vb: WebGLBuffer; n: number }; house: { vb: WebGLBuffer; n: number } };
   private nullTex: WebGLTexture;
   private pickState: { fbo: WebGLFramebuffer; rb: WebGLRenderbuffer; depth: WebGLRenderbuffer; pbo: WebGLBuffer; fence: WebGLSync | null; resolve: ((id: number) => void) | null } | null = null;
   private lost = false;
@@ -200,6 +201,9 @@ export class Renderer {
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(ci), gl.STATIC_DRAW);
     this.buffers.push(ib);
     this.cube = { vb, ib };
+    const tree = treeMesh();
+    const house = houseMesh();
+    this.meshes = { tree: { vb: this.buf(tree), n: tree.length / 7 }, house: { vb: this.buf(house), n: house.length / 7 } };
     this.vaos.water = this.vao(() => {
       this.buf(new Float32Array([-1500, -1500, 1500, -1500, -1500, 1500, 1500, -1500, 1500, 1500, -1500, 1500]));
       this.attr(0, 2);
@@ -220,6 +224,19 @@ export class Renderer {
       gl.bindBuffer(gl.ARRAY_BUFFER, instVB);
       for (let k = 0; k < 5; k++) this.attr(2 + k, 4, INST * 4, k * 16, 1);
     });
+
+    // Living City props: tree and house meshes over the same instance buffer (the shader keeps only its style).
+    const propVao = (vb: WebGLBuffer): WebGLVertexArrayObject =>
+      this.vao(() => {
+        gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+        this.attr(0, 3, 28, 0);
+        this.attr(1, 3, 28, 12);
+        this.attr(7, 1, 28, 24);
+        gl.bindBuffer(gl.ARRAY_BUFFER, instVB);
+        for (let k = 0; k < 5; k++) this.attr(2 + k, 4, INST * 4, k * 16, 1);
+      });
+    this.vaos.tree = propVao(this.meshes.tree.vb);
+    this.vaos.house = propVao(this.meshes.house.vb);
 
     // District pads: disc + skirt, per-vertex district values (birth, activity, last touch, palette).
     const pv: number[] = [];
@@ -317,13 +334,14 @@ export class Renderer {
     // Living City cranes: mast, jib with counter-jib, two ties to the apex and the hook cable (LINES).
     const cranes: number[] = [];
     w.living.crane.forEach((c, fi) => {
-      if (c) cranes.push(w.pos[fi * 3]!, w.pos[fi * 3 + 1]!, w.pos[fi * 3 + 2]!, w.inst[fi * INST + 6]!);
+      // At the building's corner, so the mast stands beside the work, not through it.
+      const o = fi * INST;
+      if (c) cranes.push(w.inst[o]! + w.inst[o + 2]! * 0.45, w.pos[fi * 3 + 1]!, w.inst[o + 1]! + w.inst[o + 3]! * 0.45, w.inst[o + 6]!);
     });
     this.craneCount = cranes.length / 4;
     this.vaos.crane = this.vao(() => {
-      // (along the jib, height above the mast top, 1 = mast foot)
-      const seg = [[0, 0, 1], [0, 0, 0], [-0.8, 0, 0], [2.8, 0, 0], [0, 0, 0], [0, 0.7, 0], [0, 0.7, 0], [2.8, 0, 0],
-        [0, 0.7, 0], [-0.8, 0, 0], [2.3, 0, 0], [2.3, -1.3, 0]]; // prettier-ignore
+      // (along the jib, height above the mast top, 1 = mast foot): mast, jib, hook cable
+      const seg = [[0, 0, 1], [0, 0, 0], [-0.5, 0, 0], [1.9, 0, 0], [1.6, 0, 0], [1.6, -0.9, 0]]; // prettier-ignore
       this.buf(new Float32Array(seg.flat())), this.attr(0, 3);
       this.buf(new Float32Array(cranes.length ? cranes : [0, 0, 0, 2])), this.attr(1, 4, 16, 0, 1);
     });
@@ -577,10 +595,30 @@ export class Renderer {
     gl.uniform1f(u['uMotion']!, P.motion);
     gl.uniform1f(u['uWeather']!, this.tier.rain ? P.weather : 0);
     gl.uniform1f(u['uLiving']!, P.living);
+    // Overlays (file types, PR, compare, what-if) colour every building, so props step aside for plain boxes then.
+    const props = P.living > 0.5 && P.types < 0.01 && P.pr < 0.01 && P.risk < 0.01 && (refl || P.cmp[0] < 0.5);
+    gl.uniform1f(u['uProps']!, props ? 1 : 0);
     gl.uniform3fv(u['uTypeCol']!, TYPE_COL);
     gl.uniform3fv(u['uCmp']!, refl ? [0, 0, 0] : P.cmp);
     gl.bindVertexArray(this.vaos.bld!);
     gl.drawElementsInstanced(gl.TRIANGLES, 30, gl.UNSIGNED_SHORT, 0, this.n);
+    if (props) {
+      u = this.use('prop');
+      gl.uniformMatrix4fv(u['uVP']!, false, vp);
+      gl.uniform3fv(u['uCam']!, cp);
+      gl.uniform1f(u['uT']!, P.t);
+      gl.uniform1f(u['uTime']!, time);
+      gl.uniform1f(u['uFog']!, P.fog);
+      gl.uniform3fv(u['uFogCol']!, FOG_COL);
+      gl.uniform1f(u['uFlow']!, P.flow);
+      gl.uniform1f(u['uFocus']!, P.focus);
+      gl.uniform1f(u['uFocusAmt']!, P.focusAmt);
+      for (const [kind, vao, mesh] of [[4, this.vaos.tree!, this.meshes.tree], [5, this.vaos.house!, this.meshes.house]] as const) {
+        gl.uniform1f(u['uKind']!, kind);
+        gl.bindVertexArray(vao);
+        gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.n, this.n);
+      }
+    }
     if (refl) return;
 
     gl.depthMask(false);
@@ -625,7 +663,7 @@ export class Renderer {
       gl.uniform1f(u['uMotion']!, P.motion);
       gl.uniform1f(u['uLiving']!, P.living);
       gl.bindVertexArray(this.vaos.crane!);
-      gl.drawArraysInstanced(gl.LINES, 0, 12, this.craneCount);
+      gl.drawArraysInstanced(gl.LINES, 0, 6, this.craneCount);
     }
     u = this.use('pts');
     gl.uniformMatrix4fv(u['uVP']!, false, vp);
@@ -902,6 +940,62 @@ export class Renderer {
     for (const p of Object.values(this.progs)) gl.deleteProgram(p.p);
     this.buffers = [];
   }
+}
+
+type V = [number, number, number];
+/** Push one triangle (positions, a flat normal, a part id) as 3 x (x, y, z, nx, ny, nz, part). */
+function tri(out: number[], a: V, b: V, c: V, part: number): void {
+  const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  const n = [u[1]! * v[2]! - u[2]! * v[1]!, u[2]! * v[0]! - u[0]! * v[2]!, u[0]! * v[1]! - u[1]! * v[0]!];
+  const l = Math.hypot(n[0]!, n[1]!, n[2]!) || 1;
+  for (const p of [a, b, c]) out.push(...p, n[0]! / l, n[1]! / l, n[2]! / l, part);
+}
+
+/** Box walls without a bottom, from y0 to y1, half-widths hx, hz. */
+function walls(out: number[], hx: number, hz: number, y0: number, y1: number, part: number): void {
+  const c: V[] = [[-hx, 0, -hz], [hx, 0, -hz], [hx, 0, hz], [-hx, 0, hz]];
+  for (let i = 0; i < 4; i++) {
+    const a = c[i]!;
+    const b = c[(i + 1) % 4]!;
+    tri(out, [a[0], y0, a[2]], [a[0], y1, a[2]], [b[0], y1, b[2]], part);
+    tri(out, [a[0], y0, a[2]], [b[0], y1, b[2]], [b[0], y0, b[2]], part);
+  }
+}
+
+/** A low-poly tree in unit height: a trunk and two stacked eight-sided cones of canopy. */
+export function treeMesh(): Float32Array {
+  const out: number[] = [];
+  walls(out, 0.06, 0.06, 0, 0.32, 0);
+  const cone = (y0: number, y1: number, r: number): void => {
+    const n = 8;
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * Math.PI * 2;
+      const a1 = ((i + 1) / n) * Math.PI * 2;
+      const p0: V = [Math.cos(a0) * r, y0, Math.sin(a0) * r];
+      const p1: V = [Math.cos(a1) * r, y0, Math.sin(a1) * r];
+      tri(out, p0, [0, y1, 0], p1, 1);
+      tri(out, p0, p1, [0, y0, 0], 1); // underside, seen from the street
+    }
+  };
+  cone(0.22, 0.78, 0.46);
+  cone(0.5, 1, 0.34);
+  return new Float32Array(out);
+}
+
+/** A house: walls up to y = 1 (scaled by the file's height) and a pitched roof above it (scaled by its width). */
+export function houseMesh(): Float32Array {
+  const out: number[] = [];
+  walls(out, 0.5, 0.5, 0, 1, 0);
+  const e = 0.56; // eaves overhang the walls a little
+  const r = 1.55; // ridge: 0.55 of the house's width above the walls
+  tri(out, [-e, 1, -e], [0, r, -e], [0, r, e], 1);
+  tri(out, [-e, 1, -e], [0, r, e], [-e, 1, e], 1);
+  tri(out, [e, 1, e], [0, r, e], [0, r, -e], 1);
+  tri(out, [e, 1, e], [0, r, -e], [e, 1, -e], 1);
+  tri(out, [-0.5, 1, -0.5], [0.5, 1, -0.5], [0, r, -0.5], 0); // gable ends, wall-coloured
+  tri(out, [0.5, 1, 0.5], [-0.5, 1, 0.5], [0, r, 0.5], 0);
+  return new Float32Array(out);
 }
 
 /** Mirror a view-projection for planar water reflections. */

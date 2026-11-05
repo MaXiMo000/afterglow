@@ -11,6 +11,11 @@ import { livingCity, STYLE, type Living } from './living';
 import { fileTypes, type FileTypes } from './types';
 
 export const CELL = 1.6;
+/** Every STREET-th row and column of lots is a road, so each district is blocks of 3 x 3 lots you can walk between. */
+export const STREET = 4;
+/** True for a lot index (floor(x / CELL)) that is a road, not a building lot. */
+export const isStreet = (g: number): boolean => ((g % STREET) + STREET) % STREET === 0;
+const LOT_SHARE = ((STREET - 1) / STREET) ** 2; // share of a district's lots left for buildings
 /** Floats per building instance: iA(x,z,w,d) iB(h,birth,last,activity) iC(palette,seed,hot,dead) iD(district,type,what-if risk,PR mark)
  * iE(style,crane,-,-). */
 export const INST = 20;
@@ -84,7 +89,7 @@ export function buildWorld(result: Result): World {
       name: d.name,
       x: 0,
       z: 0,
-      r: Math.sqrt((Math.max(count, 1) * CELL * CELL) / 0.62 / Math.PI) + 1.6,
+      r: Math.sqrt((Math.max(count, 1) * CELL * CELL) / 0.62 / LOT_SHARE / Math.PI) + 1.6,
       birth: 1,
       last: 0,
       act: 0,
@@ -157,7 +162,7 @@ export function buildWorld(result: Result): World {
         const x = (gx + 0.5) * CELL;
         const z = (gz + 0.5) * CELL;
         const dd = Math.hypot(x - d.x, z - d.z);
-        if (dd <= rr) cells.push([x, z, dd]);
+        if (dd <= rr && !isStreet(gx) && !isStreet(gz)) cells.push([x, z, dd]);
       }
     cells.sort((a, b) => a[2] - b[2]);
     let actSum = 0;
@@ -167,8 +172,11 @@ export function buildWorld(result: Result): World {
       const fs = hashStr(f.path) / 4294967296;
       const size = heightFromChanges ? f.changes * 8 : f.loc;
       const style = living.style[fi]!;
-      // Trees stay low and slim whatever the test file's size; the height still grows with it.
-      const h = style === STYLE.tree ? clamp(0.9 + Math.log2(1 + size / 40) * 0.45, 0.8, 3.2) : clamp(0.8 + Math.log2(1 + size / 20) * 1.05, 0.7, 15) * (f.hot ? 1.12 : 1);
+      // Trees and houses keep their own scale (a tree is never a tower); height still grows with the file's size.
+      const h =
+        style === STYLE.tree ? clamp(0.9 + Math.log2(1 + size / 40) * 0.45, 0.8, 3.2)
+        : style === STYLE.house ? clamp(0.8 + Math.log2(1 + size / 40) * 0.5, 0.8, 3.6)
+        : clamp(0.8 + Math.log2(1 + size / 20) * 1.05, 0.7, 15) * (f.hot ? 1.12 : 1);
       const birth = norm(f.birth);
       const last = Math.max(norm(f.last), birth + 0.001);
       const act = f.dead ? 0.05 : f.changes_12m > 0 ? clamp(0.25 + (0.75 * Math.log1p(f.changes_12m)) / Math.log1p(maxC12), 0, 0.98) : 0.08;

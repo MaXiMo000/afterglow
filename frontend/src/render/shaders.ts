@@ -86,7 +86,7 @@ uniform mat4 uVP;uniform float uT,uTime,uHover,uLift,uFlow;
 SRC.bld={vs:H+`
 layout(location=0) in vec3 aPos;layout(location=1) in vec3 aNor;
 layout(location=2) in vec4 iA;layout(location=3) in vec4 iB;layout(location=4) in vec4 iC;layout(location=5) in vec4 iD;layout(location=6) in vec4 iE;
-`+BUILDING_COMMON+`uniform float uLiving;
+`+BUILDING_COMMON+`uniform float uLiving,uProps;
 out vec3 vW;out vec3 vN;out vec2 vXZ;out vec2 vSize;out vec4 vB;out vec4 vC;out float vG;out float vTop;flat out float vInst;flat out float vDist;flat out float vType;flat out float vRisk;flat out float vPr;flat out float vStyle;flat out float vCrane;
 void main(){
   vType=iD.y;vRisk=iD.z;vPr=iD.w;vStyle=iE.x;vCrane=iE.y;
@@ -97,16 +97,13 @@ void main(){
   /* hover lift - the hovered building rises a little */
   float lift=step(abs(float(gl_InstanceID)-uHover),.5)*uLift;
   h*=1.+.07*lift;
-  /* Living City shapes (uLiving eases 0..1 back to plain boxes): glass towers taper, test files are pyramid trees,
-     docs are houses with a sloping roof. Only the top four corners move, so the footprint (and walk collision) stays. */
+  /* Living City: trees (test files) and houses (docs) are drawn by the prop pass with their own meshes. */
+  if(uProps>.5&&iE.x>3.5){gl_Position=vec4(2.,2.,2.,1.);return;}
   vec2 xz=aPos.xz;float top=step(.5,aPos.y);
-  float sty=iE.x;
-  float tw=step(.5,sty)*step(sty,1.5),tr=step(3.5,sty)*step(sty,4.5),hs=step(4.5,sty);
-  xz*=mix(1.,mix(1.,.78,tw)*mix(1.,.04,tr),top*uLiving);
-  float roof=hs*top*step(0.,aPos.x)*min(iA.z,iA.w)*.55*uLiving;
-  vec3 w=vec3(iA.x+xz.x*iA.z,.28+.35*lift+aPos.y*h+roof,iA.y+xz.y*iA.w);
-  vec3 nor=aNor;if(tr*uLiving>.5&&abs(aNor.y)<.5)nor=normalize(aNor+vec3(0.,.45,0.));
-  vW=w;vN=nor;vXZ=aPos.xz+.5;vSize=iA.zw;vB=iB;vC=iC;vG=g;vTop=.28+h;vInst=float(gl_InstanceID);vDist=iD.x;
+  float tw=step(.5,iE.x)*step(iE.x,1.5);
+  xz*=mix(1.,.84,tw*top*uLiving);/* glass towers taper a little; the footprint (and walk collision) stays */
+  vec3 w=vec3(iA.x+xz.x*iA.z,.28+.35*lift+aPos.y*h,iA.y+xz.y*iA.w);
+  vW=w;vN=aNor;vXZ=aPos.xz+.5;vSize=iA.zw;vB=iB;vC=iC;vG=g;vTop=.28+h;vInst=float(gl_InstanceID);vDist=iD.x;
   gl_Position=uVP*vec4(w,1.);
 }`,
 fs:H+NOISE+`
@@ -165,9 +162,8 @@ void main(){
   emis*=1.-vC.w*.9;
   /* ruins: untouched for two years, vines climb from the ground (dead files only) */
   if(vC.w>.5&&side>.5){float vine=smoothstep(.15,.0,ySt/(1.2+2.6*vnoise(vW.xz*1.7+vec2(ySt*.4))));col=mix(col,vec3(.04,.14,.06),vine*.85*L1);}
-  /* under construction: scaffolding and work lights on the top floors of a crane site */
-  if(vCrane>.5&&side>.5){float up=smoothstep(vTop-.28-2.2,vTop-.28-1.6,vW.y);vec2 sg=fract(vec2(uv.x*2.2,ySt*2.));
-    float bar=max(step(.9,sg.x),step(.9,sg.y))*up;col=mix(col,vec3(.55,.36,.12),bar*.8*L1);emis+=vec3(1.,.62,.22)*bar*.35*L1;}
+  /* under construction: a band of work lights along the top floor of a crane site */
+  if(vCrane>.5&&side>.5)emis+=vec3(1.,.62,.22)*smoothstep(.35,.0,abs(vTop-vW.y-.25))*.5*L1;
   /* a few warm lights strung through the trees, more where the tests are busy */
   if(isTree>0.){vec3 q=vW*5.;float dot_=step(length(fract(q.xy+q.z*.37)-.5),.09)*step(.9-.25*vB.w,h21(floor(q.xy+q.z*.37)));emis+=vec3(1.,.8,.45)*dot_*isTree*1.4;}
   emis+=vec3(.30,.62,.75)*step(.988,rnd)*win*vC.w*.5;
@@ -239,12 +235,22 @@ void main(){
   float st=smoothstep(.43,.5,max(g.x,g.y));
   float alive=1.-smoothstep(vDist.z+.06,vDist.z+.26,uT);alive=max(alive,.1);
   c+=vec3(1.,.6,.3)*st*.11*vDist.y*alive*step(vRad,1.);
-  /* Living City ground: park lawns where tests make up the district, streetlights on every other street corner */
+  /* Living City ground. Every 4th row and column of lots is a road (world/build.ts STREET): asphalt with kerbs, a
+     dashed centre line and streetlights at the crossings. Lots in test-heavy districts are park lawn. */
   float inner=step(vRad,1.)*uLiving;
-  c=mix(c,vec3(.025,.075,.04)*(.75+.5*vnoise(vW.xz*.9)),inner*smoothstep(.05,.6,vPark)*.9);
-  vec2 cn=floor(vW.xz/1.6+.5);float corner=step(.5,mod(cn.x+cn.y,2.));
-  float lamp=smoothstep(.07,.0,length(fract(vW.xz/1.6+.5)-.5))*corner;
-  c+=vec3(1.,.72,.4)*lamp*inner*(.25+.75*alive)*.8;
+  vec2 lot=floor(vW.xz/1.6),fl=fract(vW.xz/1.6);
+  vec2 road=vec2(step(mod(lot.x,4.),.5),step(mod(lot.y,4.),.5));
+  float onRoad=max(road.x,road.y)*inner,cross_=road.x*road.y;
+  c=mix(c,vec3(.025,.075,.04)*(.75+.5*vnoise(vW.xz*.9)),inner*(1.-onRoad)*smoothstep(.05,.6,vPark)*.9);
+  vec3 asphalt=vec3(.045,.05,.06)*(.85+.3*vnoise(vW.xz*4.));
+  float kerb=road.x*(1.-road.y)*step(.42,abs(fl.x-.5))+road.y*(1.-road.x)*step(.42,abs(fl.y-.5));
+  float dash=(road.x*(1.-road.y)*step(abs(fl.x-.5),.025)*step(.5,fract(vW.z*.9)))+(road.y*(1.-road.x)*step(abs(fl.y-.5),.025)*step(.5,fract(vW.x*.9)));
+  vec3 rc=mix(asphalt,vec3(.11,.12,.13),kerb)+vec3(.9,.75,.45)*dash*.35;
+  c=mix(c,rc,onRoad);
+  /* streetlights on the four corners of each crossing, pools of warm light on the road */
+  vec2 q=abs(fl-.5);float lampPt=cross_*smoothstep(.06,.0,length(q-.42));
+  float pool=cross_*smoothstep(.55,.0,length(q-.42));
+  c+=vec3(1.,.72,.4)*(lampPt*1.6+pool*.12)*inner*(.3+.7*alive);
   float rim=(vRad>1.)?.55:smoothstep(.93,.985,vRad);
   c+=uRim[int(vDist.w+.5)]*rim*(.5+.5*sin(uTime*.6+vD*1.7))*.9*mix(.25,1.,alive);
   float dist=length(uCam-vW);float fg=1.-exp(-dist*uFog);
@@ -268,7 +274,7 @@ void main(){
   if(uMotion>.5){float ph=aP.y;p+=vec3(sin(uTime*.31+ph*6.28)*2.2,sin(uTime*.5+ph*9.)*.7,cos(uTime*.27+ph*5.)*2.2);}
   float d=length(uCam-p);
   gl_Position=uVP*vec4(p,1.);
-  gl_PointSize=clamp(aP.x*uPx/d,1.,110.);
+  gl_PointSize=clamp(aP.x*uPx/d,1.,26.);/* capped: a firefly next to the camera is a spark, not a blur */
   float tw=.6+.4*sin(uTime*(1.5+aP.y*3.)+aP.y*40.);
   vI=aP.w*tw*uVis;vCol=aCol;
 }`,
@@ -301,6 +307,63 @@ void main(){
 fs:H+NOISE+`in vec2 vQ;in float vD;in float vPh;uniform vec3 uFogCol;uniform float uTime;out vec4 o;
 void main(){float r=length(vQ);float a=pow(clamp(1.-r,0.,1.),1.6)*(.55+.45*vnoise(vQ*3.+vPh*20.+uTime*.02));a*=.10*smoothstep(8.,40.,vD);o=vec4(uFogCol*1.25*a,a);}`};
 
+/* Living City props: real low-poly meshes for trees (test files) and houses (docs), so they read as a park and a
+   street of houses, not reshaped boxes. Same instance buffer as the buildings; uKind picks which style this draw is
+   for, everything else collapses. aPart: 0 trunk or walls, 1 canopy or roof. */
+SRC.prop={vs:H+`
+layout(location=0) in vec3 aPos;layout(location=1) in vec3 aNor;layout(location=7) in float aPart;
+layout(location=2) in vec4 iA;layout(location=3) in vec4 iB;layout(location=4) in vec4 iC;layout(location=5) in vec4 iD;layout(location=6) in vec4 iE;
+uniform mat4 uVP;uniform float uT,uFlow,uKind;
+out vec3 vW;out vec3 vN;out vec3 vL;out vec4 vB;out vec4 vC;flat out float vPart;flat out float vDist;out vec2 vSize;flat out float vH;
+void main(){
+  if(abs(iE.x-uKind)>.5){gl_Position=vec4(2.,2.,2.,1.);return;}
+  float g=clamp((uT-iB.y)/.03,0.,1.);
+  if(g<=0.){gl_Position=vec4(2.,2.,2.,1.);return;}
+  float h=iB.x*mix(1.,1.-pow(1.-g,3.),uFlow);
+  vec3 p;
+  if(uKind<4.5){float fs=1.3*(.85+.3*fract(iC.y*7.3));/* a full, round crown filling most of its lot */p=vec3(aPos.x*fs,aPos.y*h,aPos.z*fs);}
+  else p=vec3(aPos.x*iA.z,aPos.y<=1.?aPos.y*h:h+(aPos.y-1.)*min(iA.z,iA.w),aPos.z*iA.w);
+  vec3 w=vec3(iA.x+p.x,.28+p.y,iA.y+p.z);
+  vW=w;vN=aNor;vL=aPos;vB=iB;vC=iC;vPart=aPart;vDist=iD.x;vSize=iA.zw;vH=h;
+  gl_Position=uVP*vec4(w,1.);
+}`,
+fs:H+NOISE+`
+in vec3 vW;in vec3 vN;in vec3 vL;in vec4 vB;in vec4 vC;flat in float vPart;flat in float vDist;in vec2 vSize;flat in float vH;
+uniform float uT,uTime,uFog,uKind,uFocus,uFocusAmt;uniform vec3 uCam,uFogCol;out vec4 o;
+void main(){
+  vec3 N=normalize(vN);vec3 tc=uCam-vW;float dist=length(tc);vec3 V=tc/dist;
+  vec3 L=normalize(vec3(-.5,.6,-.6));float ndl=max(dot(N,L),0.),hemi=N.y*.5+.5;
+  vec3 amb=mix(vec3(.05,.09,.10),vec3(.20,.16,.30),hemi);
+  float rim=pow(1.-max(dot(N,V),0.),3.);
+  float act=vB.w*max(1.-smoothstep(vB.z+.06,vB.z+.26,uT),.05);
+  vec3 base,emis=vec3(0.);
+  if(uKind<4.5){
+    /* tree: varied greens, darker low down, a few warm lights strung through busy test parks */
+    float leaf=vnoise(vW.xz*4.+vW.y*3.);
+    base=vPart>.5?mix(vec3(.16,.42,.20),vec3(.30,.55,.24),fract(vC.y*5.1))*(.75+.5*leaf)*mix(.8,1.2,smoothstep(.2,1.,vL.y)):vec3(.26,.17,.10);
+    vec3 q=floor(vL*vec3(11.,9.,11.)+vC.y*31.);
+    emis+=vec3(1.,.78,.45)*step(.985-.05*act,h21(q.xz+q.y*7.))*vPart*1.6;
+  }else{
+    /* house: plaster walls with lit windows, a tiled roof */
+    vec3 wall=mix(vec3(.34,.28,.22),vec3(.26,.27,.30),step(.5,fract(vC.y*3.7)));
+    vec3 roof=mix(vec3(.30,.11,.08),vec3(.16,.17,.20),step(.6,fract(vC.y*9.1)));
+    base=vPart>.5?roof*(.8+.2*step(.5,fract(vL.y*14.))):wall;
+    float side=step(abs(N.y),.5)*(1.-vPart)*step(vL.y,1.);
+    vec2 uv=abs(N.x)>.5?vec2((vL.z+.5)*vSize.y,vL.y*vH):vec2((vL.x+.5)*vSize.x,vL.y*vH);
+    vec2 cell=vec2(.42,.55),id=floor(uv/cell),f=fract(uv/cell);
+    float win=step(.25,f.x)*step(f.x,.75)*step(.28,f.y)*step(f.y,.75)*step(.45,uv.y)*side;
+    float lit=step(h21(id+vC.y*17.),act*.9+.08);
+    emis+=mix(vec3(1.,.68,.34),vec3(1.,.86,.6),h21(id+3.1))*win*lit*1.7;
+    base*=1.-win*.6;
+  }
+  vec3 col=base*(amb*1.7+vec3(.32,.44,.62)*ndl*.7)+vec3(.85,.42,.5)*rim*.25*base*3.;
+  float inF=(uFocus<-.5)?1.:step(abs(vDist-uFocus),.5);
+  col*=mix(1.,mix(.32,1.25,inF),uFocusAmt);emis*=mix(1.,mix(.35,1.3,inF),uFocusAmt);
+  vec3 c=col+emis;
+  float fg=1.-exp(-dist*uFog);fg*=mix(1.,.5,smoothstep(0.,18.,vW.y));
+  o=vec4(mix(c,uFogCol,fg),1.);
+}`};
+
 /* Living City cranes: a mast and a slowly slewing jib over each file changed in the last days of history, with a
    hook cable and a blinking tip. aE = (along the jib, height above the mast top, 1 = mast foot); iP = (x, building top, z, last change). Shown only
    once the timeline reaches that change, so replaying history never shows a crane early. */
@@ -309,8 +372,8 @@ layout(location=0) in vec3 aE;layout(location=1) in vec4 iP;
 uniform mat4 uVP;uniform float uTime,uMotion,uT,uLiving;out float vA;out float vTip;
 void main(){
   float a=uTime*.05*uMotion+iP.x*1.7+iP.z*.9;vec2 dir=vec2(cos(a),sin(a));/* slow slew, frozen under reduced motion */
-  vec3 p=vec3(iP.x+dir.x*aE.x,aE.z>.5?iP.y:iP.y+2.6+aE.y,iP.z+dir.y*aE.x);
-  vTip=step(2.7,aE.x);vA=uLiving*step(iP.w-.002,uT);
+  vec3 p=vec3(iP.x+dir.x*aE.x,aE.z>.5?iP.y:iP.y+1.6+aE.y,iP.z+dir.y*aE.x);
+  vTip=step(1.85,aE.x);vA=uLiving*step(iP.w-.002,uT);
   gl_Position=uVP*vec4(p,1.);
 }`,
 fs:H+`in float vA;in float vTip;uniform float uTime;out vec4 o;
