@@ -30,7 +30,7 @@ test('every mode a key turns on can be left by tapping', async ({ page }) => {
 
   const leave = page.locator('#btnLeave');
   await expect(leave).toBeHidden();
-  await action(page, 'Walk mode');
+  await action(page, 'Walk the streets');
   await expect(page.locator('body')).toHaveClass(/walking/);
   await expect(leave).toHaveText('Leave walk mode');
   await leave.click();
