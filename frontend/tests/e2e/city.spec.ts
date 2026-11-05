@@ -44,6 +44,7 @@ test('the city key is open by default, with real counts; 8 and the Key button to
 test('guided walk: stops with captions, J/K jump, scrolling walks, Esc leaves', async ({ page }) => {
   test.slow(); // eased walking between stops, on a software GPU in CI
   await openCity(page);
+  await page.locator('#btnMore').click();
   await page.locator('#btnWalkTour').click();
   await expect(page.locator('#placeEy')).toHaveText(/^Stop 1 of \d+$/);
   await expect(page.locator('#placeSub')).toContainText('Hotspot:');
@@ -98,4 +99,25 @@ test('on-screen camera controls move the camera; drag moves the city like a map'
   await page.mouse.up();
   await page.waitForTimeout(800);
   expect(await share()).not.toBe(turned);
+});
+
+test('Walk puts you on a street with an on-screen pad that walks while held; Esc leaves', async ({ page }) => {
+  test.slow(); // renders the city on a software GPU in CI
+  await openCity(page);
+  await page.locator('#btnWalk').click();
+  await expect(page.locator('body')).toHaveClass(/walking/);
+  await expect(page.locator('#btnWalk')).toHaveAttribute('aria-pressed', 'true');
+  const pad = page.locator('#walkPad');
+  await expect(pad).toBeVisible();
+  await expect(page.locator('#navCtl')).toBeHidden();
+  const fwd = pad.getByRole('button', { name: 'Walk forward' });
+  const box = (await fwd.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(600);
+  await page.mouse.up();
+  await page.locator('#gl').evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Escape');
+  await expect(page.locator('body')).not.toHaveClass(/walking/);
+  await expect(pad).toBeHidden();
 });

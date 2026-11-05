@@ -27,7 +27,7 @@ import { Palette, type Item } from './palette';
 import { compareCounts, Inspector, Insights, MiniMap, renderHelp, Timeline, whatIfSentence } from './panels';
 import { orphaned } from '../world/whatif';
 import { Story } from './story';
-import { NEAR, Walker } from './walk';
+import { NEAR, streetStart, Walker } from './walk';
 import { Ambience } from './sound';
 import { drawTreemap, honestyLines, renderSummary, renderTable } from './table';
 
@@ -107,7 +107,7 @@ export class App {
   private demo = true;
   private readonly cam = new OrbitCamera();
   private readonly P: Params = {
-    t: 1, fog: FOG, hot: 0.5, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.035, ca: 1,
+    t: 1, fog: FOG, hot: 0.5, focus: -1, focusAmt: 0, hover: -1, fade: 0, exposure: 1, grain: 0.018, ca: 1,
     arcs: 1, lanterns: 1, cmp: [0, 0, 0], lift: 0, sel: -1, focusDist: 0, dof: 0, motion: 1, flow: 0, types: 0, weather: 0, risk: 0, pr: 0, living: 1,
   }; // prettier-ignore
   private time = 0;
@@ -345,7 +345,7 @@ export class App {
     $('#btnCity').hidden = m !== 'story';
     const explore = m === 'city' && !this.demo;
     $('#btnStory').hidden = !explore || !this.renderer;
-    for (const id of ['#btnSearch', '#btnInsights', '#btnWalkTour', '#btnKey', '#btnShare', '#btnBadge', '#btnPhoto', '#btnHelp']) $(id).hidden = !explore;
+    for (const id of ['#btnSearch', '#btnInsights', '#btnWalk', '#btnWalkTour', '#btnKey', '#btnShare', '#btnBadge', '#btnPhoto', '#btnHelp']) $(id).hidden = !explore;
     $('#btnMore').hidden = m === 'hero';
     if (explore) this.setKey(this.keyShown, false); // fold or unfold for the screen it opens on
     this.timeline.root.hidden = !explore;
@@ -766,27 +766,25 @@ export class App {
       if (!w || this.mode !== 'city' || this.walker) return;
       const f = from ? [from.tgt[0] - from.pos[0], from.tgt[2] - from.pos[2]] : [0, -1];
       const len = Math.hypot(f[0]!, f[1]!) || 1;
-      // Land on the first open ground back along the view line (districts are packed tight), facing what the
-      // orbit camera was looking at: the first view is that skyline, not a wall.
+      // Start on a street crossing in the district being looked at, facing down the street nearest the view.
       const g = this.cam.goal;
-      const k = new Walker(w, g.x, g.z, Math.atan2(-f[0]!, -f[1]!));
-      for (let back = 0; back <= w.radius * 1.3; back += 1) {
-        k.x = g.x - (f[0]! / len) * back;
-        k.z = g.z - (f[1]! / len) * back;
-        if (k.clearance(k.x, k.z, this.P.t) >= 2.5) break;
-      }
+      const s = streetStart(w, g.x, g.z, Math.atan2(-f[0]! / len, -f[1]! / len));
+      const k = new Walker(w, s.x, s.z, s.yaw);
+      k.pitch = 0.12; // look slightly up the street, at the buildings rather than the road
       this.walker = k;
       this.walker.resolve(this.P.t);
       this.cam.autoOrbit = false;
       this.body.classList.add('walking');
       this.syncLeave();
       this.hintsText ||= $('#hints').textContent ?? '';
-      setText($('#hints'), 'W A S D walk \u00b7 Shift run \u00b7 mouse or arrows look \u00b7 click to capture the mouse \u00b7 X to leave');
+      setText($('#hints'), 'W A S D or the arrows on screen to walk \u00b7 Shift run \u00b7 drag to look \u00b7 X to leave');
+      $('#btnWalk').setAttribute('aria-pressed', 'true');
       this.announce('Walk mode. W A S D to walk, Shift to run, arrow keys or the mouse to look, X or Escape to leave.');
     } else {
       const k = this.walker;
       if (!k) return;
       this.walker = null;
+      $('#btnWalk').setAttribute('aria-pressed', 'false');
       if (document.pointerLockElement) document.exitPointerLock();
       this.body.classList.remove('walking');
       this.syncLeave();
@@ -1653,6 +1651,25 @@ export class App {
     $('#btnInsights').addEventListener('click', () => this.run('insights'));
     $('#btnPhoto').addEventListener('click', () => this.run('photo'));
     $('#btnWalkTour').addEventListener('click', () => this.run('scrollWalk'));
+    $('#btnWalk').addEventListener('click', () => this.run('walk'));
+    // Walking pad: hold a button to walk or turn, exactly like holding the key (touch has no keyboard).
+    for (const b of document.querySelectorAll<HTMLButtonElement>('#walkPad button')) {
+      const key = b.dataset['key']!;
+      const release = (): void => void this.held.delete(key);
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        this.held.add(key);
+        try {
+          b.setPointerCapture(e.pointerId); // keep walking while the finger slides off the button
+        } catch {
+          // no live pointer to capture: the button still works until it is released
+        }
+      });
+      b.addEventListener('pointerup', release);
+      b.addEventListener('pointercancel', release);
+      b.addEventListener('lostpointercapture', release);
+      b.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
     $('#btnHelp').addEventListener('click', () => this.run('help'));
     $('#btnKey').addEventListener('click', () => this.run('living'));
     // The More menu closes once one of its actions runs.
@@ -2085,7 +2102,7 @@ export class App {
     this.time += dt;
     const reduced = reducedMotion();
     const P = this.P;
-    P.grain = reduced ? 0 : 0.035;
+    P.grain = reduced ? 0 : 0.018; // a hint of film grain; more reads as noise on the water
     P.fade = smoothstep(0, 1.4, this.time);
     if (this.mode === 'city') {
       P.hot = 1;

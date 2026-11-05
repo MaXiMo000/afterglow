@@ -11,8 +11,8 @@ export type KeyDef = { id: ActionId; keys: string[]; label: string; group: 'Came
 
 export const KEYMAP: readonly KeyDef[] = [
   { id: 'home', keys: ['H'], label: 'Home view', group: 'Camera' },
-  { id: 'walk', keys: ['X'], label: 'Walk mode: explore on foot (X or Esc to leave)', group: 'Camera' },
-  { id: 'scrollWalk', keys: ['9'], label: 'Guided walk: scroll, swipe or arrows to walk between the findings (J/K jump)', group: 'Camera' },
+  { id: 'walk', keys: ['X'], label: 'Walk the streets on foot (X or Esc to leave)', group: 'Camera' },
+  { id: 'scrollWalk', keys: ['9'], label: 'Tour the findings: scroll, swipe or arrows to fly from one to the next (J/K jump)', group: 'Camera' },
   { id: 'tourNext', keys: ['J'], label: 'Next hotspot (tour)', group: 'Camera' },
   { id: 'tourPrev', keys: ['K'], label: 'Previous hotspot (tour)', group: 'Camera' },
   { id: 'drill', keys: ['Enter'], label: 'Open the selected district as its own city (Backspace climbs out)', group: 'Camera' },
@@ -62,7 +62,7 @@ export const MOVE_KEYS: readonly { keys: string; label: string }[] = [
 ];
 
 /** The handful of actions most people need, listed first in help; the rest sit under "All shortcuts". */
-export const ESSENTIAL: readonly ActionId[] = ['scrollWalk', 'living', 'palette', 'insights', 'tourNext', 'play', 'home', 'help'];
+export const ESSENTIAL: readonly ActionId[] = ['walk', 'scrollWalk', 'living', 'palette', 'insights', 'tourNext', 'play', 'home', 'help'];
 
 /** Resolve a keyboard event to an action (null if none). Movement keys are not actions. */
 export function actionFor(e: KeyboardEvent): ActionId | null {

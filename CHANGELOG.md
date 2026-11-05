@@ -5,6 +5,14 @@ Versions come from the git tag (`v*`); the package manifests stay at `0.0.0`.
 
 ## Unreleased
 
+- Streets: districts are laid out as blocks of 3 x 3 lots with roads between them (kerbs, centre lines and
+  streetlights at the crossings).
+- Walk (`X`, or the Walk button) starts on a street crossing in the district you are looking at, at street height.
+  An on-screen pad walks, turns and sidesteps while held, for touch and mouse. The islands' edges stop you; you can
+  no longer walk out over the water. The finding-to-finding tour moves to the More menu as "Tour the findings" (`9`).
+- Trees and houses are real low-poly models (trunk and layered crown; walls, lit windows and a pitched roof)
+  instead of reshaped boxes. Cranes are smaller and stand at the building's corner; the scaffolding grid is gone.
+- Less visual noise: half the film grain, and fireflies near the camera stay small.
 - Living City: buildings take a style that says what kind of file they are, from the path, size and dates only.
   Test files are trees and test-heavy districts become parks, docs are houses, generated or vendored files are
   warehouses, the largest source files are glass towers, old untouched files are brick, files changed in the last

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { validateResult, type Result } from '../lib/result';
-import { buildWorld, INST } from './build';
+import { buildWorld, CELL, INST, isStreet } from './build';
 
 export function sample(nFiles = 40): Result {
   const dirs = ['core', 'tests', 'docs', 'legacy'].map((name, i) => ({
@@ -76,5 +76,16 @@ describe('buildWorld', () => {
       files: r.files.map((f) => ({ ...f, loc: 0 })),
     };
     expect(buildWorld(noSizes).heightFromChanges).toBe(true);
+  });
+  it('keeps every 4th lot row and column free as a street, one building per lot', () => {
+    const w = buildWorld(sample(400));
+    const lots = new Set<string>();
+    for (let o = 0; o < w.inst.length; o += INST) {
+      const gx = Math.floor(w.inst[o]! / CELL);
+      const gz = Math.floor(w.inst[o + 1]! / CELL);
+      expect(isStreet(gx) || isStreet(gz)).toBe(false);
+      lots.add(`${gx},${gz}`);
+    }
+    expect(lots.size).toBe(400);
   });
 });

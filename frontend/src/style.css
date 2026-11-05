@@ -422,6 +422,14 @@ dialog[open]::backdrop { transition: opacity var(--motion-base) var(--motion-eas
 #navCtl button:hover { border-color: rgba(255, 180, 94, 0.6); background: var(--color-glass-hi); }
 #navCtl button:active { transform: scale(0.94); }
 body.walking #navCtl, body.guided #navCtl, body.photo #navCtl { display: none; }
+/* Walking pad: hold to walk, turn or sidestep; only while walking. */
+#walkPad { display: none; position: absolute; right: var(--gutter); bottom: calc(var(--foot-h, 44px) + var(--tl-h, 52px) + 22px);
+  grid-template-columns: repeat(3, 48px); gap: 6px; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
+body.walking.mode-city #walkPad { display: grid; }
+body.photo #walkPad { display: none !important; }
+#walkPad button { width: 48px; height: 48px; display: grid; place-items: center; padding: 0; font: 500 18px / 1 var(--font-sans); color: var(--color-text);
+  background: var(--color-glass); border: 1px solid var(--color-line); border-radius: var(--radius-sm); backdrop-filter: blur(8px); touch-action: none; }
+#walkPad button:active { border-color: var(--color-amber); background: var(--color-glass-hi); transform: scale(0.95); }
 #minimap { right: calc(var(--gutter) + 92px); }
 
 /* City key: shown by default in the city, foldable; never over the start page or the story. */

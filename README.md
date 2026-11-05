@@ -22,8 +22,9 @@ Paste a public GitHub repository and its whole history grows into a night city y
 
 A short scroll story walks through the findings, then the city opens for free exploration. It moves like a map: drag to
 move, right-drag (or two fingers) to turn, wheel or pinch to zoom, with on-screen buttons for the same. The city key
-explains every building style. A guided walk (`9`) takes you at street level from finding to finding as you scroll,
-with a caption at each stop. It works on phones and tablets in either orientation. Also: search (`/`), an insights
+explains every building style. Districts are blocks with streets: **Walk** (`X`) puts you on one, to walk with WASD or
+the on-screen pad, and a tour (`9`) flies you from finding to finding as you scroll, with a caption at each stop. It
+works on phones and tablets in either orientation. Also: search (`/`), an insights
 panel (hotspots, bus factor, quiet areas, coupling), a timeline to replay history, compare two dates, share links,
 photo mode, a graphics-quality setting, and a full keyboard map (`?`). The browser's Back button, Esc and Backspace
 step back through city, story and start page. Everything also works as a plain table, with or without WebGL.

@@ -6,9 +6,9 @@
  * block the way, matching what is drawn.
  */
 import { clamp, type V3 } from '../render/math';
-import { CELL, INST, type World } from '../world/build';
+import { CELL, INST, STREET, type World } from '../world/build';
 
-export const EYE = 1.35; // ground is at 0.28 and windows start 1 above it: eye level with the first lit floor
+export const EYE = 0.9; // ground is at 0.28: eye level is a little over half a storey, so even small buildings rise above you
 export const RADIUS = 0.12; // fits the narrowest gaps between neighbouring buildings (>= 0.32)
 export const NEAR = 0.05; // the orbit camera's 0.4 near plane would cut through walls this close
 const WALK = 3; // world units per second
@@ -60,17 +60,22 @@ export class Walker {
       // Sub-steps so a fast frame cannot tunnel through a thin building.
       const n = Math.ceil((len * s) / (RADIUS * 0.8));
       for (let k = 0; k < n; k++) {
+        const [px, pz] = [this.x, this.z];
         this.x += ((-sin * input.forward + cos * input.strafe) * s) / n;
         this.z += ((-cos * input.forward - sin * input.strafe) * s) / n;
         this.resolve(t);
+        // The islands' edges are the city limits: no walking out over the water.
+        if (!this.onLand(this.x, this.z)) {
+          [this.x, this.z] = [px, pz];
+          break;
+        }
       }
     }
-    const bound = this.world.radius * 1.3;
-    const r = Math.hypot(this.x, this.z);
-    if (r > bound) {
-      this.x *= bound / r;
-      this.z *= bound / r;
-    }
+  }
+
+  /** On a district island, a little inside its rim. */
+  onLand(x: number, z: number): boolean {
+    return this.world.dists.some((d) => Math.hypot(x - d.x, z - d.z) <= d.r - 0.4);
   }
 
   /** Push the walker out of any building it overlaps (circle vs box), sliding along walls. */
@@ -129,6 +134,30 @@ export class Walker {
     const pos: V3 = [this.x, EYE, this.z];
     return { pos, tgt: [this.x - Math.sin(this.yaw) * c, EYE + Math.sin(this.pitch), this.z - Math.cos(this.yaw) * c] };
   }
+}
+
+/**
+ * Where walking starts: the street crossing nearest to (x, z) inside the district nearest to it, facing down the
+ * street closest to `yaw`. Streets are every STREET-th lot row and column (world/build.ts).
+ */
+export function streetStart(w: World, x: number, z: number, yaw: number): { x: number; z: number; yaw: number } {
+  let d = w.dists[0];
+  for (const c of w.dists) if (d && Math.hypot(c.x - x, c.z - z) - c.r < Math.hypot(d.x - x, d.z - z) - d.r) d = c;
+  const heading = Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2);
+  if (!d) return { x, z, yaw: heading };
+  let best = { x: d.x, z: d.z, dist: Infinity };
+  const span = Math.ceil(d.r / CELL / STREET) + 1;
+  const g0x = Math.round(d.x / CELL / STREET);
+  const g0z = Math.round(d.z / CELL / STREET);
+  for (let i = -span; i <= span; i++)
+    for (let j = -span; j <= span; j++) {
+      const sx = ((g0x + i) * STREET + 0.5) * CELL;
+      const sz = ((g0z + j) * STREET + 0.5) * CELL;
+      if (Math.hypot(sx - d.x, sz - d.z) > d.r - 1.6) continue; // on the island, not at its edge
+      const dist = Math.hypot(sx - x, sz - z);
+      if (dist < best.dist) best = { x: sx, z: sz, dist };
+    }
+  return { x: best.x, z: best.z, yaw: heading };
 }
 
 const cellKey = (gx: number, gz: number): number => (gx + 4096) * 8192 + (gz + 4096);
